@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
 import { SocketProvider } from "@/components/providers/socket-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
+import { CallProvider } from "../hooks/use-call-context";
 
 import type { Metadata } from "next";
 import { Open_Sans, Share_Tech_Mono } from "next/font/google";
@@ -44,7 +45,9 @@ export default function RootLayout({
         >
           <SocketProvider>
             <ModalProvider />
-            <QueryProvider>{children}</QueryProvider>
+            <CallProvider>
+              <QueryProvider>{children}</QueryProvider>
+            </CallProvider>
           </SocketProvider>
         </ThemeProvider>
       </body>

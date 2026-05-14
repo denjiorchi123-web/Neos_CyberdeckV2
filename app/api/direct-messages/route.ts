@@ -5,7 +5,7 @@ import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
 
-const MESSAGES_BATCH = 15;
+const MESSAGES_BATCH = 30;
 
 export async function GET(req: Request) {
   try {

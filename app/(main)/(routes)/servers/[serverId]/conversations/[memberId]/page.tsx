@@ -8,6 +8,7 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatInput } from "@/components/chat/chat-input";
 import { MediaRoom } from "@/components/media-room";
+import { cn } from "@/lib/utils";
 
 interface MemberIdPageProps {
   params: {
@@ -16,12 +17,13 @@ interface MemberIdPageProps {
   };
   searchParams: {
     video?: boolean;
+    audio?: boolean;
   };
 }
 
 export default async function MemberIdPage({
   params: { memberId, serverId },
-  searchParams: { video }
+  searchParams: { video, audio }
 }: MemberIdPageProps) {
   const profile = await currentProfile();
 
@@ -59,33 +61,48 @@ export default async function MemberIdPage({
         serverId={serverId}
         type="conversation"
         chatId={conversation.id}
+        otherMemberId={memberId}
+        callerMemberId={currentMember.id}
+        currentProfileName={profile.name}
       />
-      {video && <MediaRoom chatId={conversation.id} video audio />}
-      {!video && (
-        <>
-          <ChatMessages
-            member={currentMember}
-            name={otherMember.profile.name}
-            chatId={conversation.id}
-            type="conversation"
-            apiUrl="/api/direct-messages"
-            paramKey="conversationId"
-            paramValue={conversation.id}
-            socketUrl="/api/socket/direct-messages"
-            socketQuery={{
-              conversationId: conversation.id
-            }}
+      {/* Call Interface (Voice or Video) */}
+      {(video || audio) && (
+        <div className={cn(
+          "flex-shrink-0 border-b border-black/20 bg-black/5",
+          video ? "h-[60vh] min-h-[400px]" : "h-[200px]"
+        )}>
+          <MediaRoom 
+            chatId={conversation.id} 
+            video={!!video} 
+            audio={true} 
           />
-          <ChatInput
-            name={otherMember.profile.name}
-            type="conversation"
-            apiUrl="/api/socket/direct-messages"
-            query={{
-              conversationId: conversation.id
-            }}
-          />
-        </>
+        </div>
       )}
+
+      {/* Chat History & Input (Always Visible) */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <ChatMessages
+          member={currentMember}
+          name={otherMember.profile.name}
+          chatId={conversation.id}
+          type="conversation"
+          apiUrl="/api/direct-messages"
+          paramKey="conversationId"
+          paramValue={conversation.id}
+          socketUrl="/api/socket/direct-messages"
+          socketQuery={{
+            conversationId: conversation.id
+          }}
+        />
+        <ChatInput
+          name={otherMember.profile.name}
+          type="conversation"
+          apiUrl="/api/socket/direct-messages"
+          query={{
+            conversationId: conversation.id
+          }}
+        />
+      </div>
     </div>
   );
 }

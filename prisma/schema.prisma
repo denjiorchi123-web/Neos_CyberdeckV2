@@ -15,6 +15,9 @@ model Profile {
   email    String
   password String @default("")
 
+  isOnline DateTime?
+  lastSeen DateTime @default(now())
+
   servers  Server[]
   members  Member[]
   channels Channel[]
@@ -53,6 +56,7 @@ model Member {
 
   messages       Message[]
   directMessages DirectMessage[]
+  groupStatus    GroupMessageStatus[]
 
   conversationsInitiated Conversation[] @relation("MemberOne")
   conversationsReceived  Conversation[] @relation("MemberTwo")
@@ -87,8 +91,13 @@ model Channel {
 model Message {
   id      String @id @default(uuid())
   content String
+  type    String @default("TEXT") // TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT
 
-  fileUrl String?
+  fileUrl      String?
+  fileSize     Int?
+  fileName     String?
+  mimeType     String?
+  thumbnailUrl String?
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -96,14 +105,40 @@ model Message {
   channelId String
   channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
-  deleted Boolean @default(false)
-  status  String  @default("SENT") // "SENT" | "DELIVERED" | "READ"
+  deleted            Boolean @default(false)
+  deletedForEveryone Boolean @default(false)
+  edited             Boolean @default(false)
+  editedAt           DateTime?
+
+  status      String    @default("SENT") // SENT, DELIVERED, READ
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  groupStatuses GroupMessageStatus[]
+  edits         MessageEdit[]
+  
+  expiresAt     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([channelId])
   @@index([memberId])
+  @@index([channelId, createdAt(sort: Desc)])
+}
+
+model GroupMessageStatus {
+  id        String @id @default(uuid())
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  @@unique([messageId, memberId])
 }
 
 model Conversation {
@@ -124,7 +159,13 @@ model Conversation {
 model DirectMessage {
   id      String  @id @default(uuid())
   content String
-  fileUrl String?
+  type    String @default("TEXT")
+
+  fileUrl      String?
+  fileSize     Int?
+  fileName     String?
+  mimeType     String?
+  thumbnailUrl String?
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -132,42 +173,73 @@ model DirectMessage {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  deleted Boolean @default(false)
-  status  String  @default("SENT") // "SENT" | "DELIVERED" | "READ"
+  deleted            Boolean @default(false)
+  deletedForEveryone Boolean @default(false)
+  edited             Boolean @default(false)
+  editedAt           DateTime?
+
+  status      String    @default("SENT")
+  deliveredAt DateTime?
+  readAt      DateTime?
+  
+  edits       DirectMessageEdit[]
+  
+  expiresAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([memberId])
   @@index([conversationId])
+  @@index([conversationId, createdAt(sort: Desc)])
 }
 
 model CallHistory {
   id        String @id @default(uuid())
   callerId  String
   calleeId  String
-  channelId String
-  type      String @default("audio") // "audio" | "video"
+  channelId String? // Optional if it was a DM call
   roomId    String
-  duration  Int    @default(0)        // seconds
-  status    String @default("ended")  // "active" | "ended" | "missed"
+  type      String @default("audio") // audio, video
+  
+  status    String @default("ended")  // active, ended, missed, rejected, busy
+  duration  Int    @default(0)        // duration in seconds
 
   startedAt DateTime @default(now())
   endedAt   DateTime?
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([callerId])
   @@index([calleeId])
-  @@index([channelId])
-  @@index([roomId])
+}
+
+model MessageEdit {
+  id              String   @id @default(uuid())
+  messageId       String
+  message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  previousContent String
+  editedAt        DateTime @default(now())
+
+  @@index([messageId])
+}
+
+model DirectMessageEdit {
+  id              String         @id @default(uuid())
+  messageId       String
+  message         DirectMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  previousContent String
+  editedAt        DateTime       @default(now())
+
+  @@index([messageId])
 }
 
 model FileIndex {
   id         String @id @default(uuid())
   name       String
   path       String
-  size       Int    @default(0)        // bytes
+  size       Int    @default(0)
   mimeType   String @default("application/octet-stream")
   uploaderId String
   serverId   String

@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
+import { useSocket } from "@/components/providers/socket-provider";
 
 interface ServerMemberProps {
   member: Member & { profile: Profile };
@@ -29,6 +30,9 @@ export const ServerMember = ({ member, server }: ServerMemberProps) => {
 
   const icon = roleIconMap[member.role as keyof typeof roleIconMap];
 
+  const { onlineUsers } = useSocket();
+  const isOnline = onlineUsers.some((u: any) => u.userId === member.profileId);
+
   const onClick = () =>
     router.push(`/servers/${params?.serverId}/conversations/${member.id}`);
 
@@ -40,10 +44,15 @@ export const ServerMember = ({ member, server }: ServerMemberProps) => {
         params?.memberId === member.id && "bg-zinc-700/20 dark:bg-zinc-700"
       )}
     >
-      <UserAvatar
-        src={member.profile.imageUrl}
-        className="h-8 w-8 md:h-8 md:w-8"
-      />
+      <div className="relative">
+        <UserAvatar
+          src={member.profile.imageUrl}
+          className="h-8 w-8 md:h-8 md:w-8"
+        />
+        {isOnline && (
+          <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#2b2d31] rounded-full" />
+        )}
+      </div>
       <p
         className={cn(
           "font-semibold text-sm text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300 transition",

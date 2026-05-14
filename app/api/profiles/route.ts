@@ -37,10 +37,21 @@ export async function POST(req: Request) {
     if (!name) return new NextResponse("Name is required", { status: 400 });
     if (!password) return new NextResponse("Password is required", { status: 400 });
 
+    const finalEmail = email || `${name.toLowerCase().replace(/\s/g, ".")}@cyberdeck.local`;
+
+    // Check for existing profile
+    const existing: any[] = await db.$queryRawUnsafe(
+      `SELECT id FROM Profile WHERE name = ? OR email = ? LIMIT 1`,
+      name, finalEmail
+    );
+
+    if (existing.length > 0) {
+      return new NextResponse("Profile with this name or email already exists", { status: 400 });
+    }
+
     const id = uuidv4();
     const userId = `user_${uuidv4().replace(/-/g, "").slice(0, 20)}`;
     const hashedPassword = hashPassword(password, userId);
-    const finalEmail = email || `${name.toLowerCase().replace(/\s/g, ".")}@cyberdeck.local`;
     const finalImageUrl = imageUrl || `https://avatar.vercel.sh/${userId}`;
 
     // Use Raw SQL to insert with password field, bypassing Prisma type checks

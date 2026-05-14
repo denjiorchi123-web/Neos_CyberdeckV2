@@ -69,9 +69,12 @@ export function ChatItem({
   const canDeleteMessage = !deleted && (isAdmin || isModerator || isOwner);
   const canEditMessage = !deleted && isOwner && !fileUrl;
   
-  const fileType = fileUrl?.split(".").pop();
+  const fileType = fileUrl?.split(".").pop()?.toLowerCase();
   const isPDF = fileType === "pdf" && fileUrl;
-  const isImage = !isPDF && fileUrl;
+  const isImage = ["png", "jpg", "jpeg", "gif", "webp"].includes(fileType || "") && fileUrl;
+  const isVideo = ["mp4", "webm", "ogg"].includes(fileType || "") && fileUrl;
+  const isAudio = ["mp3", "wav", "m4a"].includes(fileType || "") && fileUrl;
+  const isDocument = !isImage && !isVideo && !isAudio && fileUrl;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -163,6 +166,32 @@ export function ChatItem({
             {isImage && (
               <div className="mb-2 rounded-lg overflow-hidden border border-black/20 max-w-[300px]">
                 <Image src={fileUrl!} alt={content} width={400} height={400} className="object-cover" />
+              </div>
+            )}
+
+            {isVideo && (
+              <div className="mb-2 rounded-lg overflow-hidden border border-black/20 max-w-[300px] bg-black">
+                <video src={fileUrl!} controls className="w-full h-full" />
+              </div>
+            )}
+
+            {isAudio && (
+              <div className="mb-2 p-2 rounded-lg bg-black/10 border border-white/5 min-w-[240px]">
+                <audio src={fileUrl!} controls className="w-full h-8" />
+              </div>
+            )}
+
+            {isDocument && (
+              <div className="mb-2 relative flex items-center p-3 rounded-xl bg-[#1e1f22] border border-white/5">
+                <FileIcon className="h-10 w-10 fill-indigo-200 stroke-indigo-400" />
+                <a
+                  href={fileUrl!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 text-sm text-indigo-500 dark:text-indigo-400 hover:underline truncate max-w-[180px]"
+                >
+                  {content || "Download Document"}
+                </a>
               </div>
             )}
             

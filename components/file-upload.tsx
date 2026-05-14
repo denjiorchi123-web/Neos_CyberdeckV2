@@ -44,9 +44,19 @@ export function FileUpload({
   }, [onChange]);
 
   const imageTypes = { "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"] };
+  const videoTypes = { "video/*": [".mp4", ".webm", ".ogg"] };
+  const audioTypes = { "audio/*": [".mp3", ".wav", ".m4a"] };
+  
   const accept = endpoint === "serverImage"
     ? imageTypes
-    : { ...imageTypes, "application/pdf": [".pdf"] };
+    : { 
+        ...imageTypes, 
+        ...videoTypes, 
+        ...audioTypes,
+        "application/pdf": [".pdf"],
+        "application/zip": [".zip"],
+        "text/plain": [".txt"]
+      };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

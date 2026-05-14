@@ -5,6 +5,7 @@ import { Phone, PhoneOff, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useSocket } from "@/components/providers/socket-provider";
+import { cn } from "@/lib/utils";
 
 import {
   Dialog,
@@ -20,7 +21,7 @@ export function CallModal() {
   const { socket } = useSocket();
   const router = useRouter();
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
-  
+  const timeoutRef = useRef<any>(null);
   const [incomingCall, setIncomingCall] = useState<{
     chatId: string;
     callerName: string;
@@ -42,22 +43,33 @@ export function CallModal() {
         ringtoneRef.current.play().catch(() => {});
       } catch (e) {}
 
-      // Auto-missed call after 30 seconds
-      const timeout = setTimeout(() => {
+      // Auto-missed call after 45 seconds (WhatsApp style)
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
         setIncomingCall(prev => {
           if (prev && prev.chatId === data.chatId) {
-             sendMissedCallMessage(data.chatId);
+             sendCallLogMessage(data.chatId, data.type, "Missed");
              return null;
           }
           return prev;
         });
         stopRingtone();
-      }, 30000);
-
-      return () => clearTimeout(timeout);
+      }, 45000);
     });
 
     socket.on("call:end", (data: any) => {
+      setIncomingCall(prev => {
+        if (prev?.chatId === data.chatId) {
+          // If the caller hung up while we were ringing, log it as a missed call
+          sendCallLogMessage(data.chatId, prev.type, "Missed");
+          return null;
+        }
+        return prev;
+      });
+      stopRingtone();
+    });
+
+    socket.on("call:decline", (data: any) => {
       setIncomingCall(prev => (prev?.chatId === data.chatId ? null : prev));
       stopRingtone();
     });
@@ -65,6 +77,8 @@ export function CallModal() {
     return () => {
       socket.off("call:start");
       socket.off("call:end");
+      socket.off("call:decline");
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [socket]);
 
@@ -75,37 +89,52 @@ export function CallModal() {
     }
   };
 
-  const sendMissedCallMessage = async (chatId: string) => {
+  const sendCallLogMessage = async (chatId: string, type: string, status: "Missed" | "Declined") => {
     try {
-      // In this setup, we use the socket endpoint to send a system message
+      const callType = type === "video" ? "Video" : "Voice";
       await axios.post(`/api/socket/direct-messages?conversationId=${chatId}`, {
-        content: "📞 Missed video call",
+        content: `📞 ${callType} call ${status.toLowerCase()}`,
       });
     } catch (e) {
-      console.error("Failed to send missed call message", e);
+      console.error("Failed to send call log message", e);
     }
   };
 
   const onAccept = () => {
     if (incomingCall) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (socket) {
+        socket.emit("call:accept", { chatId: incomingCall.chatId });
+      }
       stopRingtone();
       // Redirect to the conversation with video active
-      // Since we don't have the serverId, we'll try a relative jump or a known route
-      // For now, redirecting to /me will handle the accept via query param
-      router.push(`/me?acceptCall=${incomingCall.chatId}`);
+      const { serverId, callerMemberId } = incomingCall as any;
+      
+      if (serverId && callerMemberId) {
+        const queryParam = isVideoCall ? "video=true" : "audio=true";
+        router.push(`/servers/${serverId}/conversations/${callerMemberId}?${queryParam}`);
+      }
+      
       setIncomingCall(null);
     }
   };
 
   const onDecline = () => {
     if (incomingCall) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (socket) {
+        socket.emit("call:decline", { chatId: incomingCall.chatId });
+      }
       stopRingtone();
-      sendMissedCallMessage(incomingCall.chatId);
+      sendCallLogMessage(incomingCall.chatId, incomingCall.type, "Declined");
       setIncomingCall(null);
     }
   };
 
   if (!incomingCall) return null;
+
+  const isVideoCall = incomingCall.type === "video";
+  const CallIcon = isVideoCall ? Video : Phone;
 
   return (
     <Dialog open={!!incomingCall} onOpenChange={onDecline}>
@@ -113,18 +142,26 @@ export function CallModal() {
         <DialogHeader className="pt-8 px-6">
           <div className="flex justify-center mb-6">
              <div className="relative">
-               <div className="h-24 w-24 rounded-full bg-indigo-500 flex items-center justify-center shadow-2xl shadow-indigo-500/50 relative z-10">
-                 <Video className="h-12 w-12 text-white animate-pulse" />
+               <div className={cn(
+                 "h-24 w-24 rounded-full flex items-center justify-center shadow-2xl relative z-10",
+                 isVideoCall ? "bg-indigo-500 shadow-indigo-500/50" : "bg-emerald-500 shadow-emerald-500/50"
+               )}>
+                 <CallIcon className="h-12 w-12 text-white animate-pulse" />
                </div>
-               <div className="absolute inset-0 h-24 w-24 rounded-full bg-indigo-500 animate-ping opacity-20" />
-               <div className="absolute inset-0 h-24 w-24 rounded-full bg-indigo-500 animate-ping opacity-10 [animation-delay:0.5s]" />
+               <div className={cn(
+                 "absolute inset-0 h-24 w-24 rounded-full animate-ping opacity-20",
+                 isVideoCall ? "bg-indigo-500" : "bg-emerald-500"
+               )} />
              </div>
           </div>
           <DialogTitle className="text-2xl text-center font-bold tracking-tight">
-            Incoming Call
+            Incoming {isVideoCall ? "Video" : "Voice"} Call
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-400 text-sm mt-1">
-            <span className="font-semibold text-white">{incomingCall.callerName}</span> is calling your node...
+            <span className="font-bold text-indigo-400 text-lg block my-2">
+              {incomingCall.callerName || "Unknown Peer"}
+            </span>
+            is calling your secure node...
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="bg-[#2b2d31]/50 px-6 py-6 mt-6 flex items-center justify-center gap-x-8 border-t border-white/5">

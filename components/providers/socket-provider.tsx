@@ -33,8 +33,7 @@ export const useSocket = () => {
   return useContext(SocketContext);
 };
 
-// The hardcoded local user ID (matches current-profile.ts)
-const LOCAL_USER_ID = "user_2V9vQ4D0Z7p9vQ4D0Z7p9vQ4D0Z";
+
 
 export function SocketProvider({
   children,
@@ -60,22 +59,39 @@ export function SocketProvider({
 
   useEffect(() => {
     const socketInstance = new (ClientIO as any)(
-      process.env.NEXT_PUBLIC_SITE_URL!,
+      window.location.origin,
       {
         path: "/api/socket/io",
         addTrailingSlash: false,
       }
     );
 
-    socketInstance.on("connect", () => {
+    const onConnect = async () => {
       setIsConnected(true);
+      
+      try {
+        const res = await fetch("/api/auth/me");
+        const profile = await res.json();
+        if (profile?.id) {
+          socketInstance.emit("presence:identify", profile.id);
+        }
+      } catch (err) {
+        console.error("[Socket] Failed to identify user:", err);
+      }
+    };
 
-      // Identify ourselves for presence tracking
-      socketInstance.emit("presence:identify", LOCAL_USER_ID);
-    });
+    socketInstance.on("connect", onConnect);
 
     socketInstance.on("disconnect", () => {
       setIsConnected(false);
+    });
+
+    // Sync the full list of online users on join
+    socketInstance.on("presence:sync", (userIds: string[]) => {
+      setOnlineUsers(userIds.map(id => ({
+        userId: id,
+        status: "online" as const
+      })));
     });
 
     // Listen for real-time presence updates

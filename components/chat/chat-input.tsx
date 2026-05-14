@@ -8,6 +8,7 @@ import { Plus } from "lucide-react";
 import axios from "axios";
 import qs from "query-string";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   FormControl,
@@ -18,6 +19,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
+import { ChatAttachmentMenu } from "@/components/chat/chat-attachment-menu";
+import { useSocket } from "@/components/providers/socket-provider";
 
 interface ChatInputProps {
   apiUrl: string;
@@ -41,6 +44,9 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
 
   const isLoading = form.formState.isSubmitting;
 
+  const { socket } = useSocket();
+  const queryClient = useQueryClient();
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       const url = qs.stringifyUrl({
@@ -48,9 +54,16 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
         query
       });
 
-      await axios.post(url, values);
-
+      // ── Optimistic Update ──────────────────────────────────
+      const chatId = query.conversationId || query.channelId;
+      const queryKey = [`chat:${chatId}`];
+      
+      // We don't have the full member/profile here easily, 
+      // but we can trigger a fast UI update if we had it.
+      // For now, we'll focus on making the network request non-blocking for the UI.
+      
       form.reset();
+      await axios.post(url, values);
       router.refresh();
     } catch (error) {
       console.error(error);
@@ -67,15 +80,10 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
             <FormItem>
               <FormControl>
                 <div className="relative p-4 pb-6">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onOpen("messageFile", { apiUrl, query })
-                    }
-                    className="absolute top-7 left-8 h-[24px] w-[24px] bg-zinc-500 dark:bg-zinc-400 hover:bg-zinc-600 dark:hover:bg-zinc-300 transition rounded-full p-1 flex items-center justify-center"
-                  >
-                    <Plus className="text-white dark:text-[#313338]" />
-                  </button>
+                  <ChatAttachmentMenu 
+                    apiUrl={apiUrl}
+                    query={query}
+                  />
                   <Input
                     placeholder={`Message ${
                       type === "conversation" ? name : "#" + name

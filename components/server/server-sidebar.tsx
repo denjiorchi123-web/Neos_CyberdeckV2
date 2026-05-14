@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { ServerSection } from "@/components/server/server-section";
 import { ServerChannel } from "@/components/server/server-channel";
 import { ServerMember } from "@/components/server/server-member";
+import { NetworkStatus } from "@/components/server/network-status";
 
 const iconMap: Record<string, React.ReactNode> = {
   [ChannelType.TEXT]: <Hash className="mr-2 h-4 w-4" />,
@@ -64,9 +65,11 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
     (channel) => channel.type === ChannelType.VIDEO
   );
 
-  const members = server?.members.filter(
-    (member) => member.profileId !== profile.id
-  );
+  const members = server?.members
+    .filter((member) => member.profileId !== profile.id)
+    .filter((member, index, self) => 
+      index === self.findIndex((m) => m.profile.name === member.profile.name)
+    );
 
   if (!server) return redirect("/");
 
@@ -77,6 +80,7 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
   return (
     <div className="flex flex-col h-full text-primary w-full dark:bg-[#2b2d31] bg-[#f2f3f5]">
       <ServerHeader server={server} role={role} />
+      <NetworkStatus />
       <ScrollArea className="flex-1 px-3">
         <div className="mt-2">
           <ServerSearch

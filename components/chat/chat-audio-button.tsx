@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Video, VideoOff } from "lucide-react";
+import { Phone, PhoneOff } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import qs from "query-string";
 import axios from "axios";
@@ -9,7 +9,7 @@ import { useSocket } from "@/components/providers/socket-provider";
 
 import { ActionTooltip } from "@/components/action-tooltip";
 
-interface ChatVideoButtonProps {
+interface ChatAudioButtonProps {
   chatId?: string;
   name?: string;
   serverId?: string;
@@ -18,40 +18,39 @@ interface ChatVideoButtonProps {
   currentProfileName?: string;
 }
 
-export function ChatVideoButton({ 
+export function ChatAudioButton({ 
   chatId, 
   name,
   serverId,
   otherMemberId,
   callerMemberId,
   currentProfileName
-}: ChatVideoButtonProps) {
+}: ChatAudioButtonProps) {
   const { socket } = useSocket();
   const searchParams = useSearchParams();
   const pathName = usePathname();
   const router = useRouter();
 
-  const isVideo = searchParams?.get("video");
+  const isAudio = searchParams?.get("audio") && !searchParams?.get("video");
 
-  const Icon = isVideo ? VideoOff : Video;
-  const tooltipLabel = isVideo ? "End video call" : "Start video call";
+  const Icon = isAudio ? PhoneOff : Phone;
+  const tooltipLabel = isAudio ? "End audio call" : "Start audio call";
 
   const onClick = () => {
-    const isStarting = !isVideo;
+    const isStarting = !isAudio;
     
-    // If we are starting a call, notify the other peer via Socket.io
     if (isStarting && socket && chatId) {
       socket.emit("call:start", {
         chatId,
         callerName: currentProfileName || "Someone",
-        type: "video",
+        type: "audio",
         serverId,
-        callerMemberId, // This is the ID the recipient needs to use to reply
+        callerMemberId, // Correctly pass the ID for recipient to reply to
       });
 
       // Log the start of the call in the chat history
       axios.post(`/api/socket/direct-messages?conversationId=${chatId}`, {
-        content: "📞 Video call started",
+        content: "📞 Voice call started",
       }).catch(() => {});
     }
 
@@ -59,7 +58,8 @@ export function ChatVideoButton({
       {
         url: pathName || "",
         query: {
-          video: isStarting ? true : undefined
+          audio: isStarting ? true : undefined,
+          video: undefined // Ensure video is off
         }
       },
       { skipNull: true }
@@ -76,7 +76,7 @@ export function ChatVideoButton({
         onClick={onClick}
         className="hover:opacity-75 transition mr-4"
       >
-        <Icon className="h-6 w-6 text-zinc-500 dark:text-zinc-400" />
+        <Icon className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
       </button>
     </ActionTooltip>
   );

@@ -1,22 +1,36 @@
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
+import { redis } from "@/lib/redis";
 
-/**
- * Retrieves the current user profile based on a cookie.
- */
 export const currentProfile = async () => {
   const cookieStore = cookies();
   const userId = cookieStore.get("cyberdeck-user-id")?.value;
 
-  if (!userId) {
-    return null;
-  }
-  
-  const profile = await db.profile.findUnique({
-    where: { userId }
-  });
+  if (!userId) return null;
 
-  return profile;
+  try {
+    // 1. Try Redis cache first
+    const cachedProfile = await redis.get(`profile:${userId}`);
+    if (cachedProfile) {
+      return JSON.parse(cachedProfile);
+    }
+
+    // 2. Fallback to Database
+    const profile = await db.profile.findUnique({
+      where: { userId }
+    });
+
+    // 3. Cache the result for 1 hour
+    if (profile) {
+      await redis.set(`profile:${userId}`, JSON.stringify(profile), "EX", 3600);
+    }
+
+    return profile;
+  } catch (error) {
+    console.error("[CURRENT_PROFILE_REDIS_ERROR]", error);
+    // Silent failover to DB if Redis is down
+    return await db.profile.findUnique({ where: { userId } });
+  }
 };
 
 /**

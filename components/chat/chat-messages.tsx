@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Fragment, useRef, ElementRef } from "react";
+import React, { Fragment, useRef, ElementRef, useEffect } from "react";
 import { Member, Message, Profile } from "@prisma/client";
 import { Loader2, ServerCrash } from "lucide-react";
 import { format } from "date-fns";
@@ -10,6 +10,8 @@ import { ChatItem } from "@/components/chat/chat-item";
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
+import { useChatRead } from "@/hooks/use-chat-read";
+import { useSocket } from "@/components/providers/socket-provider";
 
 interface ChatMessagesProps {
   name: string;
@@ -46,6 +48,7 @@ export function ChatMessages({
   const addKey = `chat:${chatId}:messages`;
   const updateKey = `chat:${chatId}:messages:update`;
 
+  const { socket } = useSocket();
   const chatRef = useRef<ElementRef<"div">>(null);
   const bottomRef = useRef<ElementRef<"div">>(null);
 
@@ -61,6 +64,29 @@ export function ChatMessages({
     addKey,
     updateKey
   });
+  useChatRead({
+    chatId,
+    apiUrl: "/api/socket/direct-messages",
+    isEnabled: type === "conversation"
+  });
+  // Automatically send 'READ' status when messages are loaded and visible
+  useEffect(() => {
+    if (!socket || !data?.pages?.[0]?.items?.length) return;
+
+    const unreadMessageIds = data.pages
+      .flatMap(page => page.items)
+      .filter(item => item.memberId !== member.id && item.status !== "READ")
+      .map(item => item.id);
+
+    if (unreadMessageIds.length > 0) {
+      socket.emit("message:read", {
+        messageIds: unreadMessageIds,
+        type: type === "channel" ? "channel" : "direct",
+        chatId: chatId
+      });
+    }
+  }, [data, socket, member.id, type, chatId]);
+
   useChatScroll({
     chatRef,
     bottomRef,
@@ -92,10 +118,32 @@ export function ChatMessages({
   return (
     <div
       ref={chatRef}
-      className="flex-1 flex flex-col py-4 overflow-y-auto"
+      className="flex-1 flex flex-col-reverse py-4 overflow-y-auto"
     >
-      {!hasNextPage && <div className="flex-1" />}
-      {!hasNextPage && <ChatWelcome name={name} type={type} />}
+      <div ref={bottomRef} />
+      {data?.pages.map((group, index) => (
+        <Fragment key={index}>
+          {group?.items.map((message: MessagesWithMemberWithProfile) => (
+            <ChatItem
+              key={message.id}
+              currentMember={member}
+              member={message.member}
+              id={message.id}
+              content={message.content}
+              fileUrl={message.fileUrl}
+              deleted={message.deleted}
+              timestamp={format(
+                new Date(message.createdAt),
+                DATE_FORMAT
+              )}
+              isUpdated={message.updatedAt !== message.createdAt}
+              socketQuery={socketQuery}
+              socketUrl={socketUrl}
+              status={(message as any).status}
+            />
+          ))}
+        </Fragment>
+      ))}
       {hasNextPage && (
         <div className="flex justify-center">
           {isFetchingNextPage ? (
@@ -110,32 +158,7 @@ export function ChatMessages({
           )}
         </div>
       )}
-      <div className="flex flex-col-reverse mt-auto">
-        {data?.pages.map((group, index) => (
-          <Fragment key={index}>
-            {group?.items.map((message: MessagesWithMemberWithProfile) => (
-              <ChatItem
-                key={message.id}
-                currentMember={member}
-                member={message.member}
-                id={message.id}
-                content={message.content}
-                fileUrl={message.fileUrl}
-                deleted={message.deleted}
-                timestamp={format(
-                  new Date(message.createdAt),
-                  DATE_FORMAT
-                )}
-                isUpdated={message.updatedAt !== message.createdAt}
-                socketQuery={socketQuery}
-                socketUrl={socketUrl}
-                status={(message as any).status}
-              />
-            ))}
-          </Fragment>
-        ))}
-      </div>
-      <div ref={bottomRef} />
+      {!hasNextPage && <ChatWelcome name={name} type={type} />}
     </div>
   );
 }
