@@ -4,10 +4,11 @@ import React from "react";
 import { Video, VideoOff } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import qs from "query-string";
-import axios from "axios";
-import { useSocket } from "@/components/providers/socket-provider";
+import { v4 as uuidv4 } from "uuid";
+import { useEffect, useState, useTransition } from "react";
 
 import { ActionTooltip } from "@/components/action-tooltip";
+import { isWebRTCSupported } from "@/lib/webrtc-support";
 
 interface ChatVideoButtonProps {
   chatId?: string;
@@ -26,55 +27,53 @@ export function ChatVideoButton({
   callerMemberId,
   currentProfileName
 }: ChatVideoButtonProps) {
-  const { socket } = useSocket();
   const searchParams = useSearchParams();
   const pathName = usePathname();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  // Scenario #12 — disable the button on browsers without WebRTC.
+  const [supported, setSupported] = useState(true);
+  useEffect(() => { setSupported(isWebRTCSupported()); }, []);
 
   const isVideo = searchParams?.get("video");
 
   const Icon = isVideo ? VideoOff : Video;
-  const tooltipLabel = isVideo ? "End video call" : "Start video call";
+  const tooltipLabel = !supported
+    ? "Video calls not supported in this browser"
+    : (isVideo ? "End video call" : "Start video call");
 
-  const onClick = () => {
+  const onClick = async () => {
     const isStarting = !isVideo;
-    
-    // If we are starting a call, notify the other peer via Socket.io
-    if (isStarting && socket && chatId) {
-      socket.emit("call:start", {
-        chatId,
-        callerName: currentProfileName || "Someone",
-        type: "video",
-        serverId,
-        callerMemberId, // This is the ID the recipient needs to use to reply
-      });
 
-      // Log the start of the call in the chat history
-      axios.post(`/api/socket/direct-messages?conversationId=${chatId}`, {
-        content: "📞 Video call started",
-      }).catch(() => {});
-    }
+    // Ending the call: MediaRoom's unmount cleanup is the single canonical place that
+    // emits call:end (it has the callId + targetUserId needed for per-user routing and
+    // for the recipient's dead-call registry). Just navigate; React will unmount it.
 
     const url = qs.stringifyUrl(
       {
         url: pathName || "",
         query: {
-          video: isStarting ? true : undefined
+          video: isStarting ? true : undefined,
+          start: isStarting ? true : undefined,
+          callId: isStarting ? uuidv4() : undefined
         }
       },
       { skipNull: true }
     );
 
-    setTimeout(() => {
+    startTransition(() => {
       router.push(url);
-    }, 500);
+      router.refresh();
+    });
   };
 
   return (
     <ActionTooltip side="bottom" label={tooltipLabel}>
       <button
         onClick={onClick}
-        className="hover:opacity-75 transition mr-4"
+        disabled={isPending || !supported}
+        className="hover:opacity-75 transition mr-4 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <Icon className="h-6 w-6 text-zinc-500 dark:text-zinc-400" />
       </button>

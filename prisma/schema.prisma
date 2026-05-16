@@ -98,6 +98,7 @@ model Message {
   fileName     String?
   mimeType     String?
   thumbnailUrl String?
+  mediaKey     String?  // AES-GCM key (hex) for client-side E2E media decryption
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -166,6 +167,7 @@ model DirectMessage {
   fileName     String?
   mimeType     String?
   thumbnailUrl String?
+  mediaKey     String?  // AES-GCM key (hex) for client-side E2E media decryption
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -201,18 +203,32 @@ model CallHistory {
   channelId String? // Optional if it was a DM call
   roomId    String
   type      String @default("audio") // audio, video
-  
-  status    String @default("ended")  // active, ended, missed, rejected, busy
+
+  status    String @default("ended")  // active, ended, missed, rejected, busy, offline, dropped, failed
   duration  Int    @default(0)        // duration in seconds
 
   startedAt DateTime @default(now())
   endedAt   DateTime?
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([callerId])
   @@index([calleeId])
+}
+
+// Periodic WebRTC quality samples written by MediaRoom (scenario #14).
+// Caller writes one row every 30s while the call is active.
+model CallQualityLog {
+  id             String   @id @default(uuid())
+  callId         String
+  packetLoss     Float    @default(0)   // percent (0-100)
+  jitter         Float    @default(0)   // milliseconds
+  roundTripTime  Float    @default(0)   // milliseconds
+  timestamp      DateTime @default(now())
+
+  @@index([callId])
+  @@index([timestamp])
 }
 
 model MessageEdit {

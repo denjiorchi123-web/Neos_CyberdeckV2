@@ -3,7 +3,6 @@ import { NextApiRequest } from "next";
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
-import { redis } from "@/lib/redis";
 
 export default async function handler(
   req: NextApiRequest,
@@ -14,7 +13,7 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { content, fileUrl } = req.body;
+    const { content, fileUrl, fileName, fileSize, mimeType, thumbnailUrl, mediaKey, type } = req.body;
     const { serverId, channelId } = req.query;
 
     if (!profile) return res.status(401).json({ error: "Unauthorized" });
@@ -65,7 +64,13 @@ export default async function handler(
     const message = await db.message.create({
       data: {
         content,
-        fileUrl,
+        fileUrl:      fileUrl      ?? undefined,
+        fileName:     fileName     ?? undefined,
+        fileSize:     fileSize     ? Number(fileSize) : undefined,
+        mimeType:     mimeType     ?? undefined,
+        thumbnailUrl: thumbnailUrl ?? undefined,
+        mediaKey:     mediaKey     ?? undefined,
+        type:         type         ?? "TEXT",
         channelId: channelId as string,
         memberId: member.id
       },
@@ -77,15 +82,6 @@ export default async function handler(
         }
       }
     });
-
-    // ── Redis Caching ──────────────────────────────────────────
-    const redisKey = `cache:chat:${channelId}:messages`;
-    try {
-      await redis.lpush(redisKey, JSON.stringify(message));
-      await redis.ltrim(redisKey, 0, 99); // Keep last 100 messages
-    } catch (redisErr) {
-      console.error("[Redis Cache Error]", redisErr);
-    }
 
     const channelKey = `chat:${channelId}:messages`;
 

@@ -7,10 +7,6 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatInput } from "@/components/chat/chat-input";
 import { MediaRoom } from "@/components/media-room";
-import { useCall } from "@/hooks/use-call";
-import { IncomingCallOverlay } from "@/components/incoming-call-overlay";
-import { OutgoingCallOverlay } from "@/components/outgoing-call-overlay";
-import { cn } from "@/lib/utils";
 
 interface ChatPageContentProps {
   profile: Profile;
@@ -40,8 +36,8 @@ export const ChatPageContent = ({
   const searchParams = useSearchParams();
   const video = searchParams?.get("video") === "true";
   const audio = searchParams?.get("audio") === "true";
-  
-  const { status } = useCall();
+  const isInitiator = searchParams?.get("start") === "true";
+  const callId = searchParams?.get("callId");
 
   return (
     <div className="flex flex-col h-full bg-[#313338] relative overflow-hidden">
@@ -49,18 +45,22 @@ export const ChatPageContent = ({
         name={name}
         serverId={member.serverId}
         type={type}
+        chatId={chatId}
+        currentProfileName={profile.name}
+        callerMemberId={member.id}
       />
-      
-      {/* Call Overlays */}
-      <IncomingCallOverlay />
-      <OutgoingCallOverlay />
 
       {(video || audio) ? (
         <div className="flex-1 min-h-0">
-           <MediaRoom
+          <MediaRoom
             chatId={chatId}
             video={video}
             audio={audio}
+            currentProfileName={profile.name}
+            isInitiator={isInitiator}
+            serverId={member.serverId}
+            callerMemberId={member.id}
+            callId={callId || undefined}
           />
         </div>
       ) : (

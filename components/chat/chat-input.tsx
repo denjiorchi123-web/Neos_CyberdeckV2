@@ -1,14 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus } from "lucide-react";
 import axios from "axios";
 import qs from "query-string";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { v4 as uuidv4 } from "uuid";
 
 import {
   FormControl,
@@ -17,10 +16,10 @@ import {
   FormItem
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { ChatAttachmentMenu } from "@/components/chat/chat-attachment-menu";
 import { useSocket } from "@/components/providers/socket-provider";
+import { enqueue, drainQueue, QueuedMessage } from "@/lib/offline-queue";
 
 interface ChatInputProps {
   apiUrl: string;
@@ -34,8 +33,9 @@ const formSchema = z.object({
 });
 
 export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
-  const { onOpen } = useModal();
   const router = useRouter();
+  const { socket, isConnected } = useSocket() as { socket: any; isConnected: boolean };
+  const draining = useRef(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -44,29 +44,90 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
 
   const isLoading = form.formState.isSubmitting;
 
-  const { socket } = useSocket();
-  const queryClient = useQueryClient();
+  // ── Offline queue drain ────────────────────────────────────────────────────
+  // Drain the IndexedDB outbox whenever the socket (re)connects.
+  useEffect(() => {
+    if (!isConnected || draining.current) return;
+    if (typeof window === "undefined") return;
 
+    draining.current = true;
+    drainQueue(async (msg: QueuedMessage) => {
+      try {
+        const url = qs.stringifyUrl({ url: msg.apiUrl, query: msg.query });
+        await axios.post(url, {
+          content:      msg.content,
+          fileUrl:      msg.fileUrl,
+          fileName:     msg.fileName,
+          fileSize:     msg.fileSize,
+          mimeType:     msg.mimeType,
+          thumbnailUrl: msg.thumbnailUrl,
+          mediaKey:     msg.mediaKey,
+          type:         msg.type,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }).then(({ sent, failed }) => {
+      if (sent > 0) {
+        console.log(`[ChatInput] Offline queue drained: ${sent} sent, ${failed} deferred`);
+        router.refresh();
+      }
+    }).finally(() => { draining.current = false; });
+  }, [isConnected, router]);
+
+  // ── Service Worker registration ────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+    // Listen for DRAIN_OUTBOX message from SW background sync
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === "DRAIN_OUTBOX" && isConnected) {
+        draining.current = false; // allow re-drain
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+  }, [isConnected]);
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      const url = qs.stringifyUrl({
-        url: apiUrl,
-        query
-      });
-
-      // ── Optimistic Update ──────────────────────────────────
-      const chatId = query.conversationId || query.channelId;
-      const queryKey = [`chat:${chatId}`];
-      
-      // We don't have the full member/profile here easily, 
-      // but we can trigger a fast UI update if we had it.
-      // For now, we'll focus on making the network request non-blocking for the UI.
-      
+      const url = qs.stringifyUrl({ url: apiUrl, query });
       form.reset();
-      await axios.post(url, values);
+
+      if (!isConnected) {
+        // Server is down — queue the message for later delivery
+        await enqueue({
+          id:         uuidv4(),
+          apiUrl,
+          query,
+          content:    values.content,
+          queuedAt:   Date.now(),
+          retryCount: 0,
+        });
+        // Register background sync so the browser retries when online
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
+        }
+        return;
+      }
+
+      await axios.post(url, { content: values.content });
       router.refresh();
     } catch (error) {
-      console.error(error);
+      console.error("[ChatInput] send failed:", error);
+      // Fallback: queue even on unexpected send error
+      await enqueue({
+        id:         uuidv4(),
+        apiUrl,
+        query,
+        content:    values.content,
+        queuedAt:   Date.now(),
+        retryCount: 0,
+      });
     }
   };
 
@@ -80,14 +141,11 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
             <FormItem>
               <FormControl>
                 <div className="relative p-4 pb-6">
-                  <ChatAttachmentMenu 
-                    apiUrl={apiUrl}
-                    query={query}
-                  />
+                  <ChatAttachmentMenu apiUrl={apiUrl} query={query} />
                   <Input
-                    placeholder={`Message ${
-                      type === "conversation" ? name : "#" + name
-                    }`}
+                    placeholder={`${
+                      type === "conversation" ? `Message ${name}` : `Message #${name}`
+                    }${!isConnected ? " (queued — server offline)" : ""}`}
                     disabled={isLoading}
                     className="px-14 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200"
                     {...field}

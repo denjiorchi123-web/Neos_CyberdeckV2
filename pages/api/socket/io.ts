@@ -13,6 +13,36 @@ export const config = {
   }
 };
 
+// Centralized CallHistory write so every termination path (offline, busy, rejected,
+// missed, ended, dropped) records consistently. Failures are logged and swallowed —
+// a DB outage must not crash signaling.
+async function logCallHistory(opts: {
+  callerId: string;
+  calleeId: string;
+  roomId: string;
+  type: string;
+  status: string;
+  duration: number;
+  startedAt?: Date;
+}) {
+  try {
+    await (db as any).callHistory.create({
+      data: {
+        callerId: opts.callerId,
+        calleeId: opts.calleeId,
+        roomId: opts.roomId,
+        type: opts.type,
+        status: opts.status,
+        duration: opts.duration,
+        startedAt: opts.startedAt ?? new Date(),
+        endedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error("[CallHistory] write failed:", err);
+  }
+}
+
 const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
   if (!res.socket.server.io) {
     const path = "/api/socket/io";
@@ -45,6 +75,9 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       socket.on("presence:identify", async (userId: string) => {
         if (!userId) return;
         socket.data.userId = userId;
+
+        // Join a per-user room so call signaling can target this user across devices/tabs
+        socket.join(`user:${userId}`);
 
         try {
           // Track online user in Redis sets
@@ -116,7 +149,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
 
       // ── WebRTC Signaling ───────────────────────────────────
       // Join a media room
-      socket.on("webrtc:join", async (data: { roomId: string; type?: string }) => {
+      socket.on("webrtc:join", async (data: { roomId: string; type?: string; callId?: string }) => {
         const roomId = typeof data === "string" ? data : data.roomId;
         const callType = typeof data === "string" ? "audio" : (data.type || "audio");
 
@@ -130,10 +163,23 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
           // Store call state in Redis for cross-node visibility
           await redis.sadd(`call:${roomId}`, socket.id);
           await redis.sadd(`call:${roomId}:participants`, socket.id); // Track total unique participants
-          await redis.hset(`call:${roomId}:meta`, {
+          if (socket.data.userId) {
+            // Track participating user IDs so cleanupCallRoom can target them directly
+            await redis.sadd(`call:${roomId}:users`, socket.data.userId);
+            // Scenario #4 (busy detection): mark this user as having an active call.
+            // 10-minute TTL is a safety net in case cleanup ever fails; webrtc:leave /
+            // disconnect handlers clear it explicitly under normal flow.
+            await redis.set(`user:${socket.data.userId}:activeCall`, roomId, "EX", 600);
+          }
+
+          const metaToSet: any = {
             type: callType,
             startTime: Date.now().toString(),
-          });
+          };
+          if (typeof data !== "string" && data.callId) {
+            metaToSet.callId = data.callId;
+          }
+          await redis.hset(`call:${roomId}:meta`, metaToSet);
         } catch (err) {
           console.error("[WebRTC] Redis error on join:", err);
         }
@@ -171,21 +217,120 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       });
 
       // ── Call Notifications (Ringing) ───────────────────────
-      socket.on("call:start", (data: { chatId: string; callerName: string; type: string }) => {
-        // Broadcast to everyone (in this local mesh, we rely on the client to filter)
-        socket.broadcast.emit("call:start", data);
+      // Route to a specific user-room when targetUserId is supplied (1:1 DM calls).
+      // Fall back to the chatId room for group/channel calls so existing members still get notified.
+      const routeCallEvent = (event: string, data: { chatId: string; targetUserId?: string }) => {
+        if (data.targetUserId) {
+          io.to(`user:${data.targetUserId}`).emit(event, data);
+        } else {
+          io.to(data.chatId).emit(event, data);
+        }
+      };
+
+      // Common meta-write helper so the cleanup path always sees consistent fields
+      const writeCallMeta = async (chatId: string, fields: Record<string, string>) => {
+        try {
+          await redis.hset(`call:${chatId}:meta`, fields);
+        } catch (err) {
+          console.error("[WebRTC] Redis error writing call meta:", err);
+        }
+      };
+
+      socket.on("call:start", async (data: { chatId: string; callId: string; callerName: string; callerUserId?: string; targetUserId?: string; type: string }) => {
+        // Scenario #1 (offline) and #4 (busy) — short-circuit before the recipient ever rings.
+        // We still write meta so cleanupCallRoom records the right CallHistory status
+        // when the caller's MediaRoom tears down in response to call:offline / call:busy.
+        if (data.targetUserId) {
+          const startMeta: Record<string, string> = {
+            callerUserId: data.callerUserId ?? "",
+            targetUserId: data.targetUserId,
+            callId: data.callId ?? "",
+            type: data.type ?? "audio",
+            startTime: String(Date.now()),
+          };
+
+          // #1: offline check
+          const isOnline = await redis.sismember("presence:online", data.targetUserId);
+          if (!isOnline) {
+            await writeCallMeta(data.chatId, { ...startMeta, status: "offline" });
+            if (data.callerUserId) {
+              io.to(`user:${data.callerUserId}`).emit("call:offline", {
+                chatId: data.chatId,
+                callId: data.callId,
+                targetUserId: data.targetUserId,
+              });
+            }
+            return;
+          }
+
+          // #4: busy check — target already has an active call in another room
+          const targetActiveCall = await redis.get(`user:${data.targetUserId}:activeCall`);
+          if (targetActiveCall && targetActiveCall !== data.chatId) {
+            await writeCallMeta(data.chatId, { ...startMeta, status: "busy" });
+            if (data.callerUserId) {
+              io.to(`user:${data.callerUserId}`).emit("call:busy", {
+                chatId: data.chatId,
+                callId: data.callId,
+                targetUserId: data.targetUserId,
+              });
+            }
+            return;
+          }
+
+          await writeCallMeta(data.chatId, startMeta);
+        } else if (data.callerUserId) {
+          // Group/channel call: still seed meta so cleanup logs sensibly.
+          await writeCallMeta(data.chatId, {
+            callerUserId: data.callerUserId,
+            callId: data.callId ?? "",
+            type: data.type ?? "audio",
+            startTime: String(Date.now()),
+          });
+        }
+
+        routeCallEvent("call:start", data);
       });
 
-      socket.on("call:decline", (data: { chatId: string }) => {
-        socket.broadcast.emit("call:decline", data);
+      // Scenario #2 (rejected): the client just declined — record the reason for the
+      // cleanup logger so the CallHistory row has status="rejected" (not "missed").
+      socket.on("call:decline", async (data: { chatId: string; callId?: string; targetUserId?: string }) => {
+        if (data.chatId) {
+          await writeCallMeta(data.chatId, { status: "rejected" });
+        }
+        routeCallEvent("call:decline", data);
       });
 
-      socket.on("call:accept", (data: { chatId: string }) => {
-        socket.broadcast.emit("call:accept", data);
+      socket.on("call:accept", (data: { chatId: string; callId?: string; targetUserId?: string }) => {
+        routeCallEvent("call:accept", data);
       });
 
-      socket.on("call:end", (data: { chatId: string }) => {
-        socket.broadcast.emit("call:end", data);
+      // Scenario #3 (no answer): caller's 30s timer fired. Tell the callee to stop ringing
+      // and mark the call as missed for the DB.
+      socket.on("call:timeout", async (data: { chatId: string; callId?: string; targetUserId?: string }) => {
+        if (data.chatId) {
+          await writeCallMeta(data.chatId, { status: "missed" });
+        }
+        // Notify the callee so their ring UI dismisses immediately.
+        routeCallEvent("call:timeout", data);
+      });
+
+      // Scenario #8 (dropped): the client detected ICE failure and is ending. The `reason`
+      // field upgrades the cleanup logger to status="dropped" instead of the default "ended".
+      socket.on("call:end", async (data: { chatId: string; callId?: string; targetUserId?: string; reason?: string }) => {
+        if (data.chatId && data.reason) {
+          await writeCallMeta(data.chatId, { status: data.reason });
+        }
+        routeCallEvent("call:end", data);
+      });
+
+      // Client-side busy: callee's CallProvider detected a second incoming call while
+      // already ringing. Echo back to the caller so the server's "busy" path is consistent
+      // with the client's, and record the DB status.
+      socket.on("call:busy", async (data: { chatId: string; callId?: string; targetUserId?: string }) => {
+        if (data.chatId) {
+          await writeCallMeta(data.chatId, { status: "busy" });
+        }
+        routeCallEvent("call:busy", data);
       });
 
       // Leave media room
@@ -195,7 +340,23 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
         });
         socket.leave(roomId);
 
-        await cleanupCallRoom(roomId, socket.id);
+        // Clear the busy marker for this user if it points at this room.
+        if (socket.data.userId) {
+          try {
+            const currentActive = await redis.get(`user:${socket.data.userId}:activeCall`);
+            if (currentActive === roomId) {
+              await redis.del(`user:${socket.data.userId}:activeCall`);
+            }
+          } catch (err) {
+            console.error("[WebRTC] Redis error clearing activeCall:", err);
+          }
+        }
+
+        await cleanupCallRoom(io, roomId, socket.id);
+        // Prevent the disconnect handler from re-running cleanup for a room we've already left
+        if (socket.data.mediaRoom === roomId) {
+          socket.data.mediaRoom = undefined;
+        }
       });
 
       // ── Disconnect Handler ─────────────────────────────────
@@ -261,7 +422,18 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
           socket.to(roomId).emit("webrtc:peer-left", {
             peerId: socket.id,
           });
-          await cleanupCallRoom(roomId, socket.id);
+          if (socket.data.userId) {
+            try {
+              const currentActive = await redis.get(`user:${socket.data.userId}:activeCall`);
+              if (currentActive === roomId) {
+                await redis.del(`user:${socket.data.userId}:activeCall`);
+              }
+            } catch (err) {
+              console.error("[WebRTC] Redis error clearing activeCall on disconnect:", err);
+            }
+          }
+          await cleanupCallRoom(io, roomId, socket.id);
+          socket.data.mediaRoom = undefined;
         }
       });
     });
@@ -276,45 +448,82 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
  * Remove socket from a call room in Redis.
  * When the room becomes empty, log the call to SQLite CallHistory.
  */
-async function cleanupCallRoom(roomId: string, socketId: string) {
+async function cleanupCallRoom(io: ServerIO, roomId: string, socketId: string) {
   try {
     await redis.srem(`call:${roomId}`, socketId);
     const remaining = await redis.scard(`call:${roomId}`);
 
     if (remaining === 0) {
-      // Room is empty → log completed call to SQLite
-      const meta = await redis.hgetall(`call:${roomId}:meta`);
-      const participantCount = await redis.scard(`call:${roomId}:participants`);
-      
-      // Clean up Redis
-      await redis.del(`call:${roomId}`, `call:${roomId}:meta`, `call:${roomId}:participants`);
-
-      if (meta?.startTime) {
-        const startTime = parseInt(meta.startTime, 10);
-        const duration = Math.round((Date.now() - startTime) / 1000);
-        
-        // If only one person was ever in the room, it's a missed call
-        const status = participantCount > 1 ? "ended" : "missed";
-
-        try {
-          await (db as any).callHistory.create({
-            data: {
-              callerId: "system", // In a real app, we'd store the actual caller ID in meta
-              calleeId: "system",
-              channelId: roomId,
-              type: meta.type || "audio",
-              roomId,
-              duration: status === "missed" ? 0 : duration,
-              status,
-              startedAt: new Date(startTime),
-              endedAt: new Date(),
-            },
-          });
-          console.log(`[CallHistory] Logged ${status} call for ${roomId}`);
-        } catch (dbErr) {
-          console.error("[CallHistory] DB write error:", dbErr);
-        }
+      // Guard against double-fire (webrtc:leave + disconnect): if meta is already gone,
+      // another cleanup pass already handled this room.
+      const metaExists = await redis.exists(`call:${roomId}:meta`);
+      if (!metaExists) {
+        return;
       }
+
+      const meta = await redis.hgetall(`call:${roomId}:meta`);
+      console.log(`[WebRTC:Server] Room ${roomId} is now empty. Sending targeted termination signal.`);
+
+      // FAIL-SAFE: notify the call's participants (not every connected socket).
+      const endPayload = { chatId: roomId, callId: meta?.callId };
+      if (meta?.callerUserId) {
+        io.to(`user:${meta.callerUserId}`).emit("call:end", endPayload);
+      }
+      if (meta?.targetUserId) {
+        io.to(`user:${meta.targetUserId}`).emit("call:end", endPayload);
+      }
+      if (!meta?.callerUserId && !meta?.targetUserId) {
+        io.to(roomId).emit("call:end", endPayload);
+      }
+
+      const participantCount = await redis.scard(`call:${roomId}:participants`);
+
+      // Decide the final CallHistory status. Honor any explicit status the signaling
+      // handlers wrote (rejected / missed / busy / offline / dropped); fall back to the
+      // legacy heuristic only when nothing more specific is known.
+      let status: string;
+      let duration = 0;
+      const startTime = meta?.startTime ? parseInt(meta.startTime, 10) : null;
+      const realDuration = startTime ? Math.round((Date.now() - startTime) / 1000) : 0;
+
+      if (meta?.status === "rejected" || meta?.status === "missed" ||
+          meta?.status === "busy" || meta?.status === "offline") {
+        status = meta.status;
+        duration = 0;
+      } else if (meta?.status === "dropped") {
+        status = "dropped";
+        duration = realDuration;
+      } else if (meta?.status === "ended") {
+        status = "ended";
+        duration = realDuration;
+      } else {
+        // Heuristic fallback: nobody recorded a reason. If two parties were ever in the
+        // room together, treat as ended; otherwise missed.
+        status = participantCount > 1 ? "ended" : "missed";
+        duration = status === "ended" ? realDuration : 0;
+      }
+
+      // Write CallHistory BEFORE deleting meta so we can still read participants/type.
+      if (meta?.callerUserId && meta?.targetUserId) {
+        await logCallHistory({
+          callerId: meta.callerUserId,
+          calleeId: meta.targetUserId,
+          roomId,
+          type: meta.type || "audio",
+          status,
+          duration,
+          startedAt: startTime ? new Date(startTime) : new Date(),
+        });
+        console.log(`[CallHistory] Logged ${status} call for ${roomId} (duration=${duration}s)`);
+      }
+
+      // Clean up Redis
+      await redis.del(
+        `call:${roomId}`,
+        `call:${roomId}:meta`,
+        `call:${roomId}:participants`,
+        `call:${roomId}:users`
+      );
     }
   } catch (err) {
     console.error("[WebRTC] cleanupCallRoom error:", err);

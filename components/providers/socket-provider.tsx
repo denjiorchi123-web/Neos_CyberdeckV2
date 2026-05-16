@@ -63,12 +63,22 @@ export function SocketProvider({
       {
         path: "/api/socket/io",
         addTrailingSlash: false,
+        // Scenario #9: bounded reconnection with explicit 1s / 2s / 4s backoff.
+        // socket.io's default is infinite attempts with internal backoff; we want a
+        // bounded retry so a permanently-down server surfaces a UX error instead of
+        // silently retrying forever, and the curve matches the spec requested.
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 4000,
+        randomizationFactor: 0,
+        timeout: 10000,
       }
     );
 
     const onConnect = async () => {
       setIsConnected(true);
-      
+
       try {
         const res = await fetch("/api/auth/me");
         const profile = await res.json();
@@ -82,8 +92,17 @@ export function SocketProvider({
 
     socketInstance.on("connect", onConnect);
 
-    socketInstance.on("disconnect", () => {
+    socketInstance.on("disconnect", (reason: string) => {
+      console.log("[Socket] disconnected:", reason);
       setIsConnected(false);
+    });
+
+    // Surface reconnection lifecycle for the UI (MediaRoom uses these to show a banner)
+    socketInstance.on("reconnect_attempt", (attempt: number) => {
+      console.log(`[Socket] reconnect attempt ${attempt}/3`);
+    });
+    socketInstance.on("reconnect_failed", () => {
+      console.error("[Socket] reconnection failed after 3 attempts");
     });
 
     // Sync the full list of online users on join

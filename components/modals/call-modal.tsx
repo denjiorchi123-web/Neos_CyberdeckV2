@@ -1,77 +1,128 @@
 "use client";
 
+// NOTE: CallModal is NOT registered in ModalProvider and is never mounted.
+// Incoming calls are handled by CallProvider + IncomingCallOverlay (app/layout.tsx).
+// This file is kept only as a reference — do not re-enable it without removing
+// CallProvider's duplicate call:start listener first.
+
 import React, { useEffect, useState, useRef } from "react";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useSocket } from "@/components/providers/socket-provider";
 import { cn } from "@/lib/utils";
-
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { IncomingRingtone } from "@/lib/audio-tones";
 
 export function CallModal() {
   const { socket } = useSocket();
   const router = useRouter();
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
   const timeoutRef = useRef<any>(null);
+  const shouldPlayRef = useRef(false);
+  const endedCallIdsRef = useRef<Set<string>>(new Set());
   const [incomingCall, setIncomingCall] = useState<{
     chatId: string;
+    callId: string;
     callerName: string;
+    callerUserId?: string;
     type: string;
   } | null>(null);
+
+  // Mark a callId as ended so a late-arriving call:start can't re-ring; auto-expire so
+  // the set doesn't grow unboundedly.
+  const markCallEnded = (id: string | undefined) => {
+    if (!id) return;
+    endedCallIdsRef.current.add(id);
+    setTimeout(() => endedCallIdsRef.current.delete(id), 60000);
+  };
 
   useEffect(() => {
     if (!socket) return;
 
     socket.on("call:start", (data: any) => {
-      setIncomingCall(data);
+      console.log("[CallModal] Received call:start", data);
       
-      // Play a ringtone
+      // RACE CONDITION CHECK: If we already received an 'end' for this specific call attempt, ignore the start.
+      if (data.callId && endedCallIdsRef.current.has(data.callId)) {
+        console.log("[CallModal] Ignoring call:start because callId is already marked as ended:", data.callId);
+        return;
+      }
+
+      setIncomingCall(data);
+      shouldPlayRef.current = true;
+      
+      // Play a ringtone. Use a LOCAL asset — this device runs on an air-gapped LAN and
+      // a CDN URL would fail silently with no audible ring at all.
       try {
         if (!ringtoneRef.current) {
-          ringtoneRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+          ringtoneRef.current = new Audio("/sounds/ringtone.mp3");
           ringtoneRef.current.loop = true;
         }
-        ringtoneRef.current.play().catch(() => {});
-      } catch (e) {}
+        
+        const playPromise = ringtoneRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            if (!shouldPlayRef.current && ringtoneRef.current) {
+              ringtoneRef.current.pause();
+              ringtoneRef.current.currentTime = 0;
+            }
+          }).catch(error => {
+            console.error("[CallModal] Audio play error:", error);
+          });
+        }
+      } catch (e) {
+        console.error("[CallModal] Ringtone setup error:", e);
+      }
 
-      // Auto-missed call after 45 seconds (WhatsApp style)
+      // Auto-missed call after 45 seconds
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         setIncomingCall(prev => {
-          if (prev && prev.chatId === data.chatId) {
-             sendCallLogMessage(data.chatId, data.type, "Missed");
-             return null;
+          if (prev && prev.callId === data.callId) {
+            // Register the missed callId so a duplicated/retransmitted call:start
+            // (e.g. a mesh redelivery via the Redis adapter) can't re-ring.
+            markCallEnded(data.callId);
+            shouldPlayRef.current = false;
+            stopRingtone();
+            return null;
           }
           return prev;
         });
-        stopRingtone();
       }, 45000);
     });
 
     socket.on("call:end", (data: any) => {
+      console.log("[CallModal] Received call:end", data);
+      const incomingCallId = data?.callId;
+
+      // Record this callId as ended to prevent late-arriving start signals from ringing
+      markCallEnded(incomingCallId);
+
+      // Match STRICTLY by callId. The previous chatId fallback could close a brand-new
+      // call attempt in the same conversation if a fail-safe broadcast for the previous
+      // (already-ended) call arrived after the new call:start.
       setIncomingCall(prev => {
-        if (prev?.chatId === data.chatId) {
-          // If the caller hung up while we were ringing, log it as a missed call
-          sendCallLogMessage(data.chatId, prev.type, "Missed");
+        if (prev && incomingCallId && prev.callId === incomingCallId) {
+          shouldPlayRef.current = false;
+          stopRingtone();
           return null;
         }
         return prev;
       });
-      stopRingtone();
     });
 
     socket.on("call:decline", (data: any) => {
-      setIncomingCall(prev => (prev?.chatId === data.chatId ? null : prev));
-      stopRingtone();
+      console.log("[CallModal] Received call:decline", data);
+      const incomingCallId = data?.callId;
+      markCallEnded(incomingCallId);
+      setIncomingCall(prev => {
+        if (prev && incomingCallId && prev.callId === incomingCallId) {
+          shouldPlayRef.current = false;
+          stopRingtone();
+          return null;
+        }
+        return prev;
+      });
     });
 
     return () => {
@@ -83,6 +134,8 @@ export function CallModal() {
   }, [socket]);
 
   const stopRingtone = () => {
+    console.log("[CallModal] Stopping ringtone");
+    shouldPlayRef.current = false;
     if (ringtoneRef.current) {
       ringtoneRef.current.pause();
       ringtoneRef.current.currentTime = 0;
@@ -103,18 +156,24 @@ export function CallModal() {
   const onAccept = () => {
     if (incomingCall) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      // Register before navigating so a retransmitted call:start can't re-ring us mid-transition.
+      markCallEnded(incomingCall.callId);
       if (socket) {
-        socket.emit("call:accept", { chatId: incomingCall.chatId });
+        socket.emit("call:accept", {
+          chatId: incomingCall.chatId,
+          callId: incomingCall.callId,
+          targetUserId: incomingCall.callerUserId,
+        });
       }
       stopRingtone();
       // Redirect to the conversation with video active
       const { serverId, callerMemberId } = incomingCall as any;
-      
+
       if (serverId && callerMemberId) {
         const queryParam = isVideoCall ? "video=true" : "audio=true";
         router.push(`/servers/${serverId}/conversations/${callerMemberId}?${queryParam}`);
       }
-      
+
       setIncomingCall(null);
     }
   };
@@ -122,8 +181,13 @@ export function CallModal() {
   const onDecline = () => {
     if (incomingCall) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      markCallEnded(incomingCall.callId);
       if (socket) {
-        socket.emit("call:decline", { chatId: incomingCall.chatId });
+        socket.emit("call:decline", {
+          chatId: incomingCall.chatId,
+          callId: incomingCall.callId,
+          targetUserId: incomingCall.callerUserId,
+        });
       }
       stopRingtone();
       sendCallLogMessage(incomingCall.chatId, incomingCall.type, "Declined");
@@ -131,61 +195,72 @@ export function CallModal() {
     }
   };
 
-  if (!incomingCall) return null;
+  if (!incomingCall) return <div className="hidden" aria-hidden="true" />;
 
   const isVideoCall = incomingCall.type === "video";
   const CallIcon = isVideoCall ? Video : Phone;
 
   return (
-    <Dialog open={!!incomingCall} onOpenChange={onDecline}>
-      <DialogContent className="bg-[#313338] text-white border-none overflow-hidden max-w-xs animate-in zoom-in-95 duration-200">
-        <DialogHeader className="pt-8 px-6">
-          <div className="flex justify-center mb-6">
-             <div className="relative">
-               <div className={cn(
-                 "h-24 w-24 rounded-full flex items-center justify-center shadow-2xl relative z-10",
-                 isVideoCall ? "bg-indigo-500 shadow-indigo-500/50" : "bg-emerald-500 shadow-emerald-500/50"
-               )}>
-                 <CallIcon className="h-12 w-12 text-white animate-pulse" />
-               </div>
-               <div className={cn(
-                 "absolute inset-0 h-24 w-24 rounded-full animate-ping opacity-20",
-                 isVideoCall ? "bg-indigo-500" : "bg-emerald-500"
-               )} />
-             </div>
-          </div>
-          <DialogTitle className="text-2xl text-center font-bold tracking-tight">
-            Incoming {isVideoCall ? "Video" : "Voice"} Call
-          </DialogTitle>
-          <DialogDescription className="text-center text-zinc-400 text-sm mt-1">
-            <span className="font-bold text-indigo-400 text-lg block my-2">
-              {incomingCall.callerName || "Unknown Peer"}
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between bg-black/80 backdrop-blur-2xl animate-in fade-in duration-1000 zoom-in-110">
+      
+      {/* Top spacer */}
+      <div className="flex-1" />
+
+      {/* Center content */}
+      <div className="flex flex-col items-center justify-center space-y-8">
+        {/* Avatar with pulsing rings */}
+        <div className="relative flex items-center justify-center">
+          {/* Pulsing rings */}
+          <div className="absolute inset-0 h-48 w-48 -m-12 rounded-full border-2 border-indigo-500/50 animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite]" />
+          <div className="absolute inset-0 h-48 w-48 -m-12 rounded-full border border-indigo-400/30 animate-[ping_4s_cubic-bezier(0,0,0.2,1)_infinite_1s]" />
+          <div className="absolute inset-0 h-48 w-48 -m-12 rounded-full bg-indigo-500/10 animate-pulse duration-1000" />
+          
+          {/* Avatar itself */}
+          <div className="relative z-10 h-32 w-32 rounded-full bg-zinc-800 border-4 border-indigo-500 shadow-[0_0_40px_rgba(99,102,241,0.6)] flex items-center justify-center overflow-hidden">
+            <span className="text-4xl font-black text-white uppercase">
+              {incomingCall.callerName?.charAt(0) || "?"}
             </span>
-            is calling your secure node...
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="bg-[#2b2d31]/50 px-6 py-6 mt-6 flex items-center justify-center gap-x-8 border-t border-white/5">
+          </div>
+        </div>
+
+        {/* Text info */}
+        <div className="flex flex-col items-center space-y-2 text-center mt-8">
+          <h1 className="text-4xl font-black text-white tracking-tight drop-shadow-md">
+            {incomingCall.callerName || "UNKNOWN CALLER"}
+          </h1>
+          <p className="text-emerald-500 text-sm font-mono uppercase tracking-[0.3em] font-medium animate-pulse">
+            {isVideoCall ? "VIDEO CALL" : "VOICE CALL"}
+          </p>
+        </div>
+      </div>
+
+      {/* Bottom controls */}
+      <div className="flex-1 flex items-end justify-center pb-24 w-full">
+        <div className="flex items-center justify-center gap-x-24">
+          {/* Decline Button */}
           <button 
             onClick={onDecline}
-            className="group flex flex-col items-center gap-y-2"
+            className="group flex flex-col items-center gap-y-4"
           >
-            <div className="bg-rose-500 hover:bg-rose-600 p-4 rounded-full transition-all hover:scale-110 shadow-lg shadow-rose-500/20 active:scale-95">
-              <PhoneOff className="h-6 w-6 text-white" />
+            <div className="h-20 w-20 rounded-full bg-rose-500 hover:bg-rose-600 flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-[0_0_30px_rgba(244,63,94,0.4)] hover:shadow-[0_0_50px_rgba(244,63,94,0.6)] active:scale-95">
+              <PhoneOff className="h-8 w-8 text-white rotate-[135deg]" />
             </div>
-            <span className="text-[10px] font-bold text-zinc-500 group-hover:text-rose-400 transition uppercase tracking-widest">Decline</span>
+            <span className="text-xs font-mono text-zinc-400 group-hover:text-rose-400 transition-colors uppercase tracking-widest">Decline</span>
           </button>
           
+          {/* Accept Button */}
           <button 
             onClick={onAccept}
-            className="group flex flex-col items-center gap-y-2"
+            className="group flex flex-col items-center gap-y-4"
           >
-            <div className="bg-emerald-500 hover:bg-emerald-600 p-4 rounded-full transition-all hover:scale-110 shadow-lg shadow-emerald-500/20 active:scale-95 animate-bounce [animation-duration:2s]">
-              <Phone className="h-6 w-6 text-white" />
+            <div className="h-20 w-20 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center transition-all duration-300 hover:scale-110 shadow-[0_0_30px_rgba(16,185,129,0.4)] hover:shadow-[0_0_50px_rgba(16,185,129,0.6)] active:scale-95 animate-bounce [animation-duration:2s]">
+              <CallIcon className="h-8 w-8 text-white" />
             </div>
-            <span className="text-[10px] font-bold text-zinc-500 group-hover:text-emerald-400 transition uppercase tracking-widest">Accept</span>
+            <span className="text-xs font-mono text-zinc-400 group-hover:text-emerald-400 transition-colors uppercase tracking-widest">Accept</span>
           </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+      
+    </div>
   );
 }

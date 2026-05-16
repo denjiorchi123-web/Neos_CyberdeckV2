@@ -13,7 +13,10 @@ import { DeleteChannelModal } from "@/components/modals/delete-channel-modal";
 import { EditChannelModal } from "@/components/modals/edit-channel-modal";
 import { MessageFileModal } from "@/components/modals/message-file-modal";
 import { DeleteMessageModal } from "@/components/modals/delete-message-modal";
-import { CallModal } from "@/components/modals/call-modal";
+// CallModal removed: incoming-call UI is now driven by CallProvider + IncomingCallOverlay.
+// Keeping both registered competing socket listeners (call:start / call:end / call:decline)
+// and the cleanup of one would clobber the other's handlers — that was the actual root cause
+// of the "zombie ringtone" / "denji keeps ringing" bug.
 
 export function ModalProvider() {
   const [isMounted, setIsMounted] = useState(false);
@@ -37,7 +40,6 @@ export function ModalProvider() {
       <EditChannelModal />
       <MessageFileModal />
       <DeleteMessageModal />
-      <CallModal />
     </>
   );
 }

@@ -34,3 +34,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# SQLite database files
+prisma/*.db
+prisma/*.db-shm
+prisma/*.db-wal
+
+# Uploaded / generated media (device-local, not for source control)
+private/uploads/
+public/uploads/
+
+# Claude Code memory (local tooling only)
+.claude/
+
+# Scratch / throwaway scripts
+scratch/

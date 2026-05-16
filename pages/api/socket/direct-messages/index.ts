@@ -14,7 +14,7 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { content, fileUrl } = req.body;
+    const { content, fileUrl, fileName, fileSize, mimeType, thumbnailUrl, mediaKey, type } = req.body;
     const { conversationId } = req.query;
 
     if (!profile) return res.status(401).json({ error: "Unauthorized" });
@@ -66,7 +66,13 @@ export default async function handler(
     const message = await db.directMessage.create({
       data: {
         content,
-        fileUrl,
+        fileUrl:      fileUrl      ?? undefined,
+        fileName:     fileName     ?? undefined,
+        fileSize:     fileSize     ? Number(fileSize) : undefined,
+        mimeType:     mimeType     ?? undefined,
+        thumbnailUrl: thumbnailUrl ?? undefined,
+        mediaKey:     mediaKey     ?? undefined,
+        type:         type         ?? "TEXT",
         conversationId: conversationId as string,
         memberId: member.id,
         status: initialStatus
@@ -79,15 +85,6 @@ export default async function handler(
         }
       }
     });
-
-    // ── Redis Caching ──────────────────────────────────────────
-    const redisKey = `cache:chat:${conversationId}:messages`;
-    try {
-      await redis.lpush(redisKey, JSON.stringify(message));
-      await redis.ltrim(redisKey, 0, 99);
-    } catch (redisErr) {
-      console.error("[Redis Cache Error]", redisErr);
-    }
 
     const channelKey = `chat:${conversationId}:messages`;
     res?.socket?.server?.io?.to(conversationId as string).emit(channelKey, message);

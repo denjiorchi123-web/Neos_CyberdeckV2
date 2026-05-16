@@ -131,6 +131,11 @@ export function ChatMessages({
               id={message.id}
               content={message.content}
               fileUrl={message.fileUrl}
+              fileName={(message as any).fileName}
+              fileSize={(message as any).fileSize}
+              mimeType={(message as any).mimeType}
+              thumbnailUrl={(message as any).thumbnailUrl}
+              mediaKey={(message as any).mediaKey}
               deleted={message.deleted}
               timestamp={format(
                 new Date(message.createdAt),

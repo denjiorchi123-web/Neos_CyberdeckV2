@@ -6,6 +6,8 @@ import { ModalProvider } from "@/components/providers/modal-provider";
 import { SocketProvider } from "@/components/providers/socket-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { CallProvider } from "../hooks/use-call-context";
+import { IncomingCallOverlay } from "@/components/incoming-call-overlay";
+import { OutgoingCallOverlay } from "@/components/outgoing-call-overlay";
 
 import type { Metadata } from "next";
 import { Open_Sans, Share_Tech_Mono } from "next/font/google";
@@ -46,6 +48,10 @@ export default function RootLayout({
           <SocketProvider>
             <ModalProvider />
             <CallProvider>
+              {/* Global incoming/outgoing call UI — must live inside CallProvider so it
+                  shares the call state regardless of which page the user is on. */}
+              <IncomingCallOverlay />
+              <OutgoingCallOverlay />
               <QueryProvider>{children}</QueryProvider>
             </CallProvider>
           </SocketProvider>
