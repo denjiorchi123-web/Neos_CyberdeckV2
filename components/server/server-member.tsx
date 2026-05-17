@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
-import { useSocket } from "@/components/providers/socket-provider";
+import { usePresence } from "@/components/providers/socket-provider";
 
 interface ServerMemberProps {
   member: Member & { profile: Profile };
@@ -30,7 +30,7 @@ export const ServerMember = ({ member, server }: ServerMemberProps) => {
 
   const icon = roleIconMap[member.role as keyof typeof roleIconMap];
 
-  const { onlineUsers } = useSocket();
+  const { onlineUsers } = usePresence();
   const isOnline = onlineUsers.some((u: any) => u.userId === member.profileId);
 
   const onClick = () =>

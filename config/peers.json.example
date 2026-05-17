@@ -1,0 +1,10 @@
+{
+  "_comment": "Static fallback peer list for CyberDeck. The launcher merges this with live mDNS results (deck-XX.local) and dedupes by hostname.",
+  "_comment2": "Each Pi gets a hostname like deck-01 set in Yocto and a static IP from the 10.0.0.0/24 LAN. Copy to /opt/cyberdeck/peers.json and edit if you add/remove nodes.",
+  "peers": [
+    { "name": "DECK-01", "host": "deck-01.local", "address": "10.0.0.1" },
+    { "name": "DECK-02", "host": "deck-02.local", "address": "10.0.0.2" },
+    { "name": "DECK-03", "host": "deck-03.local", "address": "10.0.0.3" },
+    { "name": "DECK-04", "host": "deck-04.local", "address": "10.0.0.4" }
+  ]
+}

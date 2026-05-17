@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const id = uuidv4();
     const userId = `user_${uuidv4().replace(/-/g, "").slice(0, 20)}`;
     const hashedPassword = hashPassword(password, userId);
-    const finalImageUrl = imageUrl || `https://avatar.vercel.sh/${userId}`;
+    const finalImageUrl = imageUrl || "";
 
     // Use Raw SQL to insert with password field, bypassing Prisma type checks
     await db.$executeRawUnsafe(

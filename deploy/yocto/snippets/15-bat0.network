@@ -1,0 +1,19 @@
+# systemd-networkd: bat0 — the L3 face of the batman-adv mesh.
+# Address is patched at first boot by cyberdeck-identity.service based on NODE_ID
+# in /data/node.conf. Default below is a placeholder used only on first boot
+# before identity runs.
+[Match]
+Name=bat0
+
+[Network]
+Address=10.0.0.99/24
+DHCP=no
+LLMNR=no
+MulticastDNS=yes
+IPv6AcceptRA=no
+LinkLocalAddressing=ipv6
+IPForward=no
+
+[Link]
+# bat0 comes up "carrier" as soon as it has at least one mesh peer reachable
+RequiredForOnline=routable

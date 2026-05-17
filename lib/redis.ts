@@ -9,7 +9,7 @@ import Redis from "ioredis";
  *   redisSub — dedicated subscriber for Socket.io adapter
  */
 
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 
 const createRedisClient = (role?: string) => {
   const client = new Redis(REDIS_URL, {

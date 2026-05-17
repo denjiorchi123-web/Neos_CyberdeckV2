@@ -58,11 +58,7 @@ export const useChatScroll = ({
     };
 
     if (shouldAutoScroll()) {
-      setTimeout(() => {
-        bottomRef.current?.scrollIntoView({
-          behavior: "smooth"
-        });
-      }, 100);
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [bottomRef, chatRef, count, hasInitialized]);
 };

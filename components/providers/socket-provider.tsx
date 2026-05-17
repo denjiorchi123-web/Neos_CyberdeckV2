@@ -6,6 +6,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useMemo,
 } from "react";
 import { io as ClientIO } from "socket.io-client";
 
@@ -17,142 +18,95 @@ type OnlineUser = {
   status: "online" | "offline";
 };
 
+// Split into two contexts so components that only need socket/isConnected
+// don't re-render when onlineUsers changes.
 type SocketContextType = {
   socket: any | null;
   isConnected: boolean;
+};
+
+type PresenceContextType = {
   onlineUsers: OnlineUser[];
 };
 
 const SocketContext = createContext<SocketContextType>({
   socket: null,
   isConnected: false,
+});
+
+const PresenceContext = createContext<PresenceContextType>({
   onlineUsers: [],
 });
 
-export const useSocket = () => {
-  return useContext(SocketContext);
-};
+export const useSocket  = () => useContext(SocketContext);
+export const usePresence = () => useContext(PresenceContext);
 
-
-
-export function SocketProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [socket, setSocket] = useState(null);
+export function SocketProvider({ children }: { children: React.ReactNode }) {
+  const [socket,      setSocket]      = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
 
-  // Fetch initial presence state from the API
   const fetchPresence = useCallback(async () => {
     try {
       const res = await fetch("/api/presence");
       const data = await res.json();
-      if (data?.online) {
-        setOnlineUsers(data.online);
-      }
-    } catch {
-      // Presence API may not be available yet
-    }
+      if (data?.online) setOnlineUsers(data.online);
+    } catch {}
   }, []);
 
   useEffect(() => {
-    const socketInstance = new (ClientIO as any)(
-      window.location.origin,
-      {
-        path: "/api/socket/io",
-        addTrailingSlash: false,
-        // Scenario #9: bounded reconnection with explicit 1s / 2s / 4s backoff.
-        // socket.io's default is infinite attempts with internal backoff; we want a
-        // bounded retry so a permanently-down server surfaces a UX error instead of
-        // silently retrying forever, and the curve matches the spec requested.
-        reconnection: true,
-        reconnectionAttempts: 3,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 4000,
-        randomizationFactor: 0,
-        timeout: 10000,
-      }
-    );
+    const s = new (ClientIO as any)(window.location.origin, {
+      path:                  "/api/socket/io",
+      addTrailingSlash:      false,
+      reconnection:          true,
+      reconnectionAttempts:  3,
+      reconnectionDelay:     1000,
+      reconnectionDelayMax:  4000,
+      randomizationFactor:   0,
+      timeout:               10000,
+    });
 
     const onConnect = async () => {
       setIsConnected(true);
-
       try {
-        const res = await fetch("/api/auth/me");
+        const res     = await fetch("/api/auth/me");
         const profile = await res.json();
-        if (profile?.id) {
-          socketInstance.emit("presence:identify", profile.id);
-        }
-      } catch (err) {
-        console.error("[Socket] Failed to identify user:", err);
-      }
+        if (profile?.id) s.emit("presence:identify", profile.id);
+      } catch {}
     };
 
-    socketInstance.on("connect", onConnect);
+    s.on("connect",    onConnect);
+    s.on("disconnect", () => setIsConnected(false));
 
-    socketInstance.on("disconnect", (reason: string) => {
-      console.log("[Socket] disconnected:", reason);
-      setIsConnected(false);
+    s.on("presence:sync", (userIds: string[]) => {
+      setOnlineUsers(userIds.map(id => ({ userId: id, status: "online" as const })));
     });
 
-    // Surface reconnection lifecycle for the UI (MediaRoom uses these to show a banner)
-    socketInstance.on("reconnect_attempt", (attempt: number) => {
-      console.log(`[Socket] reconnect attempt ${attempt}/3`);
-    });
-    socketInstance.on("reconnect_failed", () => {
-      console.error("[Socket] reconnection failed after 3 attempts");
-    });
-
-    // Sync the full list of online users on join
-    socketInstance.on("presence:sync", (userIds: string[]) => {
-      setOnlineUsers(userIds.map(id => ({
-        userId: id,
-        status: "online" as const
-      })));
+    s.on("presence:update", (data: { userId: string; status: string; socketId?: string }) => {
+      setOnlineUsers(prev => {
+        if (data.status === "online") {
+          const exists = prev.find(u => u.userId === data.userId);
+          if (exists) return prev.map(u => u.userId === data.userId ? { ...u, status: "online" as const, socketId: data.socketId } : u);
+          return [...prev, { userId: data.userId, socketId: data.socketId, status: "online" as const }];
+        }
+        return prev.filter(u => u.userId !== data.userId);
+      });
     });
 
-    // Listen for real-time presence updates
-    socketInstance.on(
-      "presence:update",
-      (data: { userId: string; status: string; socketId?: string }) => {
-        setOnlineUsers((prev) => {
-          if (data.status === "online") {
-            // Add or update user
-            const exists = prev.find((u) => u.userId === data.userId);
-            if (exists) {
-              return prev.map((u) =>
-                u.userId === data.userId
-                  ? { ...u, status: "online" as const, socketId: data.socketId }
-                  : u
-              );
-            }
-            return [
-              ...prev,
-              {
-                userId: data.userId,
-                socketId: data.socketId,
-                status: "online",
-              },
-            ];
-          } else {
-            // Remove user
-            return prev.filter((u) => u.userId !== data.userId);
-          }
-        });
-      }
-    );
-
-    setSocket(socketInstance);
+    setSocket(s);
     fetchPresence();
-
-    return () => socketInstance.disconnect();
+    return () => s.disconnect();
   }, [fetchPresence]);
 
+  // Memoize both context values so downstream only re-renders on actual changes
+  const socketValue  = useMemo(() => ({ socket, isConnected }), [socket, isConnected]);
+  const presenceValue = useMemo(() => ({ onlineUsers }), [onlineUsers]);
+
   return (
-    <SocketContext.Provider value={{ socket, isConnected, onlineUsers }}>
-      {children}
+    <SocketContext.Provider value={socketValue}>
+      <PresenceContext.Provider value={presenceValue}>
+        {children}
+      </PresenceContext.Provider>
     </SocketContext.Provider>
   );
 }

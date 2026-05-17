@@ -1,5 +1,9 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" = dev host (Windows/Mac/x64 Linux).
+  // linux-arm64 variants cover Pi 5 on Yocto — include both OpenSSL versions
+  // so the same build works whether Yocto links OpenSSL 1.1 or 3.x.
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-arm64-openssl-1.1.x"]
 }
 
 datasource db {

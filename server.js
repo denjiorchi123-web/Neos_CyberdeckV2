@@ -6,6 +6,27 @@ const path = require("path");
 const cluster = require("cluster");
 const os = require("os");
 
+// ── Windows: self-elevate to Administrator ───────────────────────────────────
+// Network config (netsh) requires admin rights. If not elevated, re-launch
+// via PowerShell Start-Process -Verb RunAs which triggers a UAC prompt once.
+if (process.platform === "win32") {
+  const { execSync, spawn } = require("child_process");
+  let elevated = false;
+  try { execSync("net session", { stdio: "pipe" }); elevated = true; } catch {}
+  if (!elevated) {
+    const nodeBin  = process.execPath.replace(/\\/g, "\\\\");
+    const script   = path.resolve(__dirname, "server.js").replace(/\\/g, "\\\\");
+    const projDir  = __dirname.replace(/\\/g, "\\\\");
+    const psCmd    =
+      `Start-Process '${nodeBin}' -Verb RunAs ` +
+      `-ArgumentList '"${script}"' -WorkingDirectory '${projDir}'`;
+    console.log("> Requesting Administrator privileges (UAC prompt)…");
+    spawn("powershell", ["-NoProfile", "-Command", psCmd], { stdio: "inherit" })
+      .on("exit", () => process.exit(0));
+    return; // stop the non-elevated process
+  }
+}
+
 // Load SSL certificates
 const options = {
   key: fs.readFileSync(path.join(__dirname, "ssl", "server.key")),

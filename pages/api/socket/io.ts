@@ -7,6 +7,50 @@ import { NextApiResponseServerIo } from "@/types";
 import { redis, redisPub, redisSub } from "@/lib/redis";
 import { db } from "@/lib/db";
 
+// ── Terminal PTY helper ───────────────────────────────────────────────────────
+// Spawns a shell via node-pty and pipes i/o over Socket.io events.
+// node-pty is optional — if not installed (e.g. missing build tools on Windows),
+// the terminal tab shows a "not available" message instead of crashing.
+
+let ptyModule: typeof import("node-pty") | null = null;
+try { ptyModule = require("node-pty"); } catch { /* native addon not built */ }
+
+function resolveShell(): string {
+  if (process.platform === "win32") return "powershell.exe";
+  // Prefer the login shell from the environment; fall back to bash, then sh
+  const envShell = process.env.SHELL;
+  if (envShell) return envShell;
+  const fs = require("fs");
+  for (const s of ["/bin/bash", "/usr/bin/bash", "/bin/sh"]) {
+    try { fs.accessSync(s, fs.constants.X_OK); return s; } catch {}
+  }
+  return "/bin/sh";
+}
+
+function resolveCwd(): string {
+  if (process.platform === "win32") return process.env.USERPROFILE || "C:\\";
+  return process.env.CYBERDECK_HOME || "/opt/cyberdeck";
+}
+
+function spawnTerminal(socket: any, cols: number, rows: number) {
+  if (!ptyModule) {
+    socket.emit("terminal:data", "\r\nTerminal not available — node-pty ARM64 prebuilt missing.\r\n");
+    return null;
+  }
+  const shell = resolveShell();
+  const cwd   = resolveCwd();
+  const pty   = ptyModule.spawn(shell, [], {
+    name: "xterm-256color",
+    cols: cols || 80,
+    rows: rows || 24,
+    cwd,
+    env:  { ...process.env, TERM: "xterm-256color" } as any,
+  });
+  pty.onData((data: string) => socket.emit("terminal:data", data));
+  pty.onExit(() => socket.emit("terminal:exit"));
+  return pty;
+}
+
 export const config = {
   api: {
     bodyParser: false
@@ -399,7 +443,33 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
         }
       });
 
+      // ── Terminal ───────────────────────────────────────────────────────────
+      // One PTY per socket — the client creates it when the Terminal tab opens.
+      let pty: ReturnType<typeof spawnTerminal> = null;
+
+      socket.on("terminal:create", ({ cols, rows }: { cols: number; rows: number }) => {
+        if (pty) { try { pty.kill(); } catch {} }
+        pty = spawnTerminal(socket, cols || 80, rows || 24);
+      });
+
+      socket.on("terminal:input", (data: string) => {
+        try { pty?.write(data); } catch {}
+      });
+
+      socket.on("terminal:resize", ({ cols, rows }: { cols: number; rows: number }) => {
+        try { pty?.resize(cols, rows); } catch {}
+      });
+
+      socket.on("terminal:kill", () => {
+        try { pty?.kill(); } catch {}
+        pty = null;
+      });
+
       socket.on("disconnect", async () => {
+        // Kill any open PTY on disconnect
+        try { pty?.kill(); } catch {}
+        pty = null;
+
         // Clean up presence
         const userId = socket.data.userId;
         if (userId) {

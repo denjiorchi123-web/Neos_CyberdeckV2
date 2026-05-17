@@ -4,6 +4,11 @@ import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { FileIcon, X, Upload, Loader2 } from "lucide-react";
 import Image from "next/image";
+import {
+  MESSAGE_FILE_MAX_SIZE,
+  SERVER_IMAGE_MAX_SIZE,
+  formatMaxSize,
+} from "@/lib/upload-limits";
 
 interface FileUploadProps {
   onChange: (url?: string) => void;
@@ -44,25 +49,32 @@ export function FileUpload({
   }, [onChange]);
 
   const imageTypes = { "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"] };
-  const videoTypes = { "video/*": [".mp4", ".webm", ".ogg"] };
-  const audioTypes = { "audio/*": [".mp3", ".wav", ".m4a"] };
-  
-  const accept = endpoint === "serverImage"
+  const videoTypes = { "video/*": [".mp4", ".webm", ".ogg", ".mkv", ".mov"] };
+  const audioTypes = { "audio/*": [".mp3", ".wav", ".m4a", ".flac", ".ogg"] };
+
+  // serverImage = avatar / server icon (small); messageFile = chat attachment (FAT32-bounded)
+  const isAvatar = endpoint === "serverImage";
+  const accept = isAvatar
     ? imageTypes
-    : { 
-        ...imageTypes, 
-        ...videoTypes, 
+    : {
+        ...imageTypes,
+        ...videoTypes,
         ...audioTypes,
         "application/pdf": [".pdf"],
         "application/zip": [".zip"],
-        "text/plain": [".txt"]
+        "application/x-tar": [".tar"],
+        "application/gzip": [".gz"],
+        "text/plain": [".txt"],
+        "application/octet-stream": [],
       };
+
+  const maxSize = isAvatar ? SERVER_IMAGE_MAX_SIZE : MESSAGE_FILE_MAX_SIZE;
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept,
     maxFiles: 1,
-    maxSize: 8 * 1024 * 1024, // 8MB
+    maxSize,
   });
 
   if (value && fileType !== "pdf") {
@@ -125,7 +137,9 @@ export function FileUpload({
             {isDragActive ? "Drop the file here" : "Drag & drop or click to upload"}
           </p>
           <p className="text-xs text-zinc-500">
-            {endpoint === "serverImage" ? "Image (max 8MB)" : "Image or PDF (max 8MB)"}
+            {isAvatar
+              ? `Image (max ${formatMaxSize(SERVER_IMAGE_MAX_SIZE)})`
+              : `Any file (max ${formatMaxSize(MESSAGE_FILE_MAX_SIZE)} — FAT32 limit)`}
           </p>
         </div>
       )}

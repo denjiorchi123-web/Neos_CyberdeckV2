@@ -1,19 +1,147 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
+import { createWriteStream, mkdirSync } from "fs";
+import { unlink, stat } from "fs/promises";
 import { join } from "path";
+import { Readable } from "stream";
+import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
+import Busboy from "busboy";
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
+import { MESSAGE_FILE_MAX_SIZE, formatMaxSize } from "@/lib/upload-limits";
+import { log } from "@/lib/logger";
+import { ensureDirs } from "@/lib/media-dirs";
 
-// 100 MB — generous for LAN transfers; no cloud egress cost
-const MAX_SIZE = 100 * 1024 * 1024;
+// Streaming uploads need the Node.js runtime + a non-cached, non-static response.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// MIME → canonical type label used by chat-item.tsx
+const MAX_SIZE = MESSAGE_FILE_MAX_SIZE;
+
 function resolveType(mime: string): string {
-  if (mime.startsWith("image/"))  return "IMAGE";
-  if (mime.startsWith("video/"))  return "VIDEO";
-  if (mime.startsWith("audio/"))  return "AUDIO";
+  if (mime.startsWith("image/")) return "IMAGE";
+  if (mime.startsWith("video/")) return "VIDEO";
+  if (mime.startsWith("audio/")) return "AUDIO";
   return "DOCUMENT";
+}
+
+class UploadError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
+interface ParseResult {
+  savedName: string;
+  savedPath: string;
+  originalName: string;
+  mimeType: string;
+  serverId: string;
+  mediaKey: string | null;
+}
+
+/**
+ * Parse multipart/form-data by streaming the request body straight to disk.
+ * The file is never fully buffered in RAM, so uploads near the FAT32 4 GiB
+ * ceiling work on a 4 GB Pi without OOM.
+ */
+function streamUploadToDisk(
+  body: ReadableStream<Uint8Array>,
+  headers: Record<string, string>,
+  uploadDir: string,
+): Promise<ParseResult> {
+  return new Promise((resolve, reject) => {
+    const result: Partial<ParseResult> = { serverId: "dm", mediaKey: null };
+    let fileWritePromise: Promise<void> | null = null;
+    let truncated = false;
+    let pathToCleanup: string | null = null;
+    let settled = false;
+
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    const cleanup = async () => {
+      if (pathToCleanup) {
+        await unlink(pathToCleanup).catch(() => undefined);
+      }
+    };
+
+    const bb = Busboy({
+      headers,
+      limits: { fileSize: MAX_SIZE, files: 1, fields: 16 },
+    });
+
+    bb.on("field", (name, value) => {
+      if (name === "serverId") result.serverId = value || "dm";
+      else if (name === "mediaKey") result.mediaKey = value || null;
+    });
+
+    bb.on("file", (_name, fileStream, info) => {
+      // Only honor the first file; drain any extras so busboy can finish.
+      if (result.savedName) {
+        fileStream.resume();
+        return;
+      }
+
+      const originalName = info.filename || "upload.bin";
+      const ext = (originalName.split(".").pop() || "bin").toLowerCase();
+      const savedName = `${uuidv4()}.${ext}`;
+      const savedPath = join(uploadDir, savedName);
+
+      result.originalName = originalName;
+      result.mimeType = info.mimeType || "application/octet-stream";
+      result.savedName = savedName;
+      result.savedPath = savedPath;
+      pathToCleanup = savedPath;
+
+      fileStream.on("limit", () => {
+        truncated = true;
+      });
+
+      const out = createWriteStream(savedPath);
+      fileWritePromise = pipeline(fileStream, out);
+    });
+
+    bb.on("error", (err: Error) => {
+      settle(async () => {
+        await cleanup();
+        reject(err);
+      });
+    });
+
+    bb.on("finish", () => {
+      settle(async () => {
+        try {
+          if (fileWritePromise) await fileWritePromise;
+
+          if (truncated) {
+            await cleanup();
+            return reject(new UploadError(`File too large (max ${formatMaxSize(MAX_SIZE)})`, 413));
+          }
+          if (!result.savedName) {
+            return reject(new UploadError("No file provided", 400));
+          }
+          resolve(result as ParseResult);
+        } catch (e) {
+          await cleanup();
+          reject(e);
+        }
+      });
+    });
+
+    // Pipe the Web ReadableStream from Next into the Node-style busboy parser.
+    const nodeStream = Readable.fromWeb(body as any);
+    nodeStream.on("error", (err) => {
+      settle(async () => {
+        await cleanup();
+        reject(err);
+      });
+    });
+    nodeStream.pipe(bb);
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -21,69 +149,76 @@ export async function POST(req: NextRequest) {
     const profile = await currentProfile();
     if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const formData  = await req.formData();
-    const file      = formData.get("file") as File | null;
-    const serverId  = (formData.get("serverId") as string | null) ?? "dm";
-    const mediaKey  = (formData.get("mediaKey") as string | null) ?? undefined;
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.startsWith("multipart/form-data")) {
+      return NextResponse.json({ error: "Expected multipart/form-data" }, { status: 400 });
+    }
+    if (!req.body) {
+      return NextResponse.json({ error: "No request body" }, { status: 400 });
+    }
 
-    if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    if (file.size > MAX_SIZE)
-      return NextResponse.json({ error: `File too large (max ${MAX_SIZE / 1024 / 1024} MB)` }, { status: 413 });
+    ensureDirs();
+    const uploadDir = join(process.cwd(), "private", "uploads");
+    mkdirSync(uploadDir, { recursive: true });
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const headers: Record<string, string> = {};
+    req.headers.forEach((v, k) => { headers[k] = v; });
 
-    const ext      = (file.name.split(".").pop() || "bin").toLowerCase();
-    const safeName = `${uuidv4()}.${ext}`;
-    const mime     = file.type || "application/octet-stream";
-    const fileType = resolveType(mime);
+    const parsed = await streamUploadToDisk(req.body, headers, uploadDir);
+    const { savedName, savedPath, originalName, mimeType, serverId, mediaKey } = parsed;
 
-    // Store in private/ directory — served only through the authenticated /api/files/[filename]
-    // endpoint so nobody can hot-link directly to the raw path.
-    const uploadDir  = join(process.cwd(), "private", "uploads");
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(join(uploadDir, safeName), buffer);
+    const fileSize = (await stat(savedPath)).size;
+    const fileType = resolveType(mimeType);
 
-    // Generate thumbnail for images using sharp (optional — skip if not installed)
+    // Thumbnail generation for images — sharp reads from disk via streaming,
+    // so even multi-hundred-MB images don't blow up RAM.
     let thumbnailUrl: string | undefined;
     if (fileType === "IMAGE") {
       try {
-        // Dynamic import keeps server bundle small; sharp is an optional devDep
         const sharp = (await import("sharp")).default;
-        const thumbName = `thumb_${safeName}`;
-        await sharp(buffer)
+        const thumbName = `thumb_${savedName}`;
+        await sharp(savedPath)
           .resize(320, 320, { fit: "inside", withoutEnlargement: true })
           .jpeg({ quality: 75 })
           .toFile(join(uploadDir, thumbName));
         thumbnailUrl = `/api/files/${thumbName}`;
       } catch {
-        // sharp not installed or unsupported input — thumbnails optional
+        // sharp optional / unsupported format — skip thumbnail
       }
     }
 
-    // Index the file in the DB so admins can audit uploads
-    await db.fileIndex.create({
-      data: {
-        name:       file.name,
-        path:       safeName,
-        size:       file.size,
-        mimeType:   mime,
-        uploaderId: profile.id,
-        serverId:   serverId,
-      }
-    });
+    // Audit index — non-fatal if it fails; the upload itself succeeded.
+    try {
+      await db.fileIndex.create({
+        data: {
+          name:       originalName,
+          path:       savedName,
+          size:       fileSize,
+          mimeType,
+          uploaderId: profile.id,
+          serverId,
+        },
+      });
+    } catch (err) {
+      console.error("[UPLOAD] FileIndex write failed:", err);
+    }
+
+    log.event("FILE_UPLOAD", `${originalName} (${(fileSize/1024).toFixed(0)} KB, ${mimeType}) by ${profile.name}`);
 
     return NextResponse.json({
-      url:          `/api/files/${safeName}`,
+      url:          `/api/files/${savedName}`,
       thumbnailUrl: thumbnailUrl ?? null,
-      fileName:     file.name,
-      fileSize:     file.size,
-      mimeType:     mime,
+      fileName:     originalName,
+      fileSize,
+      mimeType,
       type:         fileType,
       mediaKey:     mediaKey ?? null,
     });
-  } catch (error) {
-    console.error("[UPLOAD_POST]", error);
-    return new NextResponse("Upload failed", { status: 500 });
+  } catch (e: any) {
+    if (e instanceof UploadError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    console.error("[UPLOAD_POST]", e);
+    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }

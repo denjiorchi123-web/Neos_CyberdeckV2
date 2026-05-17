@@ -6,8 +6,6 @@ import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-
 import {
   Dialog,
   DialogContent,
@@ -48,16 +46,13 @@ export function CreateServerModal() {
   });
 
   const watchedName = form.watch("name");
-  const avatarUrl = `https://avatar.vercel.sh/${encodeURIComponent(watchedName || "server")}`;
+  const initials = (watchedName || "S").slice(0, 2).toUpperCase();
 
   const isLoading = form.formState.isSubmitting;
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      const payload = {
-        ...values,
-        imageUrl: `https://avatar.vercel.sh/${encodeURIComponent(values.name)}`
-      };
+      const payload = { ...values, imageUrl: "" };
       await axios.post("/api/servers", payload);
       form.reset();
       router.refresh();
@@ -86,15 +81,10 @@ export function CreateServerModal() {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             <div className="space-y-8 px-6">
-              {/* Auto-generated avatar preview */}
+              {/* Local initials avatar preview — no external requests */}
               <div className="flex items-center justify-center">
-                <div className="relative h-20 w-20 rounded-full overflow-hidden ring-4 ring-indigo-500/30">
-                  <Image
-                    fill
-                    src={avatarUrl}
-                    alt="Server avatar"
-                    className="object-cover"
-                  />
+                <div className="h-20 w-20 rounded-full ring-4 ring-indigo-500/30 bg-indigo-600 flex items-center justify-center">
+                  <span className="text-white font-bold text-2xl select-none">{initials}</span>
                 </div>
               </div>
 

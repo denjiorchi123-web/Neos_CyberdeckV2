@@ -1,0 +1,27 @@
+[Unit]
+Description=CyberDeck Web (Next.js + Socket.io)
+After=network.target redis-cyberdeck.service cyberdeck-backend.service avahi-daemon.service
+Requires=redis-cyberdeck.service
+Wants=avahi-daemon.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cyberdeck
+EnvironmentFile=/opt/cyberdeck/.env
+Environment=CYBERDECK_PEERS_FILE=/opt/cyberdeck/peers.json
+# Avahi service file is dropped into /etc/avahi/services/ by install.sh or
+# the Yocto recipe — no need to reinstall on every web service start.
+ExecStartPre=/opt/cyberdeck/deploy/scripts/first-boot-ssl.sh
+ExecStart=/usr/bin/node /opt/cyberdeck/server.js
+Restart=on-failure
+RestartSec=3
+User=cyberdeck
+Group=cyberdeck
+# Lock down a bit; the app only needs its own dir + tmp.
+ProtectSystem=strict
+ReadWritePaths=/opt/cyberdeck/prisma /opt/cyberdeck/private /opt/cyberdeck/public/uploads /opt/cyberdeck/.next /opt/cyberdeck/ssl
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

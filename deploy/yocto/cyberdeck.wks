@@ -1,0 +1,16 @@
+# Wic image layout: matches the spec — read-only root, separate /data and /opt.
+#
+#   p1 (boot, FAT32, 256 MB) — firmware + kernel + cmdline + plymouth
+#   p2 (root, ext4, 4 GB, ro) — the OS itself; immutable at runtime
+#   p3 (opt,  ext4, 2 GB)     — /opt/cyberdeck/* writable app data
+#   p4 (data, ext4, rest)     — /data: prisma DB, uploads, user content,
+#                                node.conf, ssl certs, peers.json
+
+bootloader --ptable msdos --append="console=tty0 root=PARTUUID=ROOT_PARTUUID rootfstype=ext4 ro fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles loglevel=3 vt.global_cursor_default=0"
+
+part /boot      --source bootimg-partition --fstype=vfat   --label boot     --size 256M --active --align 4096 --fixed-size 256M --uuid=BOOT-PART
+part /          --source rootfs            --fstype=ext4   --label root     --size 4G  --align 4096 --fixed-size 4G  --uuid=ROOT-PART --use-uuid
+part /opt       --source rootfs --rootfs-dir=${IMAGE_ROOTFS}/opt --fstype=ext4 --label opt --size 2G --align 4096 --uuid=OPT-PART --use-uuid
+part /data      --fstype=ext4   --label data     --size 4G  --align 4096 --uuid=DATA-PART --use-uuid
+
+# Mark root as read-only at the fstab level — see meta-cyberdeck/recipes-core/base-files/base-files_%.bbappend

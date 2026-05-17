@@ -1,48 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { Wifi, Network, CheckCircle2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Network, Lock, ShieldCheck } from "lucide-react";
 
 export const NetworkStatus = () => {
-  const [mode, setMode] = useState<"wifi" | "lan">("wifi");
-
   return (
     <div className="px-3 py-2 mt-2">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
           Network Mode
         </p>
-        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+        <ShieldCheck className="h-3 w-3 text-emerald-500" />
       </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => setMode("wifi")}
-          className={cn(
-            "flex-1 flex flex-col items-center justify-center p-2 rounded-md border transition group",
-            mode === "wifi" 
-              ? "bg-indigo-500/10 border-indigo-500 text-indigo-500" 
-              : "bg-transparent border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-700/10"
-          )}
-        >
-          <Wifi className="h-4 w-4 mb-1" />
-          <span className="text-[10px] font-bold">WIFI</span>
-        </button>
-        <button
-          onClick={() => setMode("lan")}
-          className={cn(
-            "flex-1 flex flex-col items-center justify-center p-2 rounded-md border transition group",
-            mode === "lan" 
-              ? "bg-emerald-500/10 border-emerald-500 text-emerald-500" 
-              : "bg-transparent border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-700/10"
-          )}
-        >
-          <Network className="h-4 w-4 mb-1" />
-          <span className="text-[10px] font-bold">LAN</span>
-        </button>
+
+      {/* Static LAN-only badge — no toggle, no WiFi option */}
+      <div className="flex items-center gap-x-2 p-2 rounded-md bg-emerald-500/10 border border-emerald-500/30">
+        <Network className="h-4 w-4 text-emerald-400 shrink-0" />
+        <div className="flex flex-col">
+          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">LAN ONLY</span>
+          <span className="text-[9px] text-zinc-500">WiFi &amp; Bluetooth disabled</span>
+        </div>
+        <Lock className="h-3 w-3 text-emerald-600 ml-auto shrink-0" />
       </div>
-      <p className="text-[9px] text-zinc-500 mt-2 italic">
-        * Optimizing for {mode === "wifi" ? "low-latency wireless" : "high-bandwidth cable"}...
+
+      <p className="text-[9px] text-zinc-600 mt-1.5 font-mono">
+        Air-gapped · fiber only · no internet
       </p>
     </div>
   );

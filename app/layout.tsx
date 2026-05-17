@@ -1,4 +1,5 @@
 import "./globals.css";
+import "xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -12,17 +13,26 @@ import { OutgoingCallOverlay } from "@/components/outgoing-call-overlay";
 import type { Metadata } from "next";
 import { Open_Sans, Share_Tech_Mono } from "next/font/google";
 
-const openSans = Open_Sans({ subsets: ["latin"] });
-const mono = Share_Tech_Mono({ 
+// next/font/google fetches the fonts at *build time* on the WSL build host
+// (which has internet) and self-hosts them in .next/static/media/. At runtime
+// the Pi serves the fonts itself — no requests ever leave the LAN.
+// This is the right choice for an air-gapped runtime with an online build host.
+const openSans = Open_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  fallback: ["system-ui", "sans-serif"],
+});
+const mono = Share_Tech_Mono({
   weight: "400",
   subsets: ["latin"],
-  variable: "--font-mono"
+  variable: "--font-mono",
+  display: "swap",
+  fallback: ["ui-monospace", "monospace"],
 });
 
 export const metadata: Metadata = {
-  title: "Discord Clone",
-  description:
-    "Discord Clone with Next.js, React.js, TailWindCSS & TypeScript."
+  title: "CyberDeck",
+  description: "CyberDeck air-gapped LAN messenger.",
 };
 
 export default function RootLayout({

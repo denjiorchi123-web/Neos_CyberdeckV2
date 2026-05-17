@@ -1,0 +1,58 @@
+# Append to /boot/config.txt on the Pi 5 image.
+
+# ─── GPU / DRM/KMS ─────────────────────────────────────────────────────
+# Full V3D hardware acceleration — required for Chromium on Wayland.
+dtoverlay=vc4-kms-v3d-pi5
+max_framebuffers=2
+disable_overscan=1
+
+# ─── Display auto-detection ────────────────────────────────────────────
+# Pi firmware probes all connected outputs and enables them automatically.
+# Works for: HDMI-A-1, HDMI-A-2, DSI-1 (Pi Touch Display / Touch Display 2).
+display_auto_detect=1
+
+# ─── Pi 7" Touch Display 2 (DSI1, Goodix GT9110 touch, ILI9881C panel) ─
+# This overlay is required for the newer Touch Display 2 (released 2023+).
+# The older original Pi 7" display is auto-detected by vc4-kms-v3d-pi5.
+dtoverlay=vc4-kms-dsi-7inch
+
+# ─── I2C for touch controller ──────────────────────────────────────────
+# Touch Display 2 uses Goodix GT9xx over I2C-1. Both must be on.
+dtparam=i2c_arm=on
+dtparam=i2c1=on
+
+# ─── Disable Wi-Fi + Bluetooth at firmware level ───────────────────────
+dtoverlay=disable-wifi
+dtoverlay=disable-bt
+
+# ─── Audio ─────────────────────────────────────────────────────────────
+dtparam=audio=on
+
+# ─── Camera ────────────────────────────────────────────────────────────
+camera_auto_detect=1
+
+# ─── Boot splash ───────────────────────────────────────────────────────
+disable_splash=0
+boot_delay=0
+splash=splash.jpeg
+
+# ─── Pi 5 Power Management ─────────────────────────────────────────────
+# usb_max_current_enable: requests full 5A from a USB-C PD (27W) supply.
+# Without this the firmware caps current at 3A and the Pi 5 throttles under
+# CPU + GPU + Ethernet load, causing visible lag and kernel undervolt warnings.
+usb_max_current_enable=1
+
+# arm_boost: unlocks the 2.4 GHz turbo bin when adequate power is available.
+# Has no effect when usb_max_current_enable=1 is set and supply is < 5A.
+arm_boost=1
+
+# PMIC: do not assert the low-power warning LED until voltage drops below 4.75V.
+# The default threshold (4.8V) fires false positives on USB-C cables with
+# resistance > 0.2 Ω. Setting it lower (0 = 4.75V) silences these warnings
+# without masking a genuinely marginal supply.
+over_voltage_delta=0
+
+# Force the RP1 south-bridge into full-power mode — prevents the RP1 from
+# sleeping its USB/Ethernet block while the batman-adv mesh is active.
+# Without this, eth0 can drop frames after ~60s of low activity.
+dtparam=rp1_pwr=max

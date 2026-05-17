@@ -1,0 +1,28 @@
+[Unit]
+Description=batman-adv runtime tuning (orig interval, log level, gw mode)
+After=systemd-networkd.service
+Wants=systemd-networkd.service
+ConditionPathExists=/sys/class/net/bat0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Wait briefly for bat0 to settle, then apply tuning.
+# batctl talks to /sys/class/net/bat0/mesh/ — these match the netdev settings
+# above but are also runtime-tunable. Useful for debugging.
+ExecStart=/bin/sh -c '\
+  for i in 1 2 3 4 5; do \
+    [ -d /sys/class/net/bat0/mesh ] && break; \
+    sleep 1; \
+  done; \
+  if [ -d /sys/class/net/bat0/mesh ]; then \
+    /usr/sbin/batctl meshif bat0 orig_interval 1000 || true; \
+    /usr/sbin/batctl meshif bat0 gw_mode off || true; \
+    /usr/sbin/batctl meshif bat0 distributed_arp_table 1 || true; \
+    /usr/sbin/batctl meshif bat0 bridge_loop_avoidance 1 || true; \
+    /usr/sbin/batctl meshif bat0 multicast_mode 1 || true; \
+    echo "[batadv] tuning applied"; \
+  fi'
+
+[Install]
+WantedBy=multi-user.target

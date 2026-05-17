@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Cpu, Database, Network, Lock, Zap, Users, Wifi, WifiOff } from 'lucide-react';
+import { Cpu, Database, Network, Lock, Zap, Users, Cable, Unplug } from 'lucide-react';
 import { NodeMap } from './node-map';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSocket } from '@/components/providers/socket-provider';
+import { useSocket, usePresence } from '@/components/providers/socket-provider';
 
 interface Node {
   id: number;
@@ -29,7 +29,8 @@ interface DashboardStatus {
 }
 
 export const CyberDashboard = () => {
-  const { isConnected, onlineUsers } = useSocket();
+  const { isConnected } = useSocket();
+  const { onlineUsers } = usePresence();
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [presenceData, setPresenceData] = useState<PresenceUser[]>([]);
   const [status, setStatus] = useState<DashboardStatus>({
@@ -42,7 +43,8 @@ export const CyberDashboard = () => {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const response = await axios.get("http://localhost:8000/api/status");
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+        const response = await axios.get(`${backendUrl}/api/status`);
         setStatus(response.data);
       } catch (error) {
         // Fallback for demo/dev without backend
@@ -116,9 +118,9 @@ export const CyberDashboard = () => {
                   : 'bg-rose-500/10 border-rose-500/20'
               }`}>
                 {isConnected ? (
-                  <Wifi size={10} className="text-emerald-500" />
+                  <Cable size={10} className="text-emerald-500" />
                 ) : (
-                  <WifiOff size={10} className="text-rose-500" />
+                  <Unplug size={10} className="text-rose-500" />
                 )}
                 <div className={`w-1.5 h-1.5 rounded-full ${
                   isConnected 

@@ -1,0 +1,20 @@
+# Auto-mount USB mass storage partitions when plugged in.
+#
+# SUBSYSTEMS=="usb"  — matches the USB bus (reliable, set by kernel before rules fire)
+# ENV{DEVTYPE}=="partition" — only act on partitions (sda1), not whole disks (sda)
+# ENV{ID_FS_TYPE}!=""       — only if a recognisable filesystem was found
+#
+# We pass the device name (%k = sda1) AND the fs type so usb-mount.sh
+# never needs to call blkid, avoiding the udev/blkid race condition.
+
+ACTION=="add", SUBSYSTEMS=="usb", SUBSYSTEM=="block", \
+    ENV{DEVTYPE}=="partition", ENV{ID_FS_TYPE}!="", \
+    RUN+="/usr/local/bin/usb-mount.sh %k $env{ID_FS_TYPE} $env{ID_FS_LABEL}"
+
+# Whole-disk case (single-partition pen drives with no partition table)
+ACTION=="add", SUBSYSTEMS=="usb", SUBSYSTEM=="block", \
+    ENV{DEVTYPE}=="disk", ENV{ID_FS_TYPE}!="", \
+    RUN+="/usr/local/bin/usb-mount.sh %k $env{ID_FS_TYPE} $env{ID_FS_LABEL}"
+
+ACTION=="remove", SUBSYSTEMS=="usb", SUBSYSTEM=="block", \
+    RUN+="/usr/local/bin/usb-umount.sh %k"

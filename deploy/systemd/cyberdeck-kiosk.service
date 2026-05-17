@@ -1,0 +1,28 @@
+[Unit]
+Description=CyberDeck Kiosk (Weston compositor + Chromium fullscreen)
+After=cyberdeck-web.service systemd-logind.service
+Requires=cyberdeck-web.service
+
+[Service]
+Type=simple
+User=cyberdeck
+Group=cyberdeck
+PAMName=login
+Environment=HOME=/home/cyberdeck
+Environment=XDG_SEAT=seat0
+Environment=XDG_VTNR=1
+Environment=XDG_CONFIG_HOME=/etc/xdg
+# Weston reads /etc/xdg/weston/weston.ini which uses kiosk-shell + autolaunch.
+# It detects ALL connected outputs (DSI, HDMI-A-1, HDMI-A-2) automatically.
+ExecStart=/usr/bin/weston --config=/etc/xdg/weston/weston.ini --tty=1
+Restart=on-failure
+RestartSec=3
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

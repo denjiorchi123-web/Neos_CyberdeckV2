@@ -4,6 +4,7 @@ import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { FileIcon, X, Upload, Loader2, ShieldCheck } from "lucide-react";
 import { generateMediaKey, encryptMedia } from "@/lib/device-storage";
+import { MESSAGE_FILE_MAX_SIZE, formatMaxSize } from "@/lib/upload-limits";
 
 interface EncryptedFileUploadProps {
   onUploadComplete: (result: {
@@ -31,7 +32,7 @@ const DEFAULT_ACCEPT = {
 export function EncryptedFileUpload({
   onUploadComplete,
   accept = DEFAULT_ACCEPT,
-  maxSize = 100 * 1024 * 1024,
+  maxSize = MESSAGE_FILE_MAX_SIZE,
 }: EncryptedFileUploadProps) {
   const [progress, setProgress] = useState<string | null>(null);
   const [error,    setError]    = useState<string | null>(null);
@@ -121,7 +122,7 @@ export function EncryptedFileUpload({
             {isDragActive ? "Drop to encrypt & send" : "Tap or drag file to upload"}
           </p>
           <p className="text-zinc-500 text-xs">
-            All files are AES-256 encrypted before upload · Max {Math.round(maxSize / 1024 / 1024)} MB
+            All files are AES-256 encrypted before upload · Max {formatMaxSize(maxSize)}
           </p>
         </div>
       )}

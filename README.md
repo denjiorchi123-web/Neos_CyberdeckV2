@@ -1,88 +1,59 @@
-# FullStack Discord Clone: Next.js 13, React, Socket.io, Prisma, Tailwind, MySQL & TypeScript.
+# CyberDeck — Air-Gapped LAN Messenger
 
-Credits: [Antonio Erdeljac](https://github.com/AntonioErdeljac)
+A self-hosted, fully offline LAN messenger for trusted local networks. Designed
+to boot in kiosk mode on a Raspberry Pi 5 running a custom Yocto image.
 
-Features:
+## Stack
 
-- Client form validation and handling using react-hook-form
-- POST, DELETE, and GET routes in route handlers (app/api & pages)
-- Real-time messaging using Socket.io
-- Send attachments as messages using UploadThing
-- Delete & Edit messages in real time for all users
-- Create Text, Audio and Video call Channels
-- 1:1 conversation between members
-- 1:1 video calls between members
-- Member management (Kick, Role change Guest / Moderator)
-- Unique invite link generation & full working invite system
-- Infinite loading for messages in batches of 10 (tanstack/query)
-- Server creation and customization
-- Beautiful UI using TailwindCSS and ShadcnUI
-- Full responsivity and mobile UI
-- Light / Dark mode
-- Websocket fallback: Polling with alerts
-- ORM using Prisma
-- MySQL database using Planetscale
-- Authentication with Clerk
+- **Next.js 13** (App Router, custom HTTPS server in `server.js`)
+- **Socket.io** for real-time chat, presence, WebRTC signaling
+- **Prisma + SQLite** for local persistence (`prisma/dev.db`)
+- **Redis** for presence, signaling state, and Socket.io pub/sub
+- **FastAPI (Python)** sidecar in `backend/main.py` for status / dashboard
+- **WebRTC** for 1:1 and group voice/video calls (peer-to-peer, no STUN/TURN required on a LAN)
+- **bcryptjs** local auth (no Clerk, no cloud)
 
-### Prerequisites
+## Runtime Requirements (Pi 5 / Yocto image)
 
-**Node version 18.x.x**
+- `node` >= 18, `npm` >= 9
+- `python3` with `fastapi`, `uvicorn`, `redis` packages
+- `redis-server` (listening on 127.0.0.1:6379)
+- `openssl` (for one-time cert generation)
+- `chromium` (for kiosk mode)
+- `sqlite3` (Prisma binary auto-targets `linux-arm64` — already in `node_modules` after `npm install` on the Pi)
 
-### Cloning the repository
+## First boot
 
-```shell
-git clone https://github.com/nayak-nirmalya/discord-clone.git
-```
-
-### Install packages
-
-```shell
+```bash
+# 1. Install deps
 npm install
+
+# 2. Push DB schema
+npm run db:push
+
+# 3. Generate self-signed certs (only needs to run once)
+mkdir -p ssl && npm run ssl:gen
+
+# 4. Place font files in public/fonts/ (see deploy/README.md)
+
+# 5. Build for production
+npm run build
+
+# 6. Start
+npm run start
 ```
 
-### Setup .env file
+## Kiosk auto-launch
 
-```js
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=
-NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=
-NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=
-
-DATABASE_URL=
-
-UPLOADTHING_SECRET=
-UPLOADTHING_APP_ID=
-
-LIVEKIT_API_KEY=
-LIVEKIT_API_SECRET=
-NEXT_PUBLIC_LIVEKIT_URL=
-```
-
-### Setup Prisma
-
-Add MySQL Database (PlanetScale)
-
-```shell
-npx prisma generate
-npx prisma db push
-```
-
-### Start the app
-
-```shell
-npm run dev
-```
+See `deploy/` for the systemd units, Chromium launcher, and Yocto integration
+notes that make the app start fullscreen at boot.
 
 ## Available commands
 
-Running commands with npm `npm run [command]`
-
-| command | description                              |
-| :------ | :--------------------------------------- |
-| `dev`   | Starts a development instance of the app |
-| `lint`  | Run lint check                           |
-| `build` | Start building app for deployment        |
-| `start` | Run build version of app                 |
-# Cyber_deck_Airgapped_OS
+| command       | description                                            |
+| :------------ | :----------------------------------------------------- |
+| `npm run dev` | Dev server with HTTPS at `https://localhost:3000`      |
+| `npm run build` | Production build                                     |
+| `npm run start` | Production server (clustered across all CPU cores) |
+| `npm run db:push` | Generate Prisma client + push schema to SQLite   |
+| `npm run ssl:gen` | Regenerate self-signed cert (CN=cyberdeck.local) |

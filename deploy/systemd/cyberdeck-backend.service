@@ -1,0 +1,17 @@
+[Unit]
+Description=CyberDeck FastAPI Backend (status / dashboard)
+After=network.target redis-cyberdeck.service
+Requires=redis-cyberdeck.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cyberdeck/backend
+Environment=REDIS_URL=redis://127.0.0.1:6379
+ExecStart=/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+User=cyberdeck
+Group=cyberdeck
+
+[Install]
+WantedBy=multi-user.target

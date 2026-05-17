@@ -1,0 +1,14 @@
+[Unit]
+Description=CyberDeck node identity (hostname + static IP from /data/node.conf)
+DefaultDependencies=no
+Before=network-pre.target systemd-networkd.service
+After=local-fs.target
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cyberdeck-identity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

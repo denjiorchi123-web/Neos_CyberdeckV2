@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { LogOut, User } from "lucide-react";
+import { LogOut, UserCircle2 } from "lucide-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 
@@ -27,15 +27,22 @@ export function NavigationUserControl({ userName }: NavigationUserControlProps) 
   return (
     <div className="pb-3 mt-auto flex items-center flex-col gap-y-4">
       <ModeToggle />
-      <ActionTooltip side="right" align="center" label={`Logged in as ${userName}`}>
-        <div className="p-2 text-zinc-500 cursor-default">
-           <User size={20} />
-        </div>
+
+      {/* Profile settings button */}
+      <ActionTooltip side="right" align="center" label={`Profile: ${userName}`}>
+        <button
+          onClick={() => router.push("/profile")}
+          className="group relative flex items-center justify-center p-3 rounded-[24px] hover:rounded-[16px] transition-all overflow-hidden bg-background dark:bg-zinc-700 hover:bg-indigo-500/20 text-zinc-500 hover:text-indigo-400"
+        >
+          <UserCircle2 size={20} />
+        </button>
       </ActionTooltip>
-      <ActionTooltip side="right" align="center" label="Logout">
+
+      {/* Logout button */}
+      <ActionTooltip side="right" align="center" label="Sign out">
         <button
           onClick={onLogout}
-          className="group relative flex items-center p-3 rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden items-center justify-center bg-background dark:bg-zinc-700 hover:bg-rose-500/20 text-rose-500"
+          className="group relative flex items-center justify-center p-3 rounded-[24px] hover:rounded-[16px] transition-all overflow-hidden bg-background dark:bg-zinc-700 hover:bg-rose-500/20 text-rose-500"
         >
           <LogOut size={20} />
         </button>

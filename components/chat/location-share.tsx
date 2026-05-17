@@ -47,14 +47,6 @@ export function LocationShare({ onClose, onSend }: LocationShareProps) {
     );
   }, []);
 
-  const mapUrl = loc
-    ? `https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}&zoom=16`
-    : null;
-
-  const staticMapUrl = loc
-    ? `https://staticmap.openstreetmap.de/staticmap.php?center=${loc.lat},${loc.lng}&zoom=16&size=640x320&markers=${loc.lat},${loc.lng},red`
-    : null;
-
   const send = async () => {
     if (!loc) return;
     setSending(true);
@@ -118,30 +110,8 @@ export function LocationShare({ onClose, onSend }: LocationShareProps) {
               <p className="text-white font-mono text-sm">
                 {loc.lat.toFixed(6)}°N &nbsp; {loc.lng.toFixed(6)}°E
               </p>
-              {mapUrl && (
-                <a
-                  href={mapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 text-indigo-400 text-xs hover:underline truncate"
-                >
-                  View on OpenStreetMap →
-                </a>
-              )}
             </div>
 
-            {/* Map thumbnail */}
-            {staticMapUrl && (
-              <div className="w-full max-w-sm rounded-2xl overflow-hidden border border-white/10 shadow-xl">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={staticMapUrl}
-                  alt="Map preview"
-                  className="w-full h-40 object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              </div>
-            )}
           </>
         )}
       </div>

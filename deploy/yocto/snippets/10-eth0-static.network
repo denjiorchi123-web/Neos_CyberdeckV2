@@ -1,0 +1,17 @@
+# systemd-networkd: eth0 is the raw mesh transport for batman-adv.
+# No IP, no DHCP — it just carries batadv frames between Pis. The
+# logical IP lives on bat0 (see 15-bat0.network).
+[Match]
+Name=eth0
+
+[Network]
+BatmanAdvanced=bat0
+LinkLocalAddressing=no
+LLDP=no
+EmitLLDP=no
+LLMNR=no
+MulticastDNS=no
+IPv6AcceptRA=no
+
+[Link]
+RequiredForOnline=carrier

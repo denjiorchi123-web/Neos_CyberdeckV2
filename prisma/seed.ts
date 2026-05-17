@@ -22,12 +22,12 @@ async function main() {
   console.log("Seeding profiles...");
 
   const seedProfiles = [
-    { name: "Cyber Admin", email: "admin@cyberdeck.local", userId: "user_admin", imageUrl: "https://avatar.vercel.sh/admin" },
-    { name: "Satoshi", email: "satoshi@bitcoin.org", userId: "user_satoshi", imageUrl: "https://avatar.vercel.sh/satoshi" },
-    { name: "Trinity", email: "trinity@matrix.io", userId: "user_trinity", imageUrl: "https://avatar.vercel.sh/trinity" },
-    { name: "Neo", email: "neo@theone.com", userId: "user_neo", imageUrl: "https://avatar.vercel.sh/neo" },
-    { name: "Morpheus", email: "morpheus@neb.com", userId: "user_morpheus", imageUrl: "https://avatar.vercel.sh/morpheus" },
-    { name: "Agent Smith", email: "smith@matrix.system", userId: "user_smith", imageUrl: "https://avatar.vercel.sh/smith" },
+    { name: "Cyber Admin", email: "admin@cyberdeck.local", userId: "user_admin", imageUrl: "" },
+    { name: "Satoshi", email: "satoshi@bitcoin.org", userId: "user_satoshi", imageUrl: "" },
+    { name: "Trinity", email: "trinity@matrix.io", userId: "user_trinity", imageUrl: "" },
+    { name: "Neo", email: "neo@theone.com", userId: "user_neo", imageUrl: "" },
+    { name: "Morpheus", email: "morpheus@neb.com", userId: "user_morpheus", imageUrl: "" },
+    { name: "Agent Smith", email: "smith@matrix.system", userId: "user_smith", imageUrl: "" },
   ];
 
   const profiles = [];
@@ -48,7 +48,7 @@ async function main() {
     data: {
       profileId: admin.id,
       name: "CyberDeck Main",
-      imageUrl: "https://avatar.vercel.sh/cyberdeck-main",
+      imageUrl: "",
       inviteCode: "cyberdeck-default",
       channels: {
         create: [

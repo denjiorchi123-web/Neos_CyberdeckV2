@@ -1,0 +1,23 @@
+# Plymouth script — fade-in CyberDeck boot logo, centered, dark background.
+
+# Black background fills the screen
+Window.SetBackgroundTopColor(0.04, 0.05, 0.06);
+Window.SetBackgroundBottomColor(0.04, 0.05, 0.06);
+
+# Load the logo (dark variant — looks good on the black bg)
+logo.image  = Image("boot.jpeg");
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetX((Window.GetWidth()  - logo.image.GetWidth())  / 2);
+logo.sprite.SetY((Window.GetHeight() - logo.image.GetHeight()) / 2);
+
+# Pulse opacity gently while booting
+fun refresh_callback() {
+  t = Plymouth.GetTime();
+  o = 0.7 + (Math.Sin(t * 2.5) + 1) * 0.15;
+  logo.sprite.SetOpacity(o);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# No password / progress bar UI — kiosk only
+fun display_password_callback (prompt, bullets) {}
+fun display_normal_callback   () {}
