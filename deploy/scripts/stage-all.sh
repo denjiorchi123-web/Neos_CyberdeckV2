@@ -7,12 +7,12 @@
 #   bash deploy/scripts/stage-all.sh
 #
 # Prerequisites:
-#   - Node 18+ at /home/nova/local/node/bin  (or on PATH)
+#   - Node 18+ (installed via nvm or apt)
 #   - meta-cyberdeck layer at ~/cyberdeck/sources/meta-cyberdeck
 #   - Poky + BSP layers at ~/cyberdeck/sources/
 set -euo pipefail
 
-export PATH="/home/nova/local/node/bin:/usr/bin:/bin:/usr/local/bin"
+export PATH="$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/usr/bin:/bin"
 
 PROJ="${PROJ:-/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS}"
 META="${META:-$HOME/cyberdeck/sources/meta-cyberdeck}"

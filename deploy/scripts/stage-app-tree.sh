@@ -3,8 +3,8 @@
 # build dir at /home/nova/cyberdeck-app-build. Strip x64 binaries, keep arm64.
 set -euo pipefail
 
-WORK=/home/nova/cyberdeck-app-build
-STAGE=/home/nova/cyberdeck-app-stage
+WORK="$HOME/cyberdeck-app-build"
+STAGE="$HOME/cyberdeck-app-stage"
 
 cd "$WORK"
 

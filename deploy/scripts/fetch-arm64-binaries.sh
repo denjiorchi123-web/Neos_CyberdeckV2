@@ -4,9 +4,9 @@
 # (download-only, no platform check) and extract manually.
 set -euo pipefail
 
-export PATH="/home/nova/local/node/bin:/usr/bin:/bin"
+export PATH="$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/usr/bin:/bin"
 
-WORK=/home/nova/cyberdeck-app-build
+WORK="$HOME/cyberdeck-app-build"
 DL=/tmp/arm64-fetch
 
 rm -rf "$DL"

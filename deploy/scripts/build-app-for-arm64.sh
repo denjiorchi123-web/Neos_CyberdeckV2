@@ -6,10 +6,11 @@
 # requires host-platform SWC, but the runtime needs target-platform SWC.
 set -euo pipefail
 
-export PATH="/home/nova/local/node/bin:/usr/bin:/bin"
+# Prefer nvm-managed node, then system node, then fallback path
+export PATH="$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/usr/bin:/bin"
 
-PROJ_SRC=/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS
-WORK_DIR=/home/nova/cyberdeck-app-build
+PROJ_SRC="${PROJ_SRC:-/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS}"
+WORK_DIR="$HOME/cyberdeck-app-build"
 
 # 1) Copy source
 echo "[1/7] Copying source..."
@@ -58,7 +59,7 @@ else
 fi
 
 # 6) Stage the runtime tree
-STAGE_DIR=/home/nova/cyberdeck-app-stage
+STAGE_DIR="$HOME/cyberdeck-app-stage"
 echo "[6/7] Staging to $STAGE_DIR..."
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"

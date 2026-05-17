@@ -3,8 +3,8 @@
 # plus its systemd unit files and first-boot helper.
 set -euo pipefail
 
-STAGE=/home/nova/cyberdeck-app-stage
-META=$HOME/cyberdeck/sources/meta-cyberdeck
+STAGE="$HOME/cyberdeck-app-stage"
+META="${META:-$HOME/cyberdeck/sources/meta-cyberdeck}"
 RECIPE_DIR="$META/recipes-cyberdeck/cyberdeck-app"
 FILES_DIR="$RECIPE_DIR/files"
 TARBALL="cyberdeck-app-1.0.tar.gz"
@@ -18,7 +18,7 @@ mkdir -p "$FILES_DIR"
 
 # ─── 1. Tarball the runtime tree ──────────────────────────────────────
 echo "[1/3] Creating $TARBALL..."
-cd /home/nova
+cd "$HOME"
 rm -f "$FILES_DIR/$TARBALL"
 # Wrap with a top-level dir name "cyberdeck-app-1.0" for clean extraction
 tar -czf "$FILES_DIR/$TARBALL" --transform 's,^\./,cyberdeck-app-1.0/,' -C "$STAGE" .
