@@ -56,3 +56,10 @@ over_voltage_delta=0
 # sleeping its USB/Ethernet block while the batman-adv mesh is active.
 # Without this, eth0 can drop frames after ~60s of low activity.
 dtparam=rp1_pwr=max
+
+# ─── PCIe ──────────────────────────────────────────────────────────────
+# Suppress "PCIe link down" kernel error when no NVMe/PCIe device is attached.
+# The Pi 5 PCIe x1 slot reports link-down on boot if empty — this is harmless
+# but noisy. Disabling the unused PCIe probe cleans the boot log.
+dtparam=nvme=off
+dtoverlay=disable-pcie

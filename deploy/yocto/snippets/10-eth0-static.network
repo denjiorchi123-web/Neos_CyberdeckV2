@@ -2,11 +2,11 @@
 # No IP, no DHCP — it just carries batadv frames between Pis. The
 # logical IP lives on bat0 (see 15-bat0.network).
 [Match]
-Name=eth0
+Name=e*
 
 [Network]
 BatmanAdvanced=bat0
-LinkLocalAddressing=no
+LinkLocalAddressing=ipv4
 LLDP=no
 EmitLLDP=no
 LLMNR=no

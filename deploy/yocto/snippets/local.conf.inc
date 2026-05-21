@@ -3,6 +3,15 @@
 # Usage in conf/local.conf:
 #   require ${TOPDIR}/../meta-cyberdeck/conf/cyberdeck.inc
 #   (and copy this file there, or symlink it)
+#
+# Layer requirements (bblayers.conf must include):
+#   sources/meta-clang   → branch: scarthgap-clang20  (Clang 20 required by Chromium 147)
+#   sources/meta-browser → branch: scarthgap
+#
+# To switch meta-clang:
+#   git -C ~/cyberdeck/sources/meta-clang fetch origin
+#   git -C ~/cyberdeck/sources/meta-clang checkout scarthgap-clang20
+#   bitbake -c cleansstate clang-native chromium-ozone-wayland
 
 # ─── Machine ──────────────────────────────────────────────────────────
 MACHINE = "raspberrypi5"
@@ -15,8 +24,8 @@ IMAGE_INSTALL:append = " \
     redis \
     sqlite3 \
     openssl curl \
-    chromium-x11 \
-    weston weston-init \
+    chromium-ozone-wayland \
+    weston weston-init weston-examples \
     avahi-daemon avahi-utils \
     nftables \
     openssh openssh-sftp-server \
@@ -61,7 +70,18 @@ hostname_pn-base-files = "deck-XX"
 # Boot splash (Plymouth)
 PLYMOUTH_THEME = "cyberdeck"
 
+# ─── Clang 20 toolchain ───────────────────────────────────────────────
+# Chromium 147 requires Clang 20+ for its bundled libc++ builtins.
+# meta-clang must be on the 'scarthgap-clang20' branch.
+TOOLCHAIN = "clang"
+CLANGVER  = "20"
+
 # ─── Reproducibility / SBOM ──────────────────────────────────────────
 INHERIT += "create-spdx"
 BB_REPRODUCIBLE_BUILD = "1"
 SOURCE_DATE_EPOCH = "1716000000"
+
+# ─── Disk Space Optimization ──────────────────────────────────────────
+# Automatically delete temporary working files after each recipe builds.
+# This prevents the build folder from growing to 100GB+ and keeps the C drive free.
+INHERIT += "rm_work"

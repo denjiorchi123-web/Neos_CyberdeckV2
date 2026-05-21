@@ -33,7 +33,7 @@ SYSTEMD_SERVICE:${PN} = "redis-cyberdeck.service \
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 RDEPENDS:${PN} = "nodejs python3 python3-fastapi python3-uvicorn python3-redis \
-                  redis openssl curl chromium weston weston-init avahi-daemon avahi-utils \
+                  redis openssl curl chromium-ozone-wayland weston weston-init avahi-daemon avahi-utils \
                   dhclient sudo"
 
 FILES:${PN} = "/opt/cyberdeck \
@@ -125,4 +125,19 @@ pkg_postinst:${PN}() {
     chown -R cyberdeck:cyberdeck /opt/cyberdeck
     # Allow node-pty to be rebuilt at first-boot if prebuilt is absent
     chmod 0755 /opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
+
+    # Boot straight into the kiosk: graphical.target is the parent of
+    # cyberdeck-kiosk.service's WantedBy. Without this the image lands on
+    # multi-user.target and weston never launches.
+    if [ -d $D ]; then
+        # Offline (image build) — write the symlink into the rootfs directly.
+        ln -sf /lib/systemd/system/graphical.target \
+            $D/etc/systemd/system/default.target
+        # Disable getty on tty1 so weston can claim the VT without a fight.
+        mkdir -p $D/etc/systemd/system
+        ln -sf /dev/null $D/etc/systemd/system/getty@tty1.service
+    else
+        systemctl set-default graphical.target || true
+        systemctl mask getty@tty1.service     || true
+    fi
 }

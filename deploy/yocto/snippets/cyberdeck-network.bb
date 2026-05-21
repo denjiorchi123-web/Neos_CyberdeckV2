@@ -23,7 +23,8 @@ SRC_URI = "file://05-bat0.netdev \
 
 S = "${WORKDIR}"
 
-RDEPENDS:${PN} = "systemd-networkd batctl kernel-module-batman-adv"
+# networkd is bundled into the `systemd` package on scarthgap, not split out.
+RDEPENDS:${PN} = "systemd batctl kernel-module-batman-adv"
 
 inherit systemd
 SYSTEMD_SERVICE:${PN} = "cyberdeck-identity.service cyberdeck-batadv-tune.service"

@@ -53,7 +53,10 @@ function windowsInterfaces(): NetInterface[] {
     if (!Array.isArray(items)) items = [items];
 
     return items
-      .filter((d: Record<string, unknown>) => !String(d.Name ?? "").toLowerCase().includes("loopback"))
+      .filter((d: Record<string, unknown>) => {
+        const n = String(d.Name ?? "").toLowerCase();
+        return !n.includes("loopback") && !n.includes("wi-fi") && !n.startsWith("wl");
+      })
       .map((d: Record<string, unknown>) => ({
         name:     String(d.Name ?? ""),
         mac:      d.MAC     ? String(d.MAC)     : undefined,
@@ -136,6 +139,9 @@ function linuxInterfaces(): NetInterface[] {
         loopback,
         dhcp:     dhcpSet.has(e.ifname),
       };
+    }).filter(e => {
+      const n = e.name.toLowerCase();
+      return !n.startsWith("wl") && !n.includes("wi-fi");
     });
   } catch {
     return fallbackFromOs();

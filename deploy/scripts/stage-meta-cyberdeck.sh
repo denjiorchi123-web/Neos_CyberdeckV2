@@ -16,7 +16,8 @@ mkdir -p \
   "$META/recipes-cyberdeck/firewall/files" \
   "$META/recipes-cyberdeck/bootlogo/files" \
   "$META/recipes-cyberdeck/power/files" \
-  "$META/recipes-connectivity/batctl"
+  "$META/recipes-connectivity/batctl" \
+  "$META/recipes-browser/chromium"
 
 # 1. Append batman-adv to existing kernel hardening config
 APPEND_FILE="$META/recipes-kernel/linux/files/cyberdeck-hardening.cfg"
@@ -74,13 +75,13 @@ cat > "$META/recipes-connectivity/batctl/batctl_2024.4.bb" <<'EOF'
 SUMMARY = "B.A.T.M.A.N. Advanced userspace tool"
 HOMEPAGE = "https://www.open-mesh.org/projects/batctl"
 LICENSE = "GPL-2.0-only & MIT"
-LIC_FILES_CHKSUM = "file://README.rst;beginline=4;endline=8;md5=ddd99d8527e6dd2bb22d8c5d8c25b59f"
+LIC_FILES_CHKSUM = "file://README.rst;beginline=4;endline=8;md5=a59e6a3d4a29ef3b0f975b36d4897cc6"
 
 DEPENDS = "libnl pkgconfig-native"
 RDEPENDS:${PN} = "kernel-module-batman-adv"
 
 SRC_URI = "https://downloads.open-mesh.org/batman/releases/batman-adv-${PV}/batctl-${PV}.tar.gz"
-SRC_URI[sha256sum] = "5036c0e1de4f9d75bf07e6e35f53e22e0a3ce6f5ce26ec38d2a8e44b3b0fd1b1"
+SRC_URI[sha256sum] = "e42bdf1a4ecb4b188bcd3aca17e120496a42b6547593b917e3ffcf943e3f2913"
 
 S = "${WORKDIR}/batctl-${PV}"
 
@@ -105,7 +106,18 @@ FILES:${PN} = "${sbindir}/batctl"
 EOF
 echo "[ok] dropped batctl recipe"
 
+# 7. Chromium 147 Clang 18 compatibility bbappend (with inline python patches)
+# Fixes: __builtin_ctzg, __builtin_clzg, __is_nothrow_convertible,
+#        __reference_converts_from_temporary (all Clang 20 builtins)
+# Works with the default Clang 18.1.8 from meta-clang/scarthgap branch.
+cp "$PROJ/deploy/yocto/snippets/chromium-ozone-wayland_147.0.7727.116.bbappend" \
+   "$META/recipes-browser/chromium/"
+echo "[ok] dropped chromium-ozone-wayland bbappend (patches will be applied inline during do_patch)"
+
 echo ""
 echo "All files staged. Now update the image to install these."
 echo ""
-ls -la "$META/recipes-cyberdeck/"*/ "$META/recipes-connectivity/batctl/"
+echo "REMINDER: Ensure meta-clang is on the scarthgap-clang20 branch:"
+echo "  git -C \${HOME}/cyberdeck/sources/meta-clang checkout scarthgap-clang20"
+echo ""
+ls -la "$META/recipes-cyberdeck/"*/ "$META/recipes-connectivity/batctl/" "$META/recipes-browser/chromium/"

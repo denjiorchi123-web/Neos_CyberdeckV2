@@ -11,24 +11,15 @@ import { IncomingCallOverlay } from "@/components/incoming-call-overlay";
 import { OutgoingCallOverlay } from "@/components/outgoing-call-overlay";
 
 import type { Metadata } from "next";
-import { Open_Sans, Share_Tech_Mono } from "next/font/google";
+// Removed next/font/google import due to offline build requirement
 
-// next/font/google fetches the fonts at *build time* on the WSL build host
-// (which has internet) and self-hosts them in .next/static/media/. At runtime
-// the Pi serves the fonts itself — no requests ever leave the LAN.
-// This is the right choice for an air-gapped runtime with an online build host.
-const openSans = Open_Sans({
-  subsets: ["latin"],
-  display: "swap",
-  fallback: ["system-ui", "sans-serif"],
-});
-const mono = Share_Tech_Mono({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-mono",
-  display: "swap",
-  fallback: ["ui-monospace", "monospace"],
-});
+const openSans = {
+  className: "font-sans antialiased"
+};
+
+const mono = {
+  variable: "font-mono"
+};
 
 export const metadata: Metadata = {
   title: "CyberDeck",

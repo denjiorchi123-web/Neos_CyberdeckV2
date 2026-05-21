@@ -38,7 +38,7 @@ const dev = process.env.NODE_ENV !== "production";
 // ── Multi-Core Clustering ────────────────────────────────────
 // In a high-traffic community of 5,000+, we utilize every CPU core
 // to handle massive encryption and signaling loads simultaneously.
-if (cluster.isMaster && !dev) {
+if (cluster.isPrimary && !dev && !process.env.SINGLE_CORE) {
   const numCPUs = os.cpus().length;
   console.log(`> CyberDeck OS Cluster: Initializing ${numCPUs} High-Performance Cores...`);
   

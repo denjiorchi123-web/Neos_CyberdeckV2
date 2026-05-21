@@ -150,7 +150,13 @@ export default function FilesPage() {
             <ArrowLeft className="h-5 w-5" />
           </button>
         ) : (
-          <Usb className="h-5 w-5 text-indigo-400" />
+          <button
+            onClick={() => window.history.back()}
+            className="p-1 -ml-1 rounded-lg hover:bg-zinc-800 text-indigo-400 hover:text-indigo-300 transition"
+            title="Go Back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
         )}
 
         <div className="flex-1 flex items-center gap-x-2 overflow-hidden">

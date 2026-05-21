@@ -15,6 +15,7 @@ NETF="/etc/systemd/network/15-bat0.network"
 
 if [ ! -f "$CONF" ]; then
   echo "[identity] $CONF missing — defaulting to deck-99 (orphan)" >&2
+  mkdir -p /data
   echo "NODE_ID=99" > "$CONF"
 fi
 

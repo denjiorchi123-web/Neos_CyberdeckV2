@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   RefreshCw, Trash2, Loader2, Terminal, HardDrive, Server,
-  AlertCircle, Info, AlertTriangle, Zap,
+  AlertCircle, Info, AlertTriangle, Zap, ArrowLeft,
 } from "lucide-react";
 import { useSocket } from "@/components/providers/socket-provider";
 
@@ -107,9 +107,18 @@ export default function LogsPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-4 py-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-zinc-400 uppercase tracking-widest">
-            {source === "terminal" ? "Terminal" : "System Logs"}
-          </span>
+          <div className="flex items-center gap-x-3">
+            <button
+              onClick={() => window.history.back()}
+              className="p-1 -ml-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition"
+              title="Go Back"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <span className="text-sm text-zinc-400 uppercase tracking-widest">
+              {source === "terminal" ? "Terminal" : "System Logs"}
+            </span>
+          </div>
           <div className="flex items-center gap-x-2">
             {source === "app" && logSize > 0 && (
               <span className="text-[10px] text-zinc-600">{(logSize / 1024).toFixed(1)} KB</span>

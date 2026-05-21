@@ -12,8 +12,13 @@ mkdir -p "$PROFILE_DIR"
 # Avoids Chromium showing "ERR_CONNECTION_REFUSED" on a fast boot.
 /opt/cyberdeck/deploy/scripts/wait-for-web.sh || true
 
+# Forcefully remove old locks from bad reboots so Chromium doesn't crash on boot
+rm -f "$PROFILE_DIR/SingletonLock"
+
 exec /usr/bin/chromium \
   --kiosk "$URL" \
+  --force-device-scale-factor=0.75 \
+  --password-store=basic \
   --user-data-dir="$PROFILE_DIR" \
   --ozone-platform=wayland \
   --enable-features=UseOzonePlatform \

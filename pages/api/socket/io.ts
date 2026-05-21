@@ -29,7 +29,7 @@ function resolveShell(): string {
 
 function resolveCwd(): string {
   if (process.platform === "win32") return process.env.USERPROFILE || "C:\\";
-  return process.env.CYBERDECK_HOME || "/opt/cyberdeck";
+  return process.env.CYBERDECK_HOME || process.env.HOME || process.cwd();
 }
 
 function spawnTerminal(socket: any, cols: number, rows: number) {

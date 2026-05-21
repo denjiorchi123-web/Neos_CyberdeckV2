@@ -699,9 +699,15 @@ export function MediaRoom({
         { skipNull: true }
       );
 
-      startTransition(() => {
-        router.push(url);
-      });
+      router.push(url);
+      router.refresh();
+      
+      // Fallback in case router fails (Next.js client-side navigation quirk)
+      setTimeout(() => {
+         if (isEndingRef.current) {
+            window.location.assign(url);
+         }
+      }, 1000);
     }, 2000);
   }, [chatId, pathName, router, socket, video, callId, targetUserId, currentProfileName]);
 
@@ -1082,6 +1088,16 @@ export function MediaRoom({
              <h2 className="text-4xl font-black text-white tracking-tight drop-shadow-md">{callEndedState}</h2>
              {duration > 0 && <p className="text-emerald-500 font-mono text-xl uppercase tracking-widest">Duration: {formatDuration(duration)}</p>}
            </div>
+           
+           <button 
+             onClick={() => {
+               const url = qs.stringifyUrl({ url: pathName || "", query: { video: undefined, audio: undefined } }, { skipNull: true });
+               window.location.assign(url);
+             }}
+             className="mt-8 px-8 py-3 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-bold transition-all shadow-lg active:scale-95 border border-zinc-700"
+           >
+             Return to Chat
+           </button>
         </div>
       </div>
     );
