@@ -342,7 +342,7 @@ function ChatItemInner({
     return <ActionTooltip label="Sent"><Check className="h-3.5 w-3.5 text-zinc-400 -ml-1" /></ActionTooltip>;
   };
 
-  const hasOnlyMedia = !!fileUrl && (!content || content === fileName);
+  const hasOnlyMedia = !!fileUrl && (!content || content === fileName || content === fileUrl);
 
   return (
     <>
