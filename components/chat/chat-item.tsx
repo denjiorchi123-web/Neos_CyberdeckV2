@@ -266,6 +266,7 @@ function ChatItemInner({
   const [isEditing,    setIsEditing]    = useState(false);
   const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
   const [lightbox,     setLightbox]     = useState(false);
+  const [imgError,     setImgError]     = useState(false);
   const { onOpen }  = useModal();
   const params      = useParams();
   const router      = useRouter();
@@ -459,7 +460,7 @@ function ChatItemInner({
                 )}
 
                 {/* ── Image ── */}
-                {isImage && resolvedUrl && (
+                {isImage && resolvedUrl && !imgError && (
                   <div className={cn("relative group/img", hasOnlyMedia ? "" : "mb-2")}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -473,6 +474,7 @@ function ChatItemInner({
                       )}
                       loading="lazy"
                       onClick={() => setLightbox(true)}
+                      onError={() => setImgError(true)}
                     />
                     {/* Download overlay on hover */}
                     <a
@@ -488,6 +490,13 @@ function ChatItemInner({
                         <Lock className="h-6 w-6 text-emerald-400 animate-pulse" />
                       </div>
                     )}
+                  </div>
+                )}
+                
+                {isImage && resolvedUrl && imgError && (
+                  <div className={cn("flex flex-col items-center justify-center p-4 bg-black/20 rounded-xl border border-white/5", hasOnlyMedia ? "w-full max-w-[300px]" : "w-full max-w-[280px] mb-2")}>
+                    <FileIcon className="h-8 w-8 text-zinc-600 mb-2" />
+                    <span className="text-xs text-zinc-500 font-medium">Image unavailable</span>
                   </div>
                 )}
 
@@ -530,6 +539,16 @@ function ChatItemInner({
                           {timestamp}
                         </span>
                         {renderTicks()}
+                        
+                        {/* INLINE EDIT/DELETE BUTTONS FOR TOUCH SCREENS */}
+                        {canDelete && !isEditing && (
+                           <div className="flex items-center gap-x-1.5 ml-1">
+                             {canEdit && (
+                               <Edit onClick={() => setIsEditing(true)} className="w-3.5 h-3.5 text-zinc-400/50 hover:text-white cursor-pointer transition" />
+                             )}
+                             <Trash onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })} className="w-3.5 h-3.5 text-zinc-400/50 hover:text-rose-500 cursor-pointer transition" />
+                           </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -551,26 +570,17 @@ function ChatItemInner({
                       {timestamp}
                     </span>
                     {renderTicks()}
+                    
+                    {/* INLINE DELETE BUTTON FOR TOUCH SCREENS */}
+                    {canDelete && !isEditing && (
+                       <div className="flex items-center gap-x-1.5 ml-1">
+                         <Trash onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })} className="w-3.5 h-3.5 text-zinc-400/50 hover:text-rose-500 cursor-pointer transition" />
+                       </div>
+                    )}
                   </div>
                 )}
 
-                {/* Hover actions */}
-                {canDelete && !isEditing && (
-                  <div className={cn(
-                    "absolute hidden group-hover:flex items-center gap-x-2 -top-4 bg-[#1e1f22] border border-white/10 p-1.5 rounded-md shadow-2xl z-10",
-                    isOwner ? "right-0" : "left-0"
-                  )}>
-                    {canEdit && (
-                      <ActionTooltip label="Edit">
-                        <Edit onClick={() => setIsEditing(true)} className="cursor-pointer w-3 h-3 text-zinc-400 hover:text-white transition" />
-                      </ActionTooltip>
-                    )}
-                    <Trash
-                      onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })}
-                      className="cursor-pointer w-3 h-3 text-zinc-400 hover:text-rose-500 transition"
-                    />
-                  </div>
-                )}
+                {/* Hover actions removed - moved inline for touch compatibility */}
               </div>
             )}
           </div>
