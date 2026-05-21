@@ -17,7 +17,7 @@ rm -f "$PROFILE_DIR/SingletonLock"
 
 exec /usr/bin/chromium \
   --kiosk "$URL" \
-  --force-device-scale-factor=0.75 \
+  --force-device-scale-factor=0.85 \
   --password-store=basic \
   --user-data-dir="$PROFILE_DIR" \
   --ozone-platform=wayland \
