@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 
@@ -16,6 +16,7 @@ interface NavigationItemProps {
 export function NavigationItem({ id, imageUrl, name }: NavigationItemProps) {
   const params = useParams();
   const router = useRouter();
+  const [imageError, setImageError] = useState(false);
 
   const onClick = () => {
     router.push(`/servers/${id}`);
@@ -33,12 +34,23 @@ export function NavigationItem({ id, imageUrl, name }: NavigationItemProps) {
         />
         <div
           className={cn(
-            "relative group flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden",
+            "relative group flex items-center justify-center mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden bg-zinc-800",
             params?.serverId === id &&
               "bg-primary/10 text-primary rounded-[16px]"
           )}
         >
-          <Image fill src={imageUrl} alt="Channel" />
+          {!imageError ? (
+            <Image 
+              fill 
+              src={imageUrl} 
+              alt="Channel" 
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <span className="text-xl font-bold text-zinc-300 uppercase">
+              {name?.charAt(0) || "S"}
+            </span>
+          )}
         </div>
       </button>
     </ActionTooltip>

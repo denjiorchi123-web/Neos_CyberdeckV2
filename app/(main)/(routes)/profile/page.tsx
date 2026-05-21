@@ -59,6 +59,7 @@ export default function ProfilePage() {
   const [confPass,   setConfPass]   = useState("");
   const [showPw,     setShowPw]     = useState(false);
   const [changingPw, setChangingPw] = useState(false);
+  const [imgError,   setImgError]   = useState(false);
 
   // Delete
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -98,6 +99,7 @@ export default function ProfilePage() {
       await axios.patch(`/api/profiles/${profile.id}`, { imageUrl: data.url });
       setProfile(p => p ? { ...p, imageUrl: data.url } : p);
       setAvatarPreview(null);
+      setImgError(false);
       notify(true, "Avatar updated");
     } catch (e: any) {
       setAvatarPreview(null);
@@ -200,9 +202,14 @@ export default function ProfilePage() {
           <h2 className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-5">Profile Photo</h2>
           <div className="flex items-center gap-x-6">
             <div className="relative group">
-              {avatarSrc ? (
+              {(avatarSrc && !imgError) ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarSrc} alt={profile?.name} className="h-20 w-20 rounded-full object-cover ring-4 ring-indigo-500/30" />
+                <img 
+                  src={avatarSrc} 
+                  alt={profile?.name} 
+                  className="h-20 w-20 rounded-full object-cover ring-4 ring-indigo-500/30" 
+                  onError={() => setImgError(true)}
+                />
               ) : (
                 <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white ring-4 ring-indigo-500/30">
                   {initials}
