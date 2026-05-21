@@ -5,7 +5,7 @@ Window.SetBackgroundTopColor(0.04, 0.05, 0.06);
 Window.SetBackgroundBottomColor(0.04, 0.05, 0.06);
 
 # Load the logo (dark variant — looks good on the black bg)
-logo.image  = Image("boot.jpeg");
+logo.image  = Image("boot.png");
 logo.sprite = Sprite(logo.image);
 logo.sprite.SetX((Window.GetWidth()  - logo.image.GetWidth())  / 2);
 logo.sprite.SetY((Window.GetHeight() - logo.image.GetHeight()) / 2);

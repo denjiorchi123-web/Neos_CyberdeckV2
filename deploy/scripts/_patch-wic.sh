@@ -122,14 +122,13 @@ fi
 
 # ── Patch p1: firmware splash logo (Pi firmware loads /boot/splash.png) ─
 echo "      Installing firmware splash logo..."
-cp -f "$PROJ/deploy/assets/boot-logos/boot-dark.jpeg" /mnt/wic_boot/splash.png
-cp -f "$PROJ/deploy/assets/boot-logos/boot-dark.jpeg" /mnt/wic_boot/splash.jpeg
+cp -f "$PROJ/deploy/assets/boot-logos/boot-dark.png" /mnt/wic_boot/splash.png
 
 # ── Patch p2: Plymouth theme ───────────────────────────────────────────
 echo "[5/7] Installing Plymouth theme..."
 THEME=/mnt/wic_root/usr/share/plymouth/themes/cyberdeck
 mkdir -p "$THEME"
-cp -f "$PROJ/deploy/assets/boot-logos/boot-dark.jpeg"   "$THEME/boot.jpeg"
+cp -f "$PROJ/deploy/assets/boot-logos/boot-dark.png"    "$THEME/boot.png"
 cp -f "$PROJ/deploy/yocto/snippets/cyberdeck.plymouth"  "$THEME/cyberdeck.plymouth"
 cp -f "$PROJ/deploy/yocto/snippets/cyberdeck.script"    "$THEME/cyberdeck.script"
 
