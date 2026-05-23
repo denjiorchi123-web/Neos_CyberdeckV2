@@ -178,6 +178,10 @@ echo "[firstboot] complete"
 EOF
 chmod +x "$FILES_DIR/first-boot.sh"
 
+# Copy the extra systemd unit files from deploy/systemd that aren't generated here
+cp "/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS/deploy/systemd/cyberdeck-kiosk.service" "$FILES_DIR/"
+cp "/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS/deploy/systemd/cyberdeck-power.service" "$FILES_DIR/"
+
 # ─── 3. Recipe ───────────────────────────────────────────────────────
 echo "[3/3] Writing cyberdeck-app.bb..."
 cp "/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS/deploy/yocto/snippets/cyberdeck-app.bb" "$RECIPE_DIR/cyberdeck-app.bb"
