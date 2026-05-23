@@ -35,7 +35,8 @@ const nextConfig = {
     // Disable optimization — air-gapped boxes may not have sharp or a network CA
     unoptimized: true
   },
-  swcMinify: true
+  swcMinify: true,
+  output: "standalone"
 };
 
 module.exports = nextConfig;
