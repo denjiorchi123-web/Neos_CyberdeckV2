@@ -59,8 +59,8 @@ echo "[ok] dropped firewall recipe"
 
 # 4. Bootlogo recipe
 cp "$PROJ/deploy/yocto/snippets/cyberdeck-bootlogo.bb"           "$META/recipes-cyberdeck/bootlogo/"
-cp "$PROJ/deploy/assets/boot-logos/boot-dark.jpeg"               "$META/recipes-cyberdeck/bootlogo/files/"
-cp "$PROJ/deploy/assets/boot-logos/boot-light.jpeg"              "$META/recipes-cyberdeck/bootlogo/files/"
+cp "$PROJ/deploy/assets/boot-logos/boot-dark.png"                "$META/recipes-cyberdeck/bootlogo/files/"
+cp "$PROJ/deploy/assets/boot-logos/boot-light.png"               "$META/recipes-cyberdeck/bootlogo/files/"
 cp "$PROJ/deploy/yocto/snippets/cyberdeck.plymouth"              "$META/recipes-cyberdeck/bootlogo/files/"
 cp "$PROJ/deploy/yocto/snippets/cyberdeck.script"                "$META/recipes-cyberdeck/bootlogo/files/"
 echo "[ok] dropped bootlogo recipe"
