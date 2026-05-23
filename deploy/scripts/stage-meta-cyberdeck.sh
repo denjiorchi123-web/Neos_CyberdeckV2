@@ -17,7 +17,8 @@ mkdir -p \
   "$META/recipes-cyberdeck/bootlogo/files" \
   "$META/recipes-cyberdeck/power/files" \
   "$META/recipes-connectivity/batctl" \
-  "$META/recipes-browser/chromium"
+  "$META/recipes-browser/chromium" \
+  "$META/recipes-graphics/wayland/files"
 
 # 1. Append batman-adv to existing kernel hardening config
 APPEND_FILE="$META/recipes-kernel/linux/files/cyberdeck-hardening.cfg"
@@ -113,6 +114,11 @@ echo "[ok] dropped batctl recipe"
 cp "$PROJ/deploy/yocto/snippets/chromium-ozone-wayland_147.0.7727.116.bbappend" \
    "$META/recipes-browser/chromium/"
 echo "[ok] dropped chromium-ozone-wayland bbappend (patches will be applied inline during do_patch)"
+
+# 8. weston-init bbappend
+cp "$PROJ/deploy/yocto/snippets/weston-init_%.bbappend" "$META/recipes-graphics/wayland/"
+cp "$PROJ/deploy/yocto/snippets/weston.ini"             "$META/recipes-graphics/wayland/files/"
+echo "[ok] dropped weston-init bbappend"
 
 echo ""
 echo "All files staged. Now update the image to install these."

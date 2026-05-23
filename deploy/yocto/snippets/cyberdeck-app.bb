@@ -7,7 +7,6 @@ SRC_URI = "file://cyberdeck-app-1.0.tar.gz \
            file://cyberdeck-backend.service \
            file://redis-cyberdeck.service \
            file://cyberdeck-firstboot.service \
-           file://cyberdeck-power.service \
            file://cyberdeck-kiosk.service \
            file://first-boot.sh"
 
@@ -19,7 +18,7 @@ RDEPENDS:${PN} = "nodejs redis sqlite3 python3 python3-pip openssl bash sudo eth
 inherit systemd
 SYSTEMD_SERVICE:${PN} = "cyberdeck-firstboot.service redis-cyberdeck.service \
                           cyberdeck-backend.service cyberdeck-web.service \
-                          cyberdeck-power.service cyberdeck-kiosk.service"
+                          cyberdeck-kiosk.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
@@ -56,12 +55,7 @@ do_install() {
     install -m 0644 ${D}/opt/cyberdeck/deploy/udev/98-usb-automount.rules \
         ${D}${sysconfdir}/udev/rules.d/
 
-    # Weston compositor config — kiosk-shell + autolaunch start-kiosk.sh on
-    # all connected outputs (DSI + HDMI). This was missing before, so weston
-    # would launch with the default GUI shell instead of the kiosk shell.
-    install -d ${D}${sysconfdir}/xdg/weston
-    install -m 0644 ${D}/opt/cyberdeck/deploy/yocto/snippets/weston.ini \
-        ${D}${sysconfdir}/xdg/weston/weston.ini
+    # (weston.ini is now provided via weston-init_%.bbappend to prevent clashes)
 
     # Avahi
     install -d ${D}${sysconfdir}/avahi/services
@@ -92,7 +86,6 @@ do_install() {
     install -m 0644 ${WORKDIR}/cyberdeck-backend.service   ${D}${systemd_unitdir}/system/
     install -m 0644 ${WORKDIR}/cyberdeck-web.service       ${D}${systemd_unitdir}/system/
     install -m 0644 ${WORKDIR}/cyberdeck-firstboot.service ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-power.service     ${D}${systemd_unitdir}/system/
     install -m 0644 ${WORKDIR}/cyberdeck-kiosk.service     ${D}${systemd_unitdir}/system/
 }
 
@@ -119,7 +112,6 @@ FILES:${PN} = "/opt/cyberdeck \
                ${sysconfdir}/sudoers.d/99-cyberdeck \
                ${sysconfdir}/udev/rules.d/99-cyberdeck-input.rules \
                ${sysconfdir}/udev/rules.d/98-usb-automount.rules \
-               ${sysconfdir}/xdg/weston/weston.ini \
                ${sysconfdir}/avahi/services/cyberdeck.service \
                ${bindir}/cyberdeck-first-boot \
                ${systemd_unitdir}/system/*.service"
