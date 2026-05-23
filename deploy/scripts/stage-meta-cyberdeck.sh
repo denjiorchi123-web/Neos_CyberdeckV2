@@ -116,8 +116,8 @@ cp "$PROJ/deploy/yocto/snippets/chromium-ozone-wayland_147.0.7727.116.bbappend" 
 echo "[ok] dropped chromium-ozone-wayland bbappend (patches will be applied inline during do_patch)"
 
 # 8. weston-init bbappend
-cp "$PROJ/deploy/yocto/snippets/weston-init_%.bbappend" "$META/recipes-graphics/wayland/"
-cp "$PROJ/deploy/yocto/snippets/weston.ini"             "$META/recipes-graphics/wayland/files/"
+cp "$PROJ/deploy/yocto/snippets/weston-init.bbappend" "$META/recipes-graphics/wayland/"
+cp "$PROJ/deploy/yocto/snippets/weston.ini"           "$META/recipes-graphics/wayland/files/"
 echo "[ok] dropped weston-init bbappend"
 
 echo ""
