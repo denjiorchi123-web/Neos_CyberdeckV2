@@ -41,7 +41,7 @@ npm run build 2>&1 | tail -10
 # Sharp and next-swc are the two native deps. Prisma already has both engines
 # in node_modules/.prisma/client/ thanks to the binaryTargets above.
 echo "[5/7] Fetching linux-arm64 native binaries (sharp, next-swc)..."
-npm install --no-save --include=optional \
+npm install --no-save --include=optional --force \
   --cpu=arm64 --os=linux --libc=glibc \
   @img/sharp-linux-arm64 \
   @next/swc-linux-arm64-gnu \
