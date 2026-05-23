@@ -76,6 +76,7 @@ cp -a public "$STAGE_DIR/" 2>/dev/null || true
 cp -a prisma "$STAGE_DIR/"
 cp -a backend "$STAGE_DIR/"
 cp -a server.js "$STAGE_DIR/"
+cp -a deploy "$STAGE_DIR/"
 # Write a Pi-ready .env (localhost refs work on-device since everything is loopback)
 cat > "$STAGE_DIR/.env" << 'ENVEOF'
 DATABASE_URL="file:./prisma/dev.db?journal_mode=WAL"
