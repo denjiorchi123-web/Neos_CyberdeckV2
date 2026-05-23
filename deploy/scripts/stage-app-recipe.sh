@@ -180,57 +180,7 @@ chmod +x "$FILES_DIR/first-boot.sh"
 
 # ─── 3. Recipe ───────────────────────────────────────────────────────
 echo "[3/3] Writing cyberdeck-app.bb..."
-cat > "$RECIPE_DIR/cyberdeck-app.bb" <<'EOF'
-SUMMARY  = "CyberDeck Next.js app + FastAPI sidecar (prebuilt for linux-arm64)"
-LICENSE  = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
-
-SRC_URI = "file://cyberdeck-app-1.0.tar.gz \
-           file://cyberdeck-web.service \
-           file://cyberdeck-backend.service \
-           file://redis-cyberdeck.service \
-           file://cyberdeck-firstboot.service \
-           file://first-boot.sh"
-
-S = "${WORKDIR}/cyberdeck-app-1.0"
-
-RDEPENDS:${PN} = "nodejs redis sqlite3 python3 python3-pip openssl bash sudo dhclient"
-
-inherit systemd
-SYSTEMD_SERVICE:${PN} = "cyberdeck-firstboot.service redis-cyberdeck.service cyberdeck-backend.service cyberdeck-web.service"
-SYSTEMD_AUTO_ENABLE:${PN} = "enable"
-
-do_install() {
-    install -d ${D}/opt/cyberdeck
-    cp -a ${S}/. ${D}/opt/cyberdeck/
-
-    # Writable dirs the app expects
-    install -d ${D}/opt/cyberdeck/ssl
-    install -d ${D}/opt/cyberdeck/private/uploads
-    install -d ${D}/opt/cyberdeck/private/media/photos
-    install -d ${D}/opt/cyberdeck/private/media/videos
-    install -d ${D}/opt/cyberdeck/private/media/audio
-    install -d ${D}/opt/cyberdeck/private/media/documents
-    install -d ${D}/opt/cyberdeck/private/logs
-    install -d ${D}/opt/cyberdeck/public/uploads
-
-    # First-boot helper
-    install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/first-boot.sh ${D}${bindir}/cyberdeck-first-boot
-
-    # systemd units
-    install -d ${D}${systemd_unitdir}/system
-    install -m 0644 ${WORKDIR}/redis-cyberdeck.service     ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-backend.service   ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-web.service       ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-firstboot.service ${D}${systemd_unitdir}/system/
-}
-
-FILES:${PN} = "/opt/cyberdeck ${bindir}/cyberdeck-first-boot ${systemd_unitdir}/system/*.service"
-
-# Prebuilt binary tree — skip QA checks that don't apply.
-INSANE_SKIP:${PN} += "already-stripped file-rdeps installed-vs-shipped ldflags textrel staticdev"
-EOF
+cp "/mnt/c/Users/brije/Downloads/CyberDeck_AirGappedOS/deploy/yocto/snippets/cyberdeck-app.bb" "$RECIPE_DIR/cyberdeck-app.bb"
 
 echo "[done] recipe + tarball + units written"
 ls -la "$RECIPE_DIR/" "$FILES_DIR/"

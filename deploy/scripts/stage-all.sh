@@ -38,16 +38,7 @@ echo ""
 echo "[3/4] Creating Yocto recipe tarball..."
 bash "$PROJ/deploy/scripts/stage-app-recipe.sh"
 
-# ── 4. Copy the main cyberdeck.bb recipe into the layer ──────────────────────
-echo ""
-echo "[4/4] Installing cyberdeck.bb into layer..."
-RECIPE_DIR="$META/recipes-cyberdeck/cyberdeck"
-mkdir -p "$RECIPE_DIR"
-cp "$PROJ/deploy/yocto/cyberdeck.bb" "$RECIPE_DIR/cyberdeck.bb"
-
-# Copy systemd units and scripts into the recipe's files/ dir
-# (the recipe references them from /opt/cyberdeck/deploy/... at install time,
-#  so no separate copy is needed — they're already inside the tarball)
+# (The obsolete cyberdeck.bb was removed, the app is built by cyberdeck-app.bb)
 
 echo ""
 echo "════════════════════════════════════════════════════"
