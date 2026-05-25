@@ -44,6 +44,6 @@ arm_boost=1
 
 # ─── PCIe / NVMe SSD Support ──────────────────────────────────────────
 # Enable the external PCIe connector for NVMe M.2 HATs
-dtparam=pciex1
+dtparam=pciex1=on
 # Force PCIe Gen 2 speed for maximum link stability
 dtparam=pciex1_gen=2
