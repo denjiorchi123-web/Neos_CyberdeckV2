@@ -1,7 +1,9 @@
 # Append to /boot/config.txt on the Pi 5 image.
 
 # ── GPU / DRM-KMS (HDMI ONLY) ──────────────────────────────────────────
-# HDMI uses the base Yocto vc4-kms-v3d driver automatically.
+# CRITICAL: We must explicitly load the v3d overlay. Without this, the 
+# DRM pipeline never initializes and Weston freezes the display.
+dtoverlay=vc4-kms-v3d
 max_framebuffers=2
 disable_overscan=1
 
