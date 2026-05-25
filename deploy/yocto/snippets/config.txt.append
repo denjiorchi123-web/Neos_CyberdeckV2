@@ -1,13 +1,12 @@
-# ── GPU / DRM-KMS ──────────────────────────────────────────────────────
+# Append to /boot/config.txt on the Pi 5 image.
+
+# ── GPU / DRM-KMS (HDMI ONLY) ──────────────────────────────────────────
+# HDMI uses the base Yocto vc4-kms-v3d driver automatically.
 max_framebuffers=2
 disable_overscan=1
 
 # ── Display auto-detection ─────────────────────────────────────────────
-display_auto_detect=0
-
-# ── Touch Display 2 (ILI9881C, 7-inch, DSI0) ─────────────────────────
-# NO disable_touch — Touch Display 2 uses built-in Goodix via DSI ribbon
-dtoverlay=vc4-kms-dsi-ili9881-7inch,dsi0
+display_auto_detect=1
 
 # ── Wireless ───────────────────────────────────────────────────────────
 dtoverlay=disable-wifi

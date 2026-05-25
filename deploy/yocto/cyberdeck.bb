@@ -51,7 +51,6 @@ FILES:${PN} = " \
     ${systemd_unitdir}/system/getty@tty1.service.d/autologin.conf \
     ${systemd_unitdir}/system/getty@tty2.service.d/autologin.conf \
     ${sysconfdir}/avahi/services/cyberdeck.service \
-    ${sysconfdir}/modprobe.d/no-rpi-touch.conf \
 "
 
 do_install() {
@@ -132,10 +131,6 @@ EOFCONF
     chmod 0755 ${D}/opt/cyberdeck/deploy/scripts/*.sh
     chmod 0755 ${D}/opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
 
-    # 11. Modprobe blacklist for old RPi Touchscreen to prevent I2C probe crashes
-    install -d ${D}${sysconfdir}/modprobe.d
-    echo "blacklist rpi_touchscreen" > ${D}${sysconfdir}/modprobe.d/no-rpi-touch.conf
-
     # Deterministic ownership via numeric UID/GID — tracked correctly by pseudo
     # during offline rootfs construction. Matches USERADD_PARAM uid 1200.
     chown -R 1200:1200 ${D}/opt/cyberdeck
@@ -149,6 +144,10 @@ pkg_postinst:${PN}() {
 
     # Mask getty@tty1 — cyberdeck-kiosk.service owns tty1 via TTYPath=/dev/tty1
     ln -sf /dev/null $D${sysconfdir}/systemd/system/getty@tty1.service
+
+    # Enable getty@tty2 for Ctrl+Alt+F2 recovery terminal (since default getty.target is suppressed)
+    mkdir -p $D${sysconfdir}/systemd/system/getty.target.wants
+    ln -sf ${systemd_unitdir}/system/getty@.service $D${sysconfdir}/systemd/system/getty.target.wants/getty@tty2.service
 
     # Mask upstream redis.service — redis-cyberdeck.service is the ONLY Redis instance.
     # Without this mask both services race for TCP port 6379 and crash each other.
