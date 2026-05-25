@@ -1,90 +1,102 @@
 #!/bin/sh
-# Called by udev: usb-mount.sh <devname> [fstype] [label]
-# e.g.  usb-mount.sh sda1 vfat MYUSB
-#
-# udev passes fstype and label directly so we never need to call blkid
-# (which races with udev on kernel < 5.15 and some Pi firmware versions).
+# /usr/local/bin/usb-mount.sh
 set -eu
 
-DEV="$1"
+DEVNAME="/dev/$1"
 FSTYPE="${2:-}"
 LABEL="${3:-}"
-DEVNAME="/dev/$DEV"
 MOUNT_BASE="/media"
-LOCK="/run/usb-mount.lock"
+LOCK="/tmp/usb-automount.lock"
 
-# Wait for the device node to actually exist (udev can fire slightly early)
-i=0
-while [ ! -b "$DEVNAME" ] && [ $i -lt 10 ]; do
-  sleep 0.2
-  i=$((i + 1))
-done
-[ -b "$DEVNAME" ] || { echo "[usb-mount] $DEVNAME never appeared" >&2; exit 1; }
+# Guard script execution block against double udev-race triggers
+exec 9>"$LOCK"
+flock -x 9
 
-# Serialise concurrent hotplug events
-( flock -x 9
+# Prevent re-mounting if already active
+if mountpoint -q "$DEVNAME" 2>/dev/null; then
+    exit 0
+fi
 
-  # Pick the first free slot
-  MOUNT_POINT=""
-  for n in 0 1 2 3 4 5 6 7; do
+# Pick the first free generic mount directory slot
+MOUNT_POINT=""
+for n in 0 1 2 3 4 5 6 7; do
     MP="$MOUNT_BASE/usb$n"
     if ! mountpoint -q "$MP" 2>/dev/null; then
-      MOUNT_POINT="$MP"
-      break
+        MOUNT_POINT="$MP"
+        break
     fi
-  done
+done
 
-  if [ -z "$MOUNT_POINT" ]; then
-    echo "[usb-mount] No free slot for $DEVNAME" >&2
+if [ -z "$MOUNT_POINT" ]; then
+    echo "[usb-mount] No free slot available for $DEVNAME" >&2
     exit 1
-  fi
+fi
 
-  mkdir -p "$MOUNT_POINT"
-
-  # Detect fstype if udev didn't provide it
-  if [ -z "$FSTYPE" ]; then
-    FSTYPE=$(blkid -o value -s TYPE "$DEVNAME" 2>/dev/null || echo "auto")
-  fi
-
-  # Use a safe label for the mount point name if one was provided
-  if [ -n "$LABEL" ]; then
+# Sanitize custom device labels if provided
+if [ -n "$LABEL" ]; then
     SAFE_LABEL=$(echo "$LABEL" | tr -cd 'A-Za-z0-9_-' | cut -c1-32)
     if [ -n "$SAFE_LABEL" ]; then
-      ALT_MP="$MOUNT_BASE/$SAFE_LABEL"
-      if ! mountpoint -q "$ALT_MP" 2>/dev/null && [ ! -d "$ALT_MP" ]; then
-        MOUNT_POINT="$ALT_MP"
-        mkdir -p "$MOUNT_POINT"
-      fi
+        ALT_MP="$MOUNT_BASE/$SAFE_LABEL"
+        if ! mountpoint -q "$ALT_MP" 2>/dev/null && [ ! -d "$ALT_MP" ]; then
+            MOUNT_POINT="$ALT_MP"
+        fi
     fi
-  fi
+fi
 
-  case "$FSTYPE" in
+mkdir -p "$MOUNT_POINT"
+
+# Discover the filesystem type safely if dropped by upstream layers
+if [ -z "$FSTYPE" ]; then
+    FSTYPE=$(blkid -o value -s TYPE "$DEVNAME" 2>/dev/null || echo "auto")
+fi
+
+# Prepare mount option arguments
+MNT_OPTS="rw,noatime"
+case "$FSTYPE" in
     vfat|fat32|fat16|msdos)
-      mount -t vfat -o rw,noatime,uid=1000,gid=1000,umask=022,utf8 \
-            "$DEVNAME" "$MOUNT_POINT"
-      ;;
+        MNT_OPTS="rw,noatime,uid=1200,gid=1200,umask=022,utf8"
+        MNT_TYPE="vfat"
+        ;;
     exfat)
-      mount -t exfat -o rw,noatime,uid=1000,gid=1000,umask=022 \
-            "$DEVNAME" "$MOUNT_POINT"
-      ;;
+        MNT_OPTS="rw,noatime,uid=1200,gid=1200,umask=022"
+        MNT_TYPE="exfat"
+        ;;
     ntfs|ntfs-3g)
-      mount -t ntfs3 -o rw,noatime,uid=1000,gid=1000,umask=022 \
-            "$DEVNAME" "$MOUNT_POINT" 2>/dev/null \
-      || mount -t ntfs -o rw,noatime,uid=1000,gid=1000,umask=022 \
-               "$DEVNAME" "$MOUNT_POINT"
-      ;;
-    ext4|ext3|ext2|btrfs|xfs)
-      mount -o rw,noatime "$DEVNAME" "$MOUNT_POINT"
-      ;;
+        # Try high-performance native ntfs3 kernel module first
+        MNT_OPTS="rw,noatime,uid=1200,gid=1200,umask=022"
+        MNT_TYPE="ntfs3"
+        ;;
     iso9660|udf)
-      mount -o ro,noatime "$DEVNAME" "$MOUNT_POINT"
-      ;;
+        MNT_OPTS="ro,noatime"
+        MNT_TYPE="$FSTYPE"
+        ;;
     *)
-      mount -o rw,noatime "$DEVNAME" "$MOUNT_POINT" \
-      || mount -o ro       "$DEVNAME" "$MOUNT_POINT"
-      ;;
-  esac
+        MNT_TYPE="auto"
+        ;;
+esac
 
-  echo "[usb-mount] $DEVNAME ($FSTYPE) → $MOUNT_POINT"
+# FIXED: Escapes udev systemd sandbox space by issuing transient service scheduling
+# This forces the mounting operation to process inside the global host namespace context.
+if [ "$MNT_TYPE" = "ntfs3" ]; then
+    systemd-run --no-block --property="Description=Mount $DEVNAME" \
+        mount -t ntfs3 -o "$MNT_OPTS" "$DEVNAME" "$MOUNT_POINT" 2>/dev/null || \
+    systemd-run --no-block --property="Description=Mount Fallback $DEVNAME" \
+        mount -t ntfs -o "$MNT_OPTS" "$DEVNAME" "$MOUNT_POINT"
+else
+    systemd-run --no-block --property="Description=Mount $DEVNAME" \
+        mount -t "$MNT_TYPE" -o "$MNT_OPTS" "$DEVNAME" "$MOUNT_POINT"
+fi
 
-) 9>"$LOCK"
+# FIXED: Post-Mount Linux Filesystem Permissions Fix
+# Runs an asynchronous permission alignment block for native filesystems (ext4/btrfs)
+# to keep them write-accessible to the cyberdeck user.
+if echo "$FSTYPE" | grep -qE "ext[234]|btrfs|xfs"; then
+    (
+        # Small grace wait step to make sure the transient mount finished syncing
+        sleep 1
+        chown -R 1200:1200 "$MOUNT_POINT"
+        chmod 0755 "$MOUNT_POINT"
+    ) &
+fi
+
+echo "[usb-mount] Dispatched $DEVNAME ($FSTYPE) → $MOUNT_POINT"

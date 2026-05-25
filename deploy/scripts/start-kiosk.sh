@@ -4,9 +4,16 @@
 # already exported by weston before this script is called.
 set -eu
 
-URL="${CYBERDECK_URL:-https://127.0.0.1:3000/launcher}"
+# Configuration
+BASE_URL="${CYBERDECK_BASE_URL:-https://127.0.0.1:3000}"
+LAUNCHER_PATH="/launcher"
+URL="${BASE_URL}${LAUNCHER_PATH}"
+
 PROFILE_DIR="${HOME}/.cyberdeck-kiosk"
 mkdir -p "$PROFILE_DIR"
+
+# Environment stabilization for Chromium Ozone window system handshakes
+export XDG_SESSION_TYPE=wayland
 
 # Wait for Next.js to be reachable before opening the browser.
 # Avoids Chromium showing "ERR_CONNECTION_REFUSED" on a fast boot.
@@ -36,11 +43,16 @@ exec /usr/bin/chromium \
   --autoplay-policy=no-user-gesture-required \
   --use-fake-ui-for-media-stream \
   --ignore-certificate-errors \
-  --unsafely-treat-insecure-origin-as-secure="$URL" \
+  --unsafely-treat-insecure-origin-as-secure="$BASE_URL" \
   \
   --touch-events=enabled \
   --enable-multitouch \
   \
+  --no-sandbox \
   --enable-gpu-rasterization \
   --enable-zero-copy \
-  --gpu-sandbox-failures-fatal=no
+  --gpu-sandbox-failures-fatal=no \
+  --disable-vulkan \
+  --enable-native-gpu-memory-buffers \
+  --ignore-gpu-blocklist \
+  "$@"

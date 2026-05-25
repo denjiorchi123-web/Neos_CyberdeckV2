@@ -28,6 +28,9 @@ HOSTNAME="deck-${NODE_ID}"
 NODE_IP_OCTET=$(printf '%d' "$NODE_ID")
 IP="10.0.0.${NODE_IP_OCTET}"
 
+# Temporarily remount rootfs as RW to patch read-only system configurations
+mount -o remount,rw /
+
 # Hostname
 echo "$HOSTNAME" > /etc/hostname
 hostname "$HOSTNAME"
@@ -37,12 +40,18 @@ if [ -f "$NETF" ]; then
   sed -i "s|^Address=.*|Address=${IP}/24|" "$NETF"
 fi
 
+# Remount rootfs back to RO to maintain strict security
+mount -o remount,ro /
+
 # Make sure the batman-adv module is loaded before networkd brings bat0 up.
 # /etc/modules-load.d/batman-adv.conf usually handles this at boot, but on
 # the first ever boot the file may not have been honored yet.
 modprobe batman-adv 2>/dev/null || true
 
 # Tell systemd-networkd to reload (creates bat0 if it isn't already up)
-networkctl reload 2>/dev/null || systemctl reload-or-restart systemd-networkd
+# REMOVED: This script runs Before=systemd-networkd.service, so networkd
+# hasn't started yet. Calling systemctl reload-or-restart here creates an
+# infinite deadlock. Networkd will read the patched file when it naturally starts.
+# networkctl reload 2>/dev/null || systemctl reload-or-restart systemd-networkd
 
 echo "[identity] node=$NODE_ID host=$HOSTNAME ip=$IP iface=bat0 mesh=eth0"

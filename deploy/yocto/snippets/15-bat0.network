@@ -16,4 +16,4 @@ IPForward=no
 
 [Link]
 # bat0 comes up "carrier" as soon as it has at least one mesh peer reachable
-RequiredForOnline=routable
+RequiredForOnline=no

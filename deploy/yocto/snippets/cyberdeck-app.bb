@@ -89,20 +89,19 @@ do_install() {
     install -m 0644 ${WORKDIR}/cyberdeck-kiosk.service     ${D}${systemd_unitdir}/system/
 }
 
-pkg_postinst_ontarget:${PN}() {
-    if ! getent passwd cyberdeck >/dev/null; then
-        useradd --create-home --shell /bin/sh --uid 1000 cyberdeck
-        usermod -aG video,audio,input,render,seat,i2c cyberdeck
-    fi
-    chown -R cyberdeck:cyberdeck /opt/cyberdeck
-    chmod 0755 /opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
+pkg_postinst:${PN}() {
+    chown -R 1001:1001 $D/opt/cyberdeck
+    chmod 0755 $D/opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
 
-    # Boot straight into the kiosk. graphical.target is the parent of
-    # cyberdeck-kiosk.service's WantedBy=. Without this the image lands on
-    # multi-user.target and weston never launches.
-    systemctl set-default graphical.target || true
-    # getty@tty1 fights weston for tty1 — mask it so weston wins.
-    systemctl mask getty@tty1.service     || true
+    if [ -n "$D" ]; then
+        # Offline (image build) — write target symlinks into build-time rootfs directly.
+        mkdir -p $D/etc/systemd/system
+        ln -sf /lib/systemd/system/graphical.target $D/etc/systemd/system/default.target
+        ln -sf /dev/null $D/etc/systemd/system/getty@tty1.service
+    else
+        systemctl set-default graphical.target || true
+        systemctl mask getty@tty1.service     || true
+    fi
 }
 
 FILES:${PN} = "/opt/cyberdeck \

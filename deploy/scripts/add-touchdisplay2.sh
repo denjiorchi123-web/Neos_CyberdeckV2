@@ -40,8 +40,8 @@ do_deploy:append() {
     cat >> "${DEPLOYDIR}/bootfiles/config.txt" <<'TXT'
 
 # === CyberDeck — Pi Touch Display 2 (DSI 7-inch, Goodix touch) ===
-dtoverlay=vc4-kms-v3d-pi5
-dtoverlay=vc4-kms-dsi-7inch
+dtoverlay=vc4-kms-v3d
+dtoverlay=vc4-kms-dsi-ili9881-7inch
 max_framebuffers=2
 
 # Goodix GT9xx multitouch over I2C

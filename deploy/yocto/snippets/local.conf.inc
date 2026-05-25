@@ -15,38 +15,24 @@
 
 # ─── Machine ──────────────────────────────────────────────────────────
 MACHINE = "raspberrypi5"
-DISTRO  = "cyberdeck-os"
+DISTRO  = "cyberdeck"
 
-# ─── Image features ───────────────────────────────────────────────────
-IMAGE_INSTALL:append = " \
-    nodejs nodejs-npm \
-    python3 python3-fastapi python3-uvicorn python3-redis python3-pip-native \
-    redis \
-    sqlite3 \
-    openssl curl \
-    chromium-ozone-wayland \
-    weston weston-init weston-examples \
-    avahi-daemon avahi-utils \
-    nftables \
-    openssh openssh-sftp-server \
-    libinput evtest \
-    alsa-utils alsa-state \
-    plymouth plymouth-systemd-units \
-    busybox-syslog \
-    util-linux util-linux-blkid util-linux-findmnt util-linux-mount \
-    batctl iproute2 dhclient \
-    kernel-module-batman-adv \
-    cyberdeck \
-    cyberdeck-firewall \
-    cyberdeck-network \
-    cyberdeck-bootlogo \
-    cyberdeck-power \
-    ethtool \
-"
+# Redundant IMAGE_INSTALL:append removed as all packages are cleanly defined in cyberdeck-image.bb
 
 # Pull in tooling but exclude package manager + dev shell on shipped image
-IMAGE_FEATURES:append = " ssh-server-openssh allow-empty-password-disabled"
+IMAGE_FEATURES:append = " ssh-server-openssh"
 IMAGE_FEATURES:remove = " package-management debug-tweaks splash"
+
+# ─── Console Login & User Configuration ───────────────────────────────
+# Since debug-tweaks is removed, we must explicitly define passwords.
+INHERIT += "extrausers"
+EXTRA_USERS_PARAMS = " \
+    usermod -p '\$6\$rounds=5000\$saltstringsaltst\$7743.hQe5GvK7N8pW32B/pE7w.36hJ53c9e.D74B/b1w8P/yN6z5g/7' root; \
+    groupadd -g 1001 cyberdeck; \
+    useradd -m -p '\$6\$rounds=5000\$saltstringsaltst\$7743.hQe5GvK7N8pW32B/pE7w.36hJ53c9e.D74B/b1w8P/yN6z5g/7' -s /bin/sh -g cyberdeck -u 1001 cyberdeck; \
+    usermod -aG video,audio,input,render cyberdeck; \
+    useradd -m -p '\$6\$rounds=5000\$saltstringsaltst\$7743.hQe5GvK7N8pW32B/pE7w.36hJ53c9e.D74B/b1w8P/yN6z5g/7' -s /bin/sh deck; \
+"
 
 # ─── Read-only root ───────────────────────────────────────────────────
 EXTRA_IMAGE_FEATURES += "read-only-rootfs"
@@ -73,8 +59,8 @@ PLYMOUTH_THEME = "cyberdeck"
 # ─── Clang 20 toolchain ───────────────────────────────────────────────
 # Chromium 147 requires Clang 20+ for its bundled libc++ builtins.
 # meta-clang must be on the 'scarthgap-clang20' branch.
-TOOLCHAIN = "clang"
-CLANGVER  = "20"
+# TOOLCHAIN = "clang"
+# CLANGVER  = "20"
 
 # ─── Reproducibility / SBOM ──────────────────────────────────────────
 INHERIT += "create-spdx"

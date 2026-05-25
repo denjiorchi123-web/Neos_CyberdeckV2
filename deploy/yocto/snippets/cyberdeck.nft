@@ -35,16 +35,16 @@ table inet cyberdeck {
         udp dport 5353 ip6 daddr ff02::fb   accept
 
         # ── batman-adv mesh (bat0) ──────────────────────────────────
-        iif "bat0" ip saddr 10.0.0.0/24 tcp dport { 22, 3000, 8000 } accept
-        iif "bat0" ip saddr 10.0.0.0/24 udp dport { 49152-65535 }    accept comment "WebRTC media"
-        iif "bat0" ip saddr 10.0.0.0/24 udp dport 22000 accept comment "Syncthing (future)"
-        iif "bat0" ip saddr 10.0.0.0/24 udp dport 21027 accept comment "Syncthing discovery"
+        iifname "bat0" ip saddr 10.0.0.0/24 tcp dport { 22, 3000, 8000 } accept
+        iifname "bat0" ip saddr 10.0.0.0/24 udp dport { 49152-65535 }    accept comment "WebRTC media"
+        iifname "bat0" ip saddr 10.0.0.0/24 udp dport 22000 accept comment "Syncthing (future)"
+        iifname "bat0" ip saddr 10.0.0.0/24 udp dport 21027 accept comment "Syncthing discovery"
 
         # batctl uses generic netlink + the bat0 sysfs — no extra rules needed
         # for diagnostics; `batctl o`, `batctl tg`, etc. work without firewall holes.
 
         # ── USB-C gadget (usb0) — management only ────────────────────
-        iif "usb0" tcp dport { 22, 3000 } accept
+        iifname "usb0" tcp dport { 22, 3000 } accept
 
         # Everything else — drop silently
         counter drop

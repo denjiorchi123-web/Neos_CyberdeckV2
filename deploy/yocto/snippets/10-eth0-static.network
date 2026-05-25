@@ -14,4 +14,4 @@ MulticastDNS=no
 IPv6AcceptRA=no
 
 [Link]
-RequiredForOnline=carrier
+RequiredForOnline=no

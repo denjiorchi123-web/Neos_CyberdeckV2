@@ -1,109 +1,125 @@
-# CyberDeck Yocto recipe stub.
-#
-# Drop this into your meta-cyberdeck layer (e.g. meta-cyberdeck/recipes-cyberdeck/cyberdeck/).
-# It packages the pre-built Next.js standalone output plus the Python sidecar and
-# wires up the systemd services.
-#
-# Build prerequisites in your image (.bb):
-#   IMAGE_INSTALL:append = " nodejs python3 python3-fastapi python3-uvicorn \
-#                            python3-redis redis chromium openssl curl avahi-daemon \
-#                            weston weston-init cyberdeck"
-#
-# Build the Next.js app on a workstation first (`npm ci && npm run build`) and
-# stage the resulting tree (with .next/standalone, .next/static, public/, prisma/,
-# backend/, deploy/, server.js, package.json, node_modules/.prisma, etc.) at
-# files/cyberdeck-app/.
-
 SUMMARY = "CyberDeck air-gapped LAN messenger"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-SRC_URI = "file://cyberdeck-app/"
+SRC_URI = "file://cyberdeck-app-1.0.tar.gz"
+S = "${WORKDIR}/cyberdeck-app-1.0"
 
-S = "${WORKDIR}/cyberdeck-app"
+# Inherit useradd BEFORE systemd to ensure user context exists during package generation
+inherit useradd systemd
 
-inherit systemd
+# Pre-built Node.js native addons (.node files) are already-stripped ARM64 binaries.
+# Prevent Yocto from trying to strip/objcopy them — it will fail on foreign-arch files.
+INHIBIT_PACKAGE_STRIP = "1"
+INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
+INHIBIT_SYSROOT_STRIP = "1"
+INSANE_SKIP:${PN} = "already-stripped arch file-rdeps ldflags"
 
-SYSTEMD_SERVICE:${PN} = "redis-cyberdeck.service \
-                         cyberdeck-backend.service \
-                         cyberdeck-web.service \
-                         cyberdeck-kiosk.service \
-                         cyberdeck-power.service"
-
+# Systemd configuration
+SYSTEMD_SERVICE:${PN} = " \
+    redis-cyberdeck.service \
+    cyberdeck-backend.service \
+    cyberdeck-web.service \
+    cyberdeck-kiosk.service \
+"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
-RDEPENDS:${PN} = "nodejs python3 python3-fastapi python3-uvicorn python3-redis \
-                  redis openssl curl chromium-ozone-wayland weston weston-init avahi-daemon avahi-utils \
-                  dhclient sudo"
+# Declarative user creation
+USERADD_PACKAGES = "${PN}"
+GROUPADD_PARAM:${PN} = "-g 1200 cyberdeck ; -r render ; -r seat ; -r i2c"
+USERADD_PARAM:${PN} = "--create-home --shell /bin/sh --uid 1200 --gid 1200 --groups video,audio,input,render,seat,i2c cyberdeck"
 
-FILES:${PN} = "/opt/cyberdeck \
-               ${sysconfdir}/xdg/weston/weston.ini \
-               ${sysconfdir}/udev/rules.d/99-cyberdeck-input.rules \
-               ${sysconfdir}/udev/rules.d/98-usb-automount.rules \
-               /usr/local/bin/usb-mount.sh \
-               /usr/local/bin/usb-umount.sh \
-               /usr/local/bin/cyberdeck-netconfig.sh \
-               ${sysconfdir}/sudoers.d/99-cyberdeck \
-               /media \
-               /opt/cyberdeck/private \
-               ${systemd_unitdir}/system/redis-cyberdeck.service \
-               ${systemd_unitdir}/system/cyberdeck-backend.service \
-               ${systemd_unitdir}/system/cyberdeck-web.service \
-               ${systemd_unitdir}/system/cyberdeck-kiosk.service \
-               ${systemd_unitdir}/system/getty@tty1.service.d/autologin.conf \
-               ${sysconfdir}/avahi/services/cyberdeck.service"
+# NOTE: python3-fastapi / python3-uvicorn / python3-redis / dhclient / sudo are NOT
+# available as Yocto packages in this layer set. Python deps are installed at first-boot
+# via pip wheelhouse. Network and sudo tools are pulled in by the base image recipe.
+RDEPENDS:${PN} = " \
+    nodejs python3 \
+    redis openssl curl chromium-ozone-wayland weston weston-init avahi-daemon avahi-utils \
+"
+
+FILES:${PN} = " \
+    /opt/cyberdeck \
+    ${sysconfdir}/cyberdeck-weston.ini \
+    ${sysconfdir}/udev/rules.d/99-cyberdeck-input.rules \
+    ${sysconfdir}/udev/rules.d/98-usb-automount.rules \
+    /usr/local/bin/usb-mount.sh \
+    /usr/local/bin/usb-umount.sh \
+    /usr/local/bin/cyberdeck-netconfig.sh \
+    ${sysconfdir}/sudoers.d/99-cyberdeck \
+    /media \
+    ${systemd_unitdir}/system/ \
+    ${systemd_unitdir}/system/getty@tty1.service.d/autologin.conf \
+    ${systemd_unitdir}/system/getty@tty2.service.d/autologin.conf \
+    ${sysconfdir}/avahi/services/cyberdeck.service \
+"
 
 do_install() {
+    # 1. Source tree to target rootfs
     install -d ${D}/opt/cyberdeck
     cp -a ${S}/. ${D}/opt/cyberdeck/
 
-    install -d ${D}${systemd_unitdir}/system
-    for svc in ${D}/opt/cyberdeck/deploy/systemd/*.service; do
-        install -m 0644 "$svc" ${D}${systemd_unitdir}/system/
+    # 2. Systemd services
+    install -d ${D}${systemd_unitdir}/system/
+    for svc in ${S}/deploy/systemd/*.service; do
+        if [ "$(basename "$svc")" != "cyberdeck-power.service" ]; then
+            install -m 0644 "$svc" ${D}${systemd_unitdir}/system/
+        fi
     done
 
-    # udev rules — input/DRM device access + USB automount
+    # 3. Udev rules
     install -d ${D}${sysconfdir}/udev/rules.d
-    install -m 0644 ${D}/opt/cyberdeck/deploy/udev/99-cyberdeck-input.rules \
+    install -m 0644 ${S}/deploy/udev/99-cyberdeck-input.rules \
         ${D}${sysconfdir}/udev/rules.d/99-cyberdeck-input.rules
-    install -m 0644 ${D}/opt/cyberdeck/deploy/udev/98-usb-automount.rules \
+    install -m 0644 ${S}/deploy/udev/98-usb-automount.rules \
         ${D}${sysconfdir}/udev/rules.d/98-usb-automount.rules
 
-    # USB mount/unmount helpers + network config helper — called by udev / sudo
+    # 4. Privileged helper scripts
     install -d ${D}/usr/local/bin
-    install -m 0755 ${D}/opt/cyberdeck/deploy/scripts/usb-mount.sh \
+    install -m 0755 ${S}/deploy/scripts/usb-mount.sh \
         ${D}/usr/local/bin/usb-mount.sh
-    install -m 0755 ${D}/opt/cyberdeck/deploy/scripts/usb-umount.sh \
+    install -m 0755 ${S}/deploy/scripts/usb-umount.sh \
         ${D}/usr/local/bin/usb-umount.sh
-    install -m 0755 ${D}/opt/cyberdeck/deploy/scripts/cyberdeck-netconfig.sh \
+    install -m 0755 ${S}/deploy/scripts/cyberdeck-netconfig.sh \
         ${D}/usr/local/bin/cyberdeck-netconfig.sh
 
-    # Sudoers fragment — lets the cyberdeck user run the two privileged helpers
+    # 5. Sudoers configuration
     install -d ${D}${sysconfdir}/sudoers.d
-    install -m 0440 ${D}/opt/cyberdeck/deploy/sudo/99-cyberdeck \
+    install -m 0440 ${S}/deploy/sudo/99-cyberdeck \
         ${D}${sysconfdir}/sudoers.d/99-cyberdeck
 
-    # Mount base directory
+    # 6. Global mount point
     install -d ${D}/media
 
-    # Weston config — kiosk-shell + autolaunch, all outputs (DSI + HDMI)
-    install -d ${D}${sysconfdir}/xdg/weston
-    install -m 0644 ${D}/opt/cyberdeck/deploy/yocto/snippets/weston.ini \
-        ${D}${sysconfdir}/xdg/weston/weston.ini
+    # 7. Weston config
+    install -d ${D}${sysconfdir}
+    install -m 0644 ${S}/deploy/yocto/snippets/weston.ini ${D}${sysconfdir}/cyberdeck-weston.ini
 
-    # Autologin on tty1 so the kiosk starts without a login prompt
+    # 8. Getty tty1 autologin override (Weston compositor owns tty1)
     install -d ${D}${systemd_unitdir}/system/getty@tty1.service.d
-    install -m 0644 ${D}/opt/cyberdeck/deploy/systemd/getty@tty1.service.d/autologin.conf \
+    install -m 0644 ${S}/deploy/systemd/getty@tty1.service.d/autologin.conf \
         ${D}${systemd_unitdir}/system/getty@tty1.service.d/autologin.conf
 
-    # Avahi service file — advertises this node on _cyberdeck._tcp
+    # 8b. Getty tty2: dedicated root recovery shell (Ctrl+Alt+F2)
+    #     Separate config from tty1 — scoped strictly to an interactive shell,
+    #     completely isolated from the Weston graphical pipeline on tty1.
+    install -d ${D}${systemd_unitdir}/system/getty@tty2.service.d
+    if [ -f ${S}/deploy/systemd/getty@tty2.service.d/autologin.conf ]; then
+        install -m 0644 ${S}/deploy/systemd/getty@tty2.service.d/autologin.conf \
+            ${D}${systemd_unitdir}/system/getty@tty2.service.d/autologin.conf
+    else
+        cat > ${D}${systemd_unitdir}/system/getty@tty2.service.d/autologin.conf << 'EOFCONF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+EOFCONF
+    fi
+
+    # 9. Avahi mDNS network service advertising
     install -d ${D}${sysconfdir}/avahi/services
-    install -m 0644 ${D}/opt/cyberdeck/deploy/avahi/cyberdeck.service \
+    install -m 0644 ${S}/deploy/avahi/cyberdeck.service \
         ${D}${sysconfdir}/avahi/services/cyberdeck.service
 
-    # Pre-create media and log directories so they exist even before first launch.
-    # Next.js also calls ensureDirs() at runtime, but having them at install time
-    # means the cyberdeck user can write to them immediately after first boot.
+    # 10. Runtime storage paths
     install -d -m 0755 ${D}/opt/cyberdeck/private/uploads
     install -d -m 0755 ${D}/opt/cyberdeck/private/media/photos
     install -d -m 0755 ${D}/opt/cyberdeck/private/media/videos
@@ -111,33 +127,25 @@ do_install() {
     install -d -m 0755 ${D}/opt/cyberdeck/private/media/documents
     install -d -m 0755 ${D}/opt/cyberdeck/private/logs
 
-    # Ensure the helper scripts are executable
+    # Correct runtime execution bits
     chmod 0755 ${D}/opt/cyberdeck/deploy/scripts/*.sh
+    chmod 0755 ${D}/opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
+
+    # Deterministic ownership via numeric UID/GID — tracked correctly by pseudo
+    # during offline rootfs construction. Matches USERADD_PARAM uid 1200.
+    chown -R 1200:1200 ${D}/opt/cyberdeck
 }
 
 pkg_postinst:${PN}() {
-    # Create the kiosk user — NOT --system so it gets UID >= 1000 and a proper
-    # XDG_RUNTIME_DIR under /run/user/<uid>. cage and systemd-logind require this.
-    if ! getent passwd cyberdeck >/dev/null; then
-        useradd --create-home --shell /bin/sh --uid 1000 cyberdeck
-        usermod -aG video,audio,input,render,seat,i2c cyberdeck
-    fi
-    chown -R cyberdeck:cyberdeck /opt/cyberdeck
-    # Allow node-pty to be rebuilt at first-boot if prebuilt is absent
-    chmod 0755 /opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
+    # Boot into graphical target by default
+    mkdir -p $D${sysconfdir}/systemd/system
+    ln -sf ${systemd_unitdir}/system/graphical.target \
+        $D${sysconfdir}/systemd/system/default.target
 
-    # Boot straight into the kiosk: graphical.target is the parent of
-    # cyberdeck-kiosk.service's WantedBy. Without this the image lands on
-    # multi-user.target and weston never launches.
-    if [ -d $D ]; then
-        # Offline (image build) — write the symlink into the rootfs directly.
-        ln -sf /lib/systemd/system/graphical.target \
-            $D/etc/systemd/system/default.target
-        # Disable getty on tty1 so weston can claim the VT without a fight.
-        mkdir -p $D/etc/systemd/system
-        ln -sf /dev/null $D/etc/systemd/system/getty@tty1.service
-    else
-        systemctl set-default graphical.target || true
-        systemctl mask getty@tty1.service     || true
-    fi
+    # Mask getty@tty1 — cyberdeck-kiosk.service owns tty1 via TTYPath=/dev/tty1
+    ln -sf /dev/null $D${sysconfdir}/systemd/system/getty@tty1.service
+
+    # Mask upstream redis.service — redis-cyberdeck.service is the ONLY Redis instance.
+    # Without this mask both services race for TCP port 6379 and crash each other.
+    ln -sf /dev/null $D${sysconfdir}/systemd/system/redis.service
 }

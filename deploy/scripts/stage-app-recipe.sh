@@ -46,7 +46,8 @@ cat > "$FILES_DIR/cyberdeck-backend.service" <<'EOF'
 [Unit]
 Description=CyberDeck FastAPI Backend (status / dashboard)
 After=network.target redis-cyberdeck.service cyberdeck-firstboot.service
-Requires=redis-cyberdeck.service cyberdeck-firstboot.service
+Requires=redis-cyberdeck.service
+Wants=cyberdeck-firstboot.service
 
 [Service]
 Type=simple
@@ -55,7 +56,9 @@ Environment=REDIS_URL=redis://127.0.0.1:6379
 Environment=PATH=/opt/cyberdeck/wheels/bin:/usr/bin:/bin
 ExecStart=/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
-RestartSec=3
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target
@@ -65,8 +68,8 @@ cat > "$FILES_DIR/cyberdeck-web.service" <<'EOF'
 [Unit]
 Description=CyberDeck Web (Next.js + Socket.io)
 After=network.target redis-cyberdeck.service cyberdeck-backend.service cyberdeck-firstboot.service
-Requires=redis-cyberdeck.service cyberdeck-firstboot.service
-Wants=avahi-daemon.service
+Requires=redis-cyberdeck.service
+Wants=cyberdeck-firstboot.service avahi-daemon.service
 
 [Service]
 Type=simple
@@ -74,9 +77,13 @@ WorkingDirectory=/opt/cyberdeck
 EnvironmentFile=-/opt/cyberdeck/.env
 Environment=NODE_ENV=production
 Environment=CYBERDECK_PEERS_FILE=/opt/cyberdeck/peers.json
+# Ensure SSL certs exist (fallback if firstboot didn't run or failed)
+ExecStartPre=/bin/sh -c 'if [ ! -f /opt/cyberdeck/ssl/server.cert ]; then mkdir -p /opt/cyberdeck/ssl && openssl req -x509 -newkey rsa:2048 -keyout /opt/cyberdeck/ssl/server.key -out /opt/cyberdeck/ssl/server.cert -days 3650 -nodes -subj "/CN=cyberdeck.local" -addext "subjectAltName=DNS:cyberdeck.local,DNS:*.local,DNS:localhost,IP:127.0.0.1" && chmod 600 /opt/cyberdeck/ssl/server.key; fi'
 ExecStart=/usr/bin/node /opt/cyberdeck/server.js
 Restart=on-failure
-RestartSec=3
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target
@@ -92,6 +99,8 @@ ConditionPathExists=!/opt/cyberdeck/.firstboot-done
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# Hard timeout — firstboot must not block boot for more than 2 minutes
+TimeoutStartSec=120
 ExecStart=/usr/bin/cyberdeck-first-boot
 
 [Install]
@@ -131,7 +140,7 @@ fi
 if [ -d /opt/cyberdeck/wheels ]; then
   echo "[firstboot] installing python deps from wheelhouse"
   pip3 install --no-index --find-links /opt/cyberdeck/wheels --target /opt/cyberdeck/wheels/lib \
-    fastapi uvicorn 2>&1 | tail -5 || true
+    --break-system-packages fastapi uvicorn 2>&1 | tail -5 || true
   # Make uvicorn discoverable via PATH
   if [ -f /opt/cyberdeck/wheels/lib/bin/uvicorn ]; then
     mkdir -p /opt/cyberdeck/wheels/bin

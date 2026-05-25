@@ -45,12 +45,11 @@ cp "$PROJ/deploy/yocto/snippets/cyberdeck-firewall.bb" "$LAYER/recipes-cyberdeck
 cp "$PROJ/deploy/yocto/snippets/cyberdeck.nft"         "$LAYER/recipes-cyberdeck/firewall/files/"
 cp "$PROJ/deploy/yocto/snippets/nftables.service"      "$LAYER/recipes-cyberdeck/firewall/files/"
 
-echo "[5] Updating bootlogo recipe files..."
 cp "$PROJ/deploy/yocto/snippets/cyberdeck-bootlogo.bb" "$LAYER/recipes-cyberdeck/bootlogo/cyberdeck-bootlogo.bb"
 cp "$PROJ/deploy/yocto/snippets/cyberdeck.plymouth"    "$LAYER/recipes-cyberdeck/bootlogo/files/"
 cp "$PROJ/deploy/yocto/snippets/cyberdeck.script"      "$LAYER/recipes-cyberdeck/bootlogo/files/"
-cp "$PROJ/deploy/assets/boot-logos/boot-dark.jpeg"     "$LAYER/recipes-cyberdeck/bootlogo/files/"
-cp "$PROJ/deploy/assets/boot-logos/boot-light.jpeg"    "$LAYER/recipes-cyberdeck/bootlogo/files/"
+cp "$PROJ/deploy/assets/boot-logos/boot-dark.png"      "$LAYER/recipes-cyberdeck/bootlogo/files/"
+cp "$PROJ/deploy/assets/boot-logos/boot-light.png"     "$LAYER/recipes-cyberdeck/bootlogo/files/"
 
 echo "[6] (skipped) deploy/yocto/cyberdeck.bb is a documentation stub — the"
 echo "    real recipe is cyberdeck-app.bb, already staged in step [1b]."
