@@ -51,6 +51,7 @@ FILES:${PN} = " \
     ${systemd_unitdir}/system/getty@tty1.service.d/autologin.conf \
     ${systemd_unitdir}/system/getty@tty2.service.d/autologin.conf \
     ${sysconfdir}/avahi/services/cyberdeck.service \
+    ${sysconfdir}/modprobe.d/no-rpi-touch.conf \
 "
 
 do_install() {
@@ -130,6 +131,10 @@ EOFCONF
     # Correct runtime execution bits
     chmod 0755 ${D}/opt/cyberdeck/deploy/scripts/*.sh
     chmod 0755 ${D}/opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
+
+    # 11. Modprobe blacklist for old RPi Touchscreen to prevent I2C probe crashes
+    install -d ${D}${sysconfdir}/modprobe.d
+    echo "blacklist rpi_touchscreen" > ${D}${sysconfdir}/modprobe.d/no-rpi-touch.conf
 
     # Deterministic ownership via numeric UID/GID — tracked correctly by pseudo
     # during offline rootfs construction. Matches USERADD_PARAM uid 1200.

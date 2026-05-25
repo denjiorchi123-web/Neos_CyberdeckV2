@@ -1,49 +1,31 @@
-# Append to /boot/config.txt on the Pi 5 image.
-
-# ─── GPU / DRM/KMS ─────────────────────────────────────────────────────
-# The base Yocto config.txt already includes vc4-kms-v3d. Do NOT duplicate it here!
-# Framebuffer count must be committed before the panel overlay loads.
+# ── GPU / DRM-KMS ──────────────────────────────────────────────────────
 max_framebuffers=2
 disable_overscan=1
 
-# ─── Display auto-detection ────────────────────────────────────────────
-# MUST BE DISABLED to prevent the RPi5 firmware from erroneously probing the DSI port
-# and loading the old V1 7-inch display overlay, which conflicts with our I2C setup.
+# ── Display auto-detection ─────────────────────────────────────────────
 display_auto_detect=0
 
-# ─── Display Overlays ──────────────────────────────────────────────────
-# Option A: Official Raspberry Pi Touch Display 2 (1280x720, ILI9881C)
-# Target DSI0 port, disable built-in touch probe to prevent -EIO (-5) errors
-dtoverlay=vc4-kms-dsi-ili9881-7inch,dsi0,disable_touch
+# ── Touch Display 2 (ILI9881C, 7-inch, DSI0) ─────────────────────────
+# NO disable_touch — Touch Display 2 uses built-in Goodix via DSI ribbon
+dtoverlay=vc4-kms-dsi-ili9881-7inch,dsi0
 
-# ─── I2C for touch controller ──────────────────────────────────────────
-# Touch Display 2 uses Goodix GT9xx over I2C-1. Both must be on.
-dtparam=i2c_arm=on
-dtparam=i2c1=on
-dtoverlay=goodix
-
-# ─── Disable Wi-Fi + Bluetooth at firmware level ───────────────────────
+# ── Wireless ───────────────────────────────────────────────────────────
 dtoverlay=disable-wifi
 dtoverlay=disable-bt
 
-# ─── Audio ─────────────────────────────────────────────────────────────
+# ── Audio ──────────────────────────────────────────────────────────────
 dtparam=audio=on
 
-# ─── Camera ────────────────────────────────────────────────────────────
+# ── Camera ─────────────────────────────────────────────────────────────
 camera_auto_detect=1
 
-# ─── Boot splash ───────────────────────────────────────────────────────
+# ── Boot ───────────────────────────────────────────────────────────────
 disable_splash=1
 
-# ─── Pi 5 Power Management ─────────────────────────────────────────────
-# usb_max_current_enable: requests full 5A from a USB-C PD (27W) supply.
+# ── Pi 5 power management ──────────────────────────────────────────────
 usb_max_current_enable=1
-
-# arm_boost: unlocks the 2.4 GHz turbo bin when adequate power is available.
 arm_boost=1
 
-# ─── PCIe / NVMe SSD Support ──────────────────────────────────────────
-# Enable the external PCIe connector for NVMe M.2 HATs
+# ── PCIe / NVMe SSD ────────────────────────────────────────────────────
 dtparam=pciex1=on
-# Force PCIe Gen 2 speed for maximum link stability
 dtparam=pciex1_gen=2
