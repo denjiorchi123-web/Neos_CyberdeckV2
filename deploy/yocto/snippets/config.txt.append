@@ -1,32 +1,26 @@
 # Append to /boot/config.txt on the Pi 5 image.
 
 # ─── GPU / DRM/KMS ─────────────────────────────────────────────────────
-# Use the correct unified overlay; firmware auto-detects Pi 5
-dtoverlay=vc4-kms-v3d
+# The base Yocto config.txt already includes vc4-kms-v3d. Do NOT duplicate it here!
+# Framebuffer count must be committed before the panel overlay loads.
 max_framebuffers=2
 disable_overscan=1
 
 # ─── Display auto-detection ────────────────────────────────────────────
-# Disabled: combining display_auto_detect with an explicit DSI overlay
-# can cause double-initialization conflicts in Yocto. We specify overlays
-# manually below instead.
-# display_auto_detect=1
+# MUST BE DISABLED to prevent the RPi5 firmware from erroneously probing the DSI port
+# and loading the old V1 7-inch display overlay, which conflicts with our I2C setup.
+display_auto_detect=0
 
 # ─── Display Overlays ──────────────────────────────────────────────────
-# Uncomment ONLY the one that matches your physical screen!
-
 # Option A: Official Raspberry Pi Touch Display 2 (1280x720, ILI9881C)
-# Target DSI0 port, disable built-in touch probe, and load Goodix touch driver over custom GPIO pins 3 & 5
-# dtoverlay=vc4-kms-dsi-ili9881-7inch,dsi0,disable_touch
-
-# Option B: Waveshare 7-inch DSI display (or classic Pi 7" V1, 800x480)
-# dtoverlay=vc4-kms-dsi-7inch
+# Target DSI0 port, disable built-in touch probe to prevent -EIO (-5) errors
+dtoverlay=vc4-kms-dsi-ili9881-7inch,dsi0,disable_touch
 
 # ─── I2C for touch controller ──────────────────────────────────────────
 # Touch Display 2 uses Goodix GT9xx over I2C-1. Both must be on.
-# dtparam=i2c_arm=on
-# dtparam=i2c1=on
-# dtoverlay=goodix
+dtparam=i2c_arm=on
+dtparam=i2c1=on
+dtoverlay=goodix
 
 # ─── Disable Wi-Fi + Bluetooth at firmware level ───────────────────────
 dtoverlay=disable-wifi
@@ -51,5 +45,5 @@ arm_boost=1
 # ─── PCIe / NVMe SSD Support ──────────────────────────────────────────
 # Enable the external PCIe connector for NVMe M.2 HATs
 dtparam=pciex1
-# Force PCIe Gen 2 speed for maximum link stability (change to 3 if supported by your HAT)
+# Force PCIe Gen 2 speed for maximum link stability
 dtparam=pciex1_gen=2
