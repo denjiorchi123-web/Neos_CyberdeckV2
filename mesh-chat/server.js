@@ -1,13 +1,14 @@
 require("dotenv").config();
 
 const path = require("path");
-const http = require("http");
+const https = require("https");
 const express = require("express");
 const { Server } = require("socket.io");
 const { io: ioClient } = require("socket.io-client");
 const { v4: uuidv4 } = require("uuid");
 
 const { loadOrGenerateKeys } = require("./lib/crypto");
+const { loadOrGenerateSslCredentials } = require("./lib/ssl");
 const {
   initDatabases,
   upsertLocalNode,
@@ -124,7 +125,7 @@ function onPeerDiscovered(peer) {
 }
 
 function connectToPeer() {
-  const url = `http://${config.PEER_IP}:${config.SOCKET_PORT}`;
+  const url = `https://${config.PEER_IP}:${config.SOCKET_PORT}`;
   console.log(`[mesh] connecting to peer at ${url}`);
 
   meshClient = ioClient(url, {
@@ -132,6 +133,7 @@ function connectToPeer() {
     reconnection: true,
     reconnectionDelay: 2000,
     timeout: 10000,
+    rejectUnauthorized: false,
   });
 
   meshClient.on("connect", () => {
@@ -349,20 +351,21 @@ function setupMeshSockets(io) {
 async function start() {
   initDatabases();
   keys = loadOrGenerateKeys();
+  const ssl = loadOrGenerateSslCredentials(config.MY_IP);
   upsertLocalNode(config, keys.publicKey);
 
   router = createRouterService(config, keys, meshSend, browserEmit, () => peerNodeId);
   router.rebuildRoutingTable();
 
   const app = createApp();
-  const appServer = http.createServer(app);
+  const appServer = https.createServer(ssl, app);
 
   browserIo = new Server(appServer, {
     cors: { origin: "*" },
   });
   setupBrowserSockets(browserIo);
 
-  const meshServer = http.createServer();
+  const meshServer = https.createServer(ssl);
   meshIo = new Server(meshServer, {
     cors: { origin: "*" },
   });
@@ -389,9 +392,10 @@ async function start() {
   outbox.start();
 
   appServer.listen(config.APP_PORT, config.MY_IP, () => {
-    console.log(`✅ CyberDeck [${config.NODE_NAME}] running`);
-    console.log(`   UI:     http://${config.MY_IP}:${config.APP_PORT}`);
-    console.log(`   Socket: http://${config.MY_IP}:${config.SOCKET_PORT}`);
+    console.log(`✅ CyberDeck [${config.NODE_NAME}] running (HTTPS)`);
+    console.log(`   UI:     https://${config.MY_IP}:${config.APP_PORT}`);
+    console.log(`   Mesh:   https://${config.MY_IP}:${config.SOCKET_PORT}`);
+    console.log(`   Note:   Browser will warn about self-signed cert — click Advanced → Proceed`);
   });
 
   meshServer.listen(config.SOCKET_PORT, config.MY_IP, () => {

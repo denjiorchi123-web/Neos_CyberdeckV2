@@ -57,15 +57,18 @@ npm install
 node server.js
 ```
 
-### 4. Open browser
+### 4. Open browser (HTTPS)
 
-- Laptop-A → http://192.168.1.1:3000
-- Laptop-B → http://192.168.1.2:3000
+- Laptop-A → **https://192.168.1.1:3000**
+- Laptop-B → **https://192.168.1.2:3000**
+
+The app uses **HTTPS** for the UI, API, and mesh socket links. On first visit the browser shows a security warning (self-signed LAN certificate). Click **Advanced** → **Proceed** (wording varies by browser).
 
 Enter a username on each, click **Join Network**, pick the other user under **Contacts**, and chat.
 
 ## Features
 
+- **HTTPS/WSS** for all browser and peer socket traffic
 - UDP discovery + Socket.io mesh routing (Dijkstra)
 - End-to-end encryption (tweetnacl / X25519)
 - Offline outbox queue
@@ -76,7 +79,7 @@ Enter a username on each, click **Join Network**, pick the other user under **Co
 ```
 mesh-chat/
 ├── server.js
-├── lib/          db, crypto, dijkstra
+├── lib/          db, crypto, dijkstra, ssl
 ├── services/     discovery, heartbeat, router, outbox
 └── public/       index.html
 ```
