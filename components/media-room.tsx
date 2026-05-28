@@ -688,24 +688,16 @@ export function MediaRoom({
     setCallEndedState(wasConnected ? "Call Ended" : "Call Disconnected");
 
     setTimeout(() => {
-      const url = qs.stringifyUrl(
-        {
-          url: pathName || "",
-          query: {
-            video: undefined,
-            audio: undefined
-          }
-        },
-        { skipNull: true }
-      );
+      // Per user request, always route back to the dashboard when a call ends
+      const destinationUrl = "/me";
 
-      router.push(url);
+      router.push(destinationUrl);
       router.refresh();
       
       // Fallback in case router fails (Next.js client-side navigation quirk)
       setTimeout(() => {
          if (isEndingRef.current) {
-            window.location.assign(url);
+            window.location.assign(destinationUrl);
          }
       }, 1000);
     }, 2000);

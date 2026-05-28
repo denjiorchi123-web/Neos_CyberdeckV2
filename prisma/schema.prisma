@@ -26,6 +26,11 @@ model Profile {
   members  Member[]
   channels Channel[]
 
+  communities Community[]
+  communityMembers CommunityMember[]
+  broadcastChannels BroadcastChannel[]
+  broadcastFollows  BroadcastFollower[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -45,7 +50,11 @@ model Server {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  communityId String?
+  community   Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+
   @@index([profileId])
+  @@index([communityId])
 }
 
 model Member {
@@ -269,4 +278,152 @@ model FileIndex {
 
   @@index([uploaderId])
   @@index([serverId])
+}
+
+// ── MESH NETWORK ROUTING (Phase 1) ──────────────────────────────────────────
+
+model Node {
+  id          String   @id // e.g., "pi-a-uuid"
+  hostname    String?
+  ipAddress   String?
+  publicKey   String?
+  isTrusted   Boolean  @default(false)
+  isOnline    Boolean  @default(true)
+  lastSeen    DateTime @default(now())
+  hopCount    Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RoutingTable {
+  destinationNode String @id
+  viaNode         String
+  hopCount        Int
+  lastUpdated     DateTime @default(now())
+}
+
+model OutboxQueue {
+  id          String   @id @default(uuid())
+  destination String   // node id
+  payload     String
+  createdAt   DateTime @default(now())
+}
+
+// ── COMMUNITIES (Groups of Groups) ──────────────────────────────────────────
+
+model Community {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  imageUrl    String?
+
+  profileId   String
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // A community contains multiple Groups (which are currently 'Servers')
+  groups      Server[]
+
+  // Admins and Moderators of the community
+  members     CommunityMember[]
+
+  // Dedicated announcements channel
+  announcementsChannelId String? @unique
+  announcementsChannel   BroadcastChannel? @relation(fields: [announcementsChannelId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model CommunityMember {
+  id          String   @id @default(uuid())
+  role        String   @default("MEMBER") // ADMIN, MODERATOR, MEMBER
+
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  
+  profileId   String
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([communityId, profileId])
+  @@index([profileId])
+}
+
+// ── BROADCAST CHANNELS (WhatsApp Style) ─────────────────────────────────
+
+model BroadcastChannel {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  imageUrl    String?
+  
+  // Only the creator (admin) can post
+  profileId   String
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  // Followers (read-only)
+  followers   BroadcastFollower[]
+  messages    BroadcastMessage[]
+
+  community   Community?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model BroadcastFollower {
+  id         String @id @default(uuid())
+  channelId  String
+  channel    BroadcastChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  
+  profileId  String
+  profile    Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  role       String  @default("FOLLOWER") // ADMIN, FOLLOWER
+
+  createdAt  DateTime @default(now())
+
+  @@unique([channelId, profileId])
+}
+
+model BroadcastMessage {
+  id         String @id @default(uuid())
+  content    String
+  type       String @default("TEXT")
+  fileUrl    String?
+  
+  channelId  String
+  channel    BroadcastChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([channelId])
+}
+
+// ── USER CHAT PREFERENCES ────────────────────────────────────────────────
+
+model ArchivedChat {
+  id        String   @id @default(uuid())
+  profileId String
+  chatId    String // The ID of the DM, Group, Community, or Channel
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, chatId])
+}
+
+model PinnedChat {
+  id        String   @id @default(uuid())
+  profileId String
+  chatId    String // The ID of the DM, Group, Community, or Channel
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, chatId])
 }

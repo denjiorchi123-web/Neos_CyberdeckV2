@@ -1,43 +1,16 @@
 [Unit]
-Description=CyberDeck Web (Next.js + Socket.io)
-# FIXED: Swapped network.target for network-online.target to guarantee IP address assignment before binding
-After=network-online.target redis-cyberdeck.service cyberdeck-backend.service avahi-daemon.service
-Wants=network-online.target avahi-daemon.service
-Requires=redis-cyberdeck.service
+Description=CyberDeck Web
+After=network.target redis-cyberdeck.service cyberdeck-backend.service
+Requires=redis-cyberdeck.service cyberdeck-backend.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/cyberdeck
-EnvironmentFile=-/opt/cyberdeck/.env
 Environment=NODE_ENV=production
-Environment=CYBERDECK_PEERS_FILE=/opt/cyberdeck/peers.json
-
-# Ensure SSL certs exist (fallback if firstboot didn't run or failed)
-ExecStartPre=/bin/sh -c 'if [ ! -f /opt/cyberdeck/ssl/server.cert ]; then mkdir -p /opt/cyberdeck/ssl && openssl req -x509 -newkey rsa:2048 -keyout /opt/cyberdeck/ssl/server.key -out /opt/cyberdeck/ssl/server.cert -days 3650 -nodes -subj "/CN=cyberdeck.local" -addext "subjectAltName=DNS:cyberdeck.local,DNS:*.local,DNS:localhost,IP:127.0.0.1" && chmod 600 /opt/cyberdeck/ssl/server.key; fi'
-
+ExecStartPre=/opt/cyberdeck/deploy/scripts/app-init.sh
 ExecStart=/usr/bin/node /opt/cyberdeck/server.js
 Restart=on-failure
-RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 User=cyberdeck
-Group=cyberdeck
-
-# Security Sandbox Hardening
-ProtectSystem=strict
-# FIXED: Expanded write scopes to include the entire /opt/cyberdeck folder. 
-# This prevents Prisma journaling blockages and allows Next.js to handle dynamic runtime state updates safely.
-ReadWritePaths=/opt/cyberdeck
-
-PrivateTmp=yes
-NoNewPrivileges=yes
-
-# Linux Kernel Resource Sandbox Isolation Rules
-ProtectHome=yes
-ProtectControlGroups=yes
-ProtectKernelModules=yes
-ProtectKernelTunables=yes
-RestrictRealtime=yes
 
 [Install]
 WantedBy=multi-user.target

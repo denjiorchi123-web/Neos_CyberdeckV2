@@ -125,6 +125,22 @@ async def get_status():
         "nodes": nodes,
     }
 
+from pydantic import BaseModel
+
+class TimeUpdate(BaseModel):
+    time: str
+
+@app.post("/api/time")
+async def set_time(data: TimeUpdate):
+    import subprocess
+    try:
+        # data.time is expected to be a valid date string like "2026-05-28 19:30:00"
+        result = subprocess.run(["sudo", "date", "-s", data.time], check=True, capture_output=True, text=True)
+        subprocess.run(["sudo", "hwclock", "-w"], check=False, capture_output=True)
+        return {"success": True, "time": data.time, "output": result.stdout.strip()}
+    except subprocess.CalledProcessError as e:
+        return {"error": f"Failed to set time: {e.stderr.strip()}"}
+
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.trust(websocket)

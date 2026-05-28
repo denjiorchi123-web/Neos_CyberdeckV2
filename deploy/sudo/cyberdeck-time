@@ -1,0 +1,1 @@
+cyberdeck ALL=(ALL) NOPASSWD: /bin/date -s *, /usr/bin/date -s *, /sbin/hwclock -w, /usr/sbin/hwclock -w

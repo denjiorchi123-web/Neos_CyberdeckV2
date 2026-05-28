@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 
 import { currentProfile } from "@/lib/current-profile";
 import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
+import { UnifiedChatSidebar } from "@/components/navigation/unified-chat-sidebar";
+
+import { db } from "@/lib/db";
 
 export default async function MainLayout({
   children
@@ -15,12 +18,30 @@ export default async function MainLayout({
     return redirect("/sign-in");
   }
 
+  const defaultServer = await db.server.findFirst({
+    where: { inviteCode: "cyberdeck-default" },
+    include: { members: { where: { profileId: profile.id } } }
+  });
+
+  if (defaultServer && defaultServer.members.length === 0) {
+    await db.member.create({
+      data: {
+        profileId: profile.id,
+        serverId: defaultServer.id,
+        role: "GUEST"
+      }
+    });
+  }
+
   return (
     <div className="h-full">
       <div className="hidden md:flex h-full w-[72px] z-30 flex-col fixed inset-y-0">
         <NavigationSidebar />
       </div>
-      <main className="md:pl-[72px] h-full">{children}</main>
+      <div className="hidden md:flex h-full w-[320px] z-20 flex-col fixed inset-y-0 left-[72px]">
+        <UnifiedChatSidebar />
+      </div>
+      <main className="md:pl-[392px] h-full">{children}</main>
     </div>
   );
 }

@@ -4,7 +4,7 @@
 Window.SetBackgroundTopColor(0.04, 0.05, 0.06);
 Window.SetBackgroundBottomColor(0.04, 0.05, 0.06);
 
-# Load the logo (dark variant — looks good on the black bg)
+# Load the logo (handling the specific file name)
 logo.image  = Image("boot.png");
 logo.sprite = Sprite(logo.image);
 logo.sprite.SetX((Window.GetWidth()  - logo.image.GetWidth())  / 2);
@@ -18,6 +18,8 @@ fun refresh_callback() {
 }
 Plymouth.SetRefreshFunction(refresh_callback);
 
-# No password / progress bar UI — kiosk only
+# Allow boot logs to show by NOT overriding display_message_callback
+# Systemd will print [ OK ] and [ FAIL ] messages to the TTY in the background.
+
 fun display_password_callback (prompt, bullets) {}
 fun display_normal_callback   () {}

@@ -78,7 +78,7 @@ export function ServerSearch({ data }: ServerSearchProps) {
         </kbd>
       </button>
       <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Search all channels and members" />
+        <CommandInput placeholder="Search all groups and members" />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
           {data.map(({ label, type, data }) => {

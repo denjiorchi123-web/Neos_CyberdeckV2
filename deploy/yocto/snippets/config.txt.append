@@ -1,32 +1,17 @@
 # Append to /boot/config.txt on the Pi 5 image.
 
-# ── GPU / DRM-KMS (HDMI ONLY) ──────────────────────────────────────────
-# CRITICAL: We must explicitly load the v3d overlay. Without this, the 
-# DRM pipeline never initializes and Weston freezes the display.
+# ── GPU / DRM-KMS ────────────────────────────────────────────────────────
 dtoverlay=vc4-kms-v3d
+dtoverlay=vc4-kms-dsi-7inch
 max_framebuffers=2
-disable_overscan=1
 
-# ── Display auto-detection ─────────────────────────────────────────────
-display_auto_detect=1
-
-# ── Wireless ───────────────────────────────────────────────────────────
+# ── Wireless (Air-Gapped: Hard Disable) ──────────────────────────────────
 dtoverlay=disable-wifi
 dtoverlay=disable-bt
 
 # ── Audio ──────────────────────────────────────────────────────────────
 dtparam=audio=on
 
-# ── Camera ─────────────────────────────────────────────────────────────
-camera_auto_detect=1
-
-# ── Boot ───────────────────────────────────────────────────────────────
-disable_splash=1
-
 # ── Pi 5 power management ──────────────────────────────────────────────
 usb_max_current_enable=1
 arm_boost=1
-
-# ── PCIe / NVMe SSD ────────────────────────────────────────────────────
-dtparam=pciex1=on
-dtparam=pciex1_gen=2

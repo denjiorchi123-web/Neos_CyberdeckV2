@@ -1,58 +1,32 @@
 #!/usr/sbin/nft -f
-# CyberDeck OS — LAN-only firewall.
-#
-# Topology under batman-adv:
-#   eth0 = raw mesh transport (batadv ethertype 0x4305) — NOT routable
-#   bat0 = virtual L3 face — all peer traffic enters/exits here
-#   usb0 = USB-C gadget ethernet (management plane)
-#
-# We only filter on bat0 + usb0; eth0 only carries batadv ethernet frames,
-# which the kernel module consumes before they hit the netfilter input chain.
-
 flush ruleset
 
 table inet cyberdeck {
-
     chain input {
         type filter hook input priority filter; policy drop;
 
-        # Connection tracking
         ct state established,related accept
         ct state invalid drop
 
-        # Loopback
         iif lo accept
 
-        # Rate-limit fresh TCP (SYN flood mitigation)
-        tcp flags & (syn|ack) == syn limit rate 50/second accept comment "rate-limit new TCP"
+        tcp flags & (syn|ack) == syn limit rate 50/second accept
 
-        # ICMP / ICMPv6 (path MTU, neighbour discovery)
-        ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
+        ip protocol icmp accept
         ip6 nexthdr ipv6-icmp accept
 
-        # mDNS (avahi advertises bat0 → multicast hits every peer in the mesh)
         udp dport 5353 ip daddr 224.0.0.251 accept
-        udp dport 5353 ip6 daddr ff02::fb   accept
+        udp dport 5353 ip6 daddr ff02::fb accept
 
-        # ── batman-adv mesh (bat0) ──────────────────────────────────
-        iifname "bat0" ip saddr 10.0.0.0/24 tcp dport { 22, 3000, 8000 } accept
-        iifname "bat0" ip saddr 10.0.0.0/24 udp dport { 49152-65535 }    accept comment "WebRTC media"
-        iifname "bat0" ip saddr 10.0.0.0/24 udp dport 22000 accept comment "Syncthing (future)"
-        iifname "bat0" ip saddr 10.0.0.0/24 udp dport 21027 accept comment "Syncthing discovery"
+        iifname "bat0" tcp dport { 22, 3000, 8000 } accept
+        iifname "bat0" udp dport { 49152-65535 } accept
+        iifname "eth0" accept
 
-        # batctl uses generic netlink + the bat0 sysfs — no extra rules needed
-        # for diagnostics; `batctl o`, `batctl tg`, etc. work without firewall holes.
-
-        # ── USB-C gadget (usb0) — management only ────────────────────
-        iifname "usb0" tcp dport { 22, 3000 } accept
-
-        # Everything else — drop silently
         counter drop
     }
 
     chain forward {
         type filter hook forward priority filter; policy drop;
-        # We never route between bat0 and usb0; mesh stays L2-isolated from mgmt.
         counter drop
     }
 

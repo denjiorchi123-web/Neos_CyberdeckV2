@@ -98,12 +98,12 @@ export async function GET() {
       serverId, "CyberDeck Main", "", "cyberdeck-default", adminId
     );
 
-    const channels = ["general", "announcements", "voice-hq"];
+    const channels = ["general", "announcements"];
     for (const channelName of channels) {
       await db.$executeRawUnsafe(
         `INSERT INTO Channel (id, name, type, profileId, serverId, createdAt, updatedAt) 
          VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        uuidv4(), channelName, channelName === "voice-hq" ? "AUDIO" : "TEXT", adminId, serverId
+        uuidv4(), channelName, "TEXT", adminId, serverId
       );
     }
 

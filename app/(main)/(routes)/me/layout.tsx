@@ -7,11 +7,8 @@ export default async function MeLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-full flex">
-      <div className="hidden md:flex h-full w-64 z-20 flex-col fixed inset-y-0 left-[72px]">
-        <DMListSidebar />
-      </div>
-      <main className="h-full flex-1 md:pl-64">
+    <div className="h-full flex flex-col">
+      <main className="h-full flex-1">
         {children}
       </main>
     </div>

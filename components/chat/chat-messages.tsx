@@ -20,9 +20,9 @@ interface ChatMessagesProps {
   apiUrl: string;
   socketUrl: string;
   socketQuery: Record<string, string>;
-  paramKey: "channelId" | "conversationId";
+  paramKey: "channelId" | "conversationId" | "broadcastId";
   paramValue: string;
-  type: "channel" | "conversation";
+  type: "channel" | "conversation" | "broadcast";
 }
 
 type MessagesWithMemberWithProfile = Message & {
@@ -81,7 +81,7 @@ export function ChatMessages({
     if (unreadMessageIds.length > 0) {
       socket.emit("message:read", {
         messageIds: unreadMessageIds,
-        type: type === "channel" ? "channel" : "direct",
+        type: type === "channel" ? "channel" : (type === "broadcast" ? "broadcast" : "direct"),
         chatId: chatId
       });
     }

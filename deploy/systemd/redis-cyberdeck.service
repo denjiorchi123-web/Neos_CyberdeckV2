@@ -1,14 +1,12 @@
 [Unit]
-Description=CyberDeck Redis (presence + signaling state)
+Description=CyberDeck Redis
 After=network.target
-Before=cyberdeck-web.service cyberdeck-backend.service
 
 [Service]
 Type=notify
-ExecStart=/usr/bin/redis-server --bind 127.0.0.1 --port 6379 --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+ExecStart=/usr/bin/redis-server --bind 0.0.0.0 --port 6379 --save "" --appendonly no
 Restart=on-failure
 User=redis
-Group=redis
 
 [Install]
 WantedBy=multi-user.target

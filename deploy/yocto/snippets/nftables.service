@@ -1,15 +1,11 @@
 [Unit]
-Description=CyberDeck nftables firewall
+Description=Cyberdeck nftables firewall
 Before=network-pre.target
-Wants=network-pre.target
-DefaultDependencies=no
 
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/nft -f /etc/nftables/cyberdeck.nft
-ExecReload=/usr/sbin/nft -f /etc/nftables/cyberdeck.nft
-ExecStop=/usr/sbin/nft flush ruleset
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target

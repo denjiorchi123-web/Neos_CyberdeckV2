@@ -109,11 +109,12 @@ export default function LogsPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-x-3">
             <button
-              onClick={() => window.history.back()}
-              className="p-1 -ml-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition"
+              onClick={() => window.location.href = "/"}
+              className="p-1.5 -ml-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition flex items-center gap-2 pr-3"
               title="Go Back"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-4 w-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Back</span>
             </button>
             <span className="text-sm text-zinc-400 uppercase tracking-widest">
               {source === "terminal" ? "Terminal" : "System Logs"}

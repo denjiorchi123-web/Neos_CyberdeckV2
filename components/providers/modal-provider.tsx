@@ -13,6 +13,15 @@ import { DeleteChannelModal } from "@/components/modals/delete-channel-modal";
 import { EditChannelModal } from "@/components/modals/edit-channel-modal";
 import { MessageFileModal } from "@/components/modals/message-file-modal";
 import { DeleteMessageModal } from "@/components/modals/delete-message-modal";
+import { ChatInfoModal } from "@/components/modals/chat-info-modal";
+import { CreateCommunityModal } from "@/components/modals/create-community-modal";
+import { CreateBroadcastChannelModal } from "@/components/modals/create-broadcast-channel-modal";
+import { CommunityMembersModal } from "@/components/modals/community-members-modal";
+import { ChannelFollowersModal } from "@/components/modals/channel-followers-modal";
+import { DeleteCommunityModal } from "@/components/modals/delete-community-modal";
+import { DeleteBroadcastChannelModal } from "@/components/modals/delete-broadcast-channel-modal";
+import { EditCommunityModal } from "@/components/modals/edit-community-modal";
+import { EditBroadcastChannelModal } from "@/components/modals/edit-broadcast-channel-modal";
 // CallModal removed: incoming-call UI is now driven by CallProvider + IncomingCallOverlay.
 // Keeping both registered competing socket listeners (call:start / call:end / call:decline)
 // and the cleanup of one would clobber the other's handlers — that was the actual root cause
@@ -40,6 +49,15 @@ export function ModalProvider() {
       <EditChannelModal />
       <MessageFileModal />
       <DeleteMessageModal />
+      <ChatInfoModal />
+      <CreateCommunityModal />
+      <CreateBroadcastChannelModal />
+      <CommunityMembersModal />
+      <ChannelFollowersModal />
+      <DeleteCommunityModal />
+      <DeleteBroadcastChannelModal />
+      <EditCommunityModal />
+      <EditBroadcastChannelModal />
     </>
   );
 }

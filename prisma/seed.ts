@@ -55,8 +55,8 @@ async function main() {
           { name: "general", profileId: admin.id },
           { name: "announcements", profileId: admin.id },
           { name: "dev-chat", profileId: admin.id },
-          { name: "voice-hq", type: "AUDIO", profileId: admin.id },
-          { name: "video-hq", type: "VIDEO", profileId: admin.id },
+
+
         ]
       }
     }

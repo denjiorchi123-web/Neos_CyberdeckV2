@@ -5,7 +5,18 @@ declare global {
   var _walEnabled: boolean | undefined;
 }
 
-export const db = globalThis.prisma || new PrismaClient();
+// Hot reload can keep a PrismaClient created before schema changes (e.g. archivedChat).
+function createPrismaClient() {
+  return new PrismaClient();
+}
+
+function isStalePrismaClient(client: PrismaClient): boolean {
+  return !("archivedChat" in client) || !("pinnedChat" in client);
+}
+
+const cached = globalThis.prisma;
+export const db =
+  cached && !isStalePrismaClient(cached) ? cached : createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalThis.prisma = db;
 

@@ -1,32 +1,16 @@
 [Unit]
-Description=CyberDeck FastAPI Backend (status / dashboard)
-# FIXED: Swapped for network-online.target to ensure local hardware interfaces are initialized before FastAPI binds
-After=network-online.target redis-cyberdeck.service
+Description=CyberDeck Backend
+After=network.target redis-cyberdeck.service
 Requires=redis-cyberdeck.service
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/cyberdeck/backend
 Environment=REDIS_URL=redis://127.0.0.1:6379
-# FIXED: Explicitly append /usr/local/bin to the execution PATH so sudo and your helper scripts are discoverable
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-# FIXED: Force the current directory into PYTHONPATH to guarantee error-free local module lookups
-Environment=PYTHONPATH=/opt/cyberdeck/backend
-
-# FIXED: Corrected binary path from /usr/bin/uvicorn to /usr/local/bin/uvicorn to align with pip wheelhouse installation rules
-ExecStart=/usr/local/bin/uvicorn main:app --host 127.0.0.1 --port 8000
-
+ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
-RestartSec=3
 User=cyberdeck
-Group=cyberdeck
-
-# Security Sandbox Hardening
-ProtectSystem=strict
-# FIXED: Expanded write scope to the parent path to prevent runtime permission blocks
-ReadWritePaths=/opt/cyberdeck
-PrivateTmp=yes
-NoNewPrivileges=no
 
 [Install]
 WantedBy=multi-user.target

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Network, RefreshCw, Loader2, AlertCircle, CheckCircle2,
-  Pencil, Trash2, Plus, Save, X, Wifi, Globe, Server,
+  Pencil, Trash2, Plus, Save, X, Wifi, Globe, Server, ArrowLeft
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -308,7 +308,11 @@ export default function NetworkPage() {
     <div className="min-h-screen bg-[#0d1117] text-zinc-200 font-mono">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-6 py-4 flex items-center gap-x-3">
-        <Network className="h-5 w-5 text-indigo-400" />
+        <button onClick={() => window.location.href = "/"} className="p-1.5 mr-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition flex items-center gap-2 pr-3 shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+          <span className="text-xs font-bold uppercase tracking-wider">Back</span>
+        </button>
+        <Network className="h-5 w-5 text-indigo-400 shrink-0" />
         <span className="text-sm text-zinc-400 uppercase tracking-widest flex-1">Network Settings</span>
         <button onClick={() => { loadInterfaces(); loadPeers(); }}
           className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-white transition">

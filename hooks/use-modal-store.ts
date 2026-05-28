@@ -13,15 +13,30 @@ export type ModalType =
   | "deleteChannel"
   | "editChannel"
   | "messageFile"
-  | "deleteMessage";
+  | "deleteMessage"
+  | "chatInfo"
+  | "createCommunity"
+  | "createBroadcastChannel"
+  | "communityMembers"
+  | "channelFollowers"
+  | "deleteCommunity"
+  | "deleteBroadcastChannel"
+  | "editCommunity"
+  | "editBroadcastChannel";
 
 interface ModalData {
   server?: Server;
   channel?: Channel;
+  community?: any;
+  broadcastChannel?: any;
   channelType?: string;
   apiUrl?: string;
   query?: Record<string, any>;
   fileType?: string;
+  chatType?: "dm" | "group";
+  memberId?: string;
+  chatName?: string;
+  chatImage?: string;
 }
 
 interface ModalStore {

@@ -28,6 +28,14 @@ export default function LauncherPage() {
   const [selfName, setSelfName]   = useState<string>("THIS DEVICE");
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefresh]  = useState(false);
+  const [manualIp, setManualIp]   = useState("");
+
+  const connectToManual = () => {
+    if (!manualIp.trim()) return;
+    const proto = window.location.protocol;
+    const port  = window.location.port ? `:${window.location.port}` : "";
+    window.location.href = `${proto}//${manualIp.trim()}${port}/`;
+  };
 
   const fetchPeers = useCallback(async (showSpinner = false) => {
     if (showSpinner) setRefresh(true);
@@ -157,6 +165,29 @@ export default function LauncherPage() {
               </AnimatePresence>
             </div>
           )}
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <h2 className="text-xs uppercase text-zinc-500 tracking-widest border-t border-zinc-800 pt-6">
+            Manual Connection
+          </h2>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Enter Host IP (e.g. 10.0.0.1)" 
+              value={manualIp} 
+              onChange={e => setManualIp(e.target.value)} 
+              onKeyDown={e => e.key === "Enter" && connectToManual()}
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition"
+            />
+            <button 
+              onClick={connectToManual}
+              disabled={!manualIp.trim()}
+              className="px-6 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 transition font-bold tracking-wider uppercase text-xs"
+            >
+              Connect
+            </button>
+          </div>
         </div>
 
         <div className="text-center text-[10px] text-zinc-700 uppercase tracking-[0.3em] pt-4">

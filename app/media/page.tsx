@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Image as ImageIcon, Video, Music, FileText, Trash2, Share2,
-  RefreshCw, Loader2, X, Check, ChevronDown, FolderOpen,
+  RefreshCw, Loader2, X, Check, ChevronDown, FolderOpen, ArrowLeft
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -220,7 +220,13 @@ export default function MediaPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-6 py-3">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-zinc-400 uppercase tracking-widest">Media Library</span>
+          <div className="flex items-center gap-x-4">
+            <button onClick={() => window.location.href = "/"} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition flex items-center gap-2 pr-3">
+              <ArrowLeft className="h-4 w-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Back</span>
+            </button>
+            <span className="text-sm text-zinc-400 uppercase tracking-widest">Media Library</span>
+          </div>
           <button onClick={() => load(category)} className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-white">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>

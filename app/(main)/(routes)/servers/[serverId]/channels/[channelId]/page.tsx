@@ -16,7 +16,8 @@ interface ChannelIdPageProps {
     channelId: string;
   };
   searchParams: {
-    node?: string;
+    video?: boolean;
+    audio?: boolean;
   };
 }
 
@@ -34,11 +35,21 @@ export default async function ChannelIdPage({
     where: { id: channelId }
   });
 
+  const server = await db.server.findUnique({
+    where: { id: serverId },
+    include: {
+      members: {
+        include: { profile: true },
+        orderBy: { role: "asc" }
+      }
+    }
+  });
+
   const member = await db.member.findFirst({
     where: { serverId: serverId, profileId: profile.id }
   });
 
-  if (!channel || !member) return redirect("/");
+  if (!channel || !member || !server) return redirect("/");
 
   return (
     <div className="bg-white dark:bg-[#313338] flex flex-col h-full">
@@ -46,8 +57,10 @@ export default async function ChannelIdPage({
         name={channel.name}
         serverId={channel.serverId}
         type="channel"
+        server={server}
+        role={member.role}
       />
-      {channel.type === ChannelType.TEXT && (
+      {!searchParams.video && !searchParams.audio && (
         <>
           <ChatMessages
             member={member}
@@ -74,11 +87,13 @@ export default async function ChannelIdPage({
           />
         </>
       )}
-      {channel.type === ChannelType.AUDIO && (
-        <MediaRoom chatId={channel.id} video={false} audio={true} peerName={channel.name} />
-      )}
-      {channel.type === ChannelType.VIDEO && (
-        <MediaRoom chatId={channel.id} video={true} audio={true} peerName={channel.name} />
+      {(searchParams.video || searchParams.audio) && (
+        <MediaRoom 
+          chatId={channel.id} 
+          video={!!searchParams.video} 
+          audio={true} 
+          peerName={channel.name} 
+        />
       )}
     </div>
   );

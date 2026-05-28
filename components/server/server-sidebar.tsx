@@ -58,12 +58,6 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
   const textChannels = server?.channels.filter(
     (channel) => channel.type === ChannelType.TEXT
   );
-  const audioChannels = server?.channels.filter(
-    (channel) => channel.type === ChannelType.AUDIO
-  );
-  const videoChannels = server?.channels.filter(
-    (channel) => channel.type === ChannelType.VIDEO
-  );
 
   const members = server?.members
     .filter((member) => member.profileId !== profile.id)
@@ -86,27 +80,9 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
           <ServerSearch
             data={[
               {
-                label: "Text Channels",
+                label: "Group Chats",
                 type: "channel",
                 data: textChannels?.map((channel) => ({
-                  id: channel.id,
-                  name: channel.name,
-                  icon: iconMap[channel.type]
-                }))
-              },
-              {
-                label: "Voice Channels",
-                type: "channel",
-                data: audioChannels?.map((channel) => ({
-                  id: channel.id,
-                  name: channel.name,
-                  icon: iconMap[channel.type]
-                }))
-              },
-              {
-                label: "Video Channels",
-                type: "channel",
-                data: videoChannels?.map((channel) => ({
                   id: channel.id,
                   name: channel.name,
                   icon: iconMap[channel.type]
@@ -125,39 +101,18 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
           />
         </div>
         <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
-        
         <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
-
-        {!!audioChannels?.length && (
+        
+        {!!textChannels?.length && (
           <div className="mb-2">
             <ServerSection
               sectionType="channels"
-              channelType={ChannelType.AUDIO}
+              channelType={ChannelType.TEXT}
               role={role}
-              label="Voice Channels"
+              label="Group Chats"
             />
             <div className="space-y-[2px]">
-              {audioChannels.map((channel) => (
-                <ServerChannel
-                  key={channel.id}
-                  channel={channel}
-                  role={role}
-                  server={server}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        {!!videoChannels?.length && (
-          <div className="mb-2">
-            <ServerSection
-              sectionType="channels"
-              channelType={ChannelType.VIDEO}
-              role={role}
-              label="Video Channels"
-            />
-            <div className="space-y-[2px]">
-              {videoChannels.map((channel) => (
+              {textChannels.map((channel) => (
                 <ServerChannel
                   key={channel.id}
                   channel={channel}

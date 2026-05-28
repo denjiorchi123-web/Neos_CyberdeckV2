@@ -64,7 +64,7 @@ export function InviteModal() {
         </DialogHeader>
         <div className="p-6">
           <Label className="uppercase text-xs font-bold text-zinc-500 dark:text-secondary/70">
-            Server invite link
+            Community invite link
           </Label>
           <div className="flex items-center mt-2 gap-x-2">
             <Input

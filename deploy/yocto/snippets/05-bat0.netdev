@@ -1,17 +1,3 @@
-# Create the batman-adv virtual mesh interface.
-# systemd-networkd v249+ has native batadv support (WSL Ubuntu 24.04 ships v255).
 [NetDev]
 Name=bat0
 Kind=batadv
-
-[BatmanAdvanced]
-# B.A.T.M.A.N. V — newer routing algorithm, throughput-aware (vs. legacy IV)
-RoutingAlgorithm=batman-v
-# Originator broadcast interval (ms) — 1000 is a sane default for wired LAN
-OriginatorIntervalSec=1
-# Disable gateway mode; this is a peer mesh, not an internet gateway
-GatewayMode=off
-# Enable Distributed ARP Table — speeds up ARP across the mesh
-DistributedArpTable=true
-# Enable bridge loop avoidance — important if you ever bridge bat0 with another iface
-BridgeLoopAvoidance=true

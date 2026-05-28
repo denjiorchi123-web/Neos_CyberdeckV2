@@ -56,7 +56,7 @@ export function ServerHeader({ server, role }: ServerHeaderProps) {
             onClick={() => onOpen("editServer", { server })}
             className="px-3 py-2 text-sm cursor-pointer"
           >
-            Server Settings
+            Community Settings
             <Settings className="h-4 w-4 ml-auto" />
           </DropdownMenuItem>
         )}
@@ -93,7 +93,7 @@ export function ServerHeader({ server, role }: ServerHeaderProps) {
             onClick={() => onOpen("leaveServer", { server })}
             className="px-3 py-2 text-sm cursor-pointer text-rose-500"
           >
-            Leave Server
+            Leave Community
             <LogOutIcon className="h-4 w-4 ml-auto" />
           </DropdownMenuItem>
         )}

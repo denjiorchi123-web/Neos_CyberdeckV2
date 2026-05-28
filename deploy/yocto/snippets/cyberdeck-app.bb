@@ -1,121 +1,47 @@
-SUMMARY  = "CyberDeck Next.js app + FastAPI sidecar (prebuilt for linux-arm64)"
+SUMMARY  = "CyberDeck Next.js app + FastAPI sidecar"
 LICENSE  = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-SRC_URI = "file://cyberdeck-app-1.0.tar.gz \
-           file://cyberdeck-web.service \
-           file://cyberdeck-backend.service \
-           file://redis-cyberdeck.service \
-           file://cyberdeck-firstboot.service \
-           file://cyberdeck-kiosk.service \
-           file://first-boot.sh"
+SRC_URI = "file://cyberdeck-app-1.0.tar.gz"
 
 S = "${WORKDIR}/cyberdeck-app-1.0"
 
-RDEPENDS:${PN} = "nodejs redis sqlite3 python3 python3-pip openssl bash sudo ethtool \
-                  weston weston-init chromium-ozone-wayland"
+RDEPENDS:${PN} = "nodejs redis sqlite3 python3 python3-pip python3-fastapi python3-uvicorn python3-redis openssl curl bash sudo ethtool weston weston-init chromium-ozone-wayland"
 
 inherit systemd
-SYSTEMD_SERVICE:${PN} = "cyberdeck-firstboot.service redis-cyberdeck.service \
-                          cyberdeck-backend.service cyberdeck-web.service \
-                          cyberdeck-kiosk.service"
+SYSTEMD_SERVICE:${PN} = "redis-cyberdeck.service cyberdeck-backend.service cyberdeck-web.service cyberdeck-kiosk.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
     install -d ${D}/opt/cyberdeck
     cp -a ${S}/. ${D}/opt/cyberdeck/
-
-    # Strip non-arm64 native binaries
-    find ${D}/opt/cyberdeck/node_modules -type d -name 'linux-x64'   -prune -exec rm -rf {} + 2>/dev/null || true
-    find ${D}/opt/cyberdeck/node_modules -type d -name 'darwin-*'    -prune -exec rm -rf {} + 2>/dev/null || true
-    find ${D}/opt/cyberdeck/node_modules -type d -name 'win32-*'     -prune -exec rm -rf {} + 2>/dev/null || true
-    find ${D}/opt/cyberdeck/node_modules/node-pty/prebuilds -mindepth 1 -maxdepth 1 \
-        ! -name 'linux-arm64' -exec rm -rf {} + 2>/dev/null || true
-
-    rm -f ${D}/opt/cyberdeck/prisma/dev.db* 2>/dev/null || true
-
-    # Privileged helpers
-    install -d ${D}/usr/local/bin
-    install -m 0755 ${D}/opt/cyberdeck/deploy/scripts/cyberdeck-netconfig.sh \
-        ${D}/usr/local/bin/cyberdeck-netconfig.sh
-    install -m 0755 ${D}/opt/cyberdeck/deploy/scripts/usb-mount.sh \
-        ${D}/usr/local/bin/usb-mount.sh
-    install -m 0755 ${D}/opt/cyberdeck/deploy/scripts/usb-umount.sh \
-        ${D}/usr/local/bin/usb-umount.sh
-
-    # Sudoers fragment
-    install -d ${D}${sysconfdir}/sudoers.d
-    install -m 0440 ${D}/opt/cyberdeck/deploy/sudo/99-cyberdeck \
-        ${D}${sysconfdir}/sudoers.d/99-cyberdeck
-
-    # udev rules
-    install -d ${D}${sysconfdir}/udev/rules.d
-    install -m 0644 ${D}/opt/cyberdeck/deploy/udev/99-cyberdeck-input.rules \
-        ${D}${sysconfdir}/udev/rules.d/
-    install -m 0644 ${D}/opt/cyberdeck/deploy/udev/98-usb-automount.rules \
-        ${D}${sysconfdir}/udev/rules.d/
-
-    # (weston.ini is now provided via weston-init_%.bbappend to prevent clashes)
-
-    # Avahi
-    install -d ${D}${sysconfdir}/avahi/services
-    install -m 0644 ${D}/opt/cyberdeck/deploy/avahi/cyberdeck.service \
-        ${D}${sysconfdir}/avahi/services/cyberdeck.service
-
-    # Writable dirs
-    install -d ${D}/opt/cyberdeck/ssl
-    install -d ${D}/opt/cyberdeck/private/uploads
-    install -d ${D}/opt/cyberdeck/private/media/photos
-    install -d ${D}/opt/cyberdeck/private/media/videos
-    install -d ${D}/opt/cyberdeck/private/media/audio
-    install -d ${D}/opt/cyberdeck/private/media/documents
-    install -d ${D}/opt/cyberdeck/private/logs
-    install -d ${D}/opt/cyberdeck/public/uploads
-
-    # First-boot helper
-    install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/first-boot.sh ${D}${bindir}/cyberdeck-first-boot
-
-    # NOTE: getty@tty1 autologin removed — cyberdeck-kiosk.service binds
-    # TTYPath=/dev/tty1 directly. Having both fight for tty1 caused weston
-    # to fail with "could not take control of /dev/tty1".
-
-    # systemd units
     install -d ${D}${systemd_unitdir}/system
-    install -m 0644 ${WORKDIR}/redis-cyberdeck.service     ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-backend.service   ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-web.service       ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-firstboot.service ${D}${systemd_unitdir}/system/
-    install -m 0644 ${WORKDIR}/cyberdeck-kiosk.service     ${D}${systemd_unitdir}/system/
+    install -m 0644 ${S}/deploy/systemd/*.service ${D}${systemd_unitdir}/system/
+    
+    install -d ${D}${sysconfdir}/systemd/system/getty@tty2.service.d
+    install -m 0644 ${S}/deploy/systemd/getty@tty2.service.d/autologin.conf ${D}${sysconfdir}/systemd/system/getty@tty2.service.d/autologin.conf
+    
+    install -d ${D}${sysconfdir}/sudoers.d
+    install -m 0440 ${S}/deploy/sudo/cyberdeck-time ${D}${sysconfdir}/sudoers.d/cyberdeck-time
+    
+    chmod +x ${D}/opt/cyberdeck/deploy/scripts/app-init.sh
+    chmod +x ${D}/opt/cyberdeck/deploy/scripts/start-kiosk.sh
 }
 
 pkg_postinst:${PN}() {
-    chown -R 1001:1001 $D/opt/cyberdeck
-    chmod 0755 $D/opt/cyberdeck/node_modules/node-pty 2>/dev/null || true
-
+    chown -R root:root $D/opt/cyberdeck
     if [ -n "$D" ]; then
-        # Offline (image build) — write target symlinks into build-time rootfs directly.
         mkdir -p $D/etc/systemd/system
         ln -sf /lib/systemd/system/graphical.target $D/etc/systemd/system/default.target
         ln -sf /dev/null $D/etc/systemd/system/getty@tty1.service
     else
         systemctl set-default graphical.target || true
-        systemctl mask getty@tty1.service     || true
+        systemctl mask getty@tty1.service || true
     fi
 }
 
-FILES:${PN} = "/opt/cyberdeck \
-               /usr/local/bin/cyberdeck-netconfig.sh \
-               /usr/local/bin/usb-mount.sh \
-               /usr/local/bin/usb-umount.sh \
-               ${sysconfdir}/sudoers.d/99-cyberdeck \
-               ${sysconfdir}/udev/rules.d/99-cyberdeck-input.rules \
-               ${sysconfdir}/udev/rules.d/98-usb-automount.rules \
-               ${sysconfdir}/avahi/services/cyberdeck.service \
-               ${bindir}/cyberdeck-first-boot \
-               ${systemd_unitdir}/system/*.service"
+FILES:${PN} = "/opt/cyberdeck ${systemd_unitdir}/system/*.service ${sysconfdir}/systemd/system/getty@tty2.service.d/autologin.conf"
 
 INSANE_SKIP:${PN} += "already-stripped file-rdeps installed-vs-shipped ldflags textrel staticdev arch host-user-contaminated"
-
 INHIBIT_PACKAGE_STRIP = "1"
 INHIBIT_PACKAGE_DEBUG_SPLIT = "1"

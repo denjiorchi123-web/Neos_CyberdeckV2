@@ -1,8 +1,0 @@
-# Kernel feature fragment: hard-disable WiFi and Bluetooth.
-# Place at meta-cyberdeck/recipes-kernel/linux/features/cyberdeck/no-radio.scc
-# and reference it via KERNEL_FEATURES.
-
-define KFEATURE_DESCRIPTION "Disable all WiFi and Bluetooth at kernel compile time"
-define KFEATURE_COMPATIBILITY all
-
-kconf hardware no-radio.cfg
