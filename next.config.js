@@ -37,7 +37,9 @@ const nextConfig = {
         "**/hiberfil.sys",
         "**/swapfile.sys",
         "**/pagefile.sys",
-        "**/node_modules",
+        "**/node_modules/**",
+        "**/.next/**",
+        "**/.git/**"
       ],
     };
 
