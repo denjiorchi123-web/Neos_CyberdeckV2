@@ -174,7 +174,7 @@ export function CreateCommunityModal() {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-amber-600 font-medium">You don't have any groups to merge yet.</p>
+                <p className="text-xs text-amber-600 font-medium">You don&apos;t have any groups to merge yet.</p>
               )}
             </div>
             <div className="bg-gray-100 px-6 py-4 flex items-center w-full justify-between">

@@ -9,6 +9,8 @@ import { useEffect, useState, useTransition } from "react";
 
 import { ActionTooltip } from "@/components/action-tooltip";
 import { isWebRTCSupported } from "@/lib/webrtc-support";
+import { useModal } from "@/hooks/use-modal-store";
+import { usePreferences } from "@/components/providers/socket-provider";
 
 interface ChatAudioButtonProps {
   chatId?: string;
@@ -31,6 +33,8 @@ export function ChatAudioButton({
   const pathName = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const { onOpen } = useModal();
+  const { lockedChats } = usePreferences();
 
   // Scenario #12 — disable the button on browsers without WebRTC instead of letting the
   // user click through to a crash in MediaRoom.
@@ -38,20 +42,16 @@ export function ChatAudioButton({
   useEffect(() => { setSupported(isWebRTCSupported()); }, []);
 
   const isAudio = searchParams?.get("audio") && !searchParams?.get("video");
+  const isLocked = chatId ? lockedChats.some((lc: any) => lc.chatId === chatId) : false;
 
   const Icon = isAudio ? PhoneOff : Phone;
   const tooltipLabel = !supported
     ? "Voice calls not supported in this browser"
     : (isAudio ? "End audio call" : "Start audio call");
 
-  const onClick = async () => {
+  const buildCallUrl = () => {
     const isStarting = !isAudio;
-
-    // Ending the call: MediaRoom's unmount cleanup is the single canonical place that
-    // emits call:end (it has the callId + targetUserId needed for per-user routing and
-    // for the recipient's dead-call registry). Just navigate; React will unmount it.
-
-    const url = qs.stringifyUrl(
+    return qs.stringifyUrl(
       {
         url: pathName || "",
         query: {
@@ -63,11 +63,37 @@ export function ChatAudioButton({
       },
       { skipNull: true }
     );
+  };
 
+  const doNavigate = (url: string) => {
     startTransition(() => {
       router.push(url);
       router.refresh();
     });
+  };
+
+  const onClick = async () => {
+    const isStarting = !isAudio;
+
+    // If ending the call, never require a PIN — just navigate away.
+    if (!isStarting) {
+      doNavigate(buildCallUrl());
+      return;
+    }
+
+    // If starting a call on a locked chat, require PIN verification first.
+    if (isLocked && chatId) {
+      const url = buildCallUrl();
+      onOpen("callPinVerify", {
+        chatId,
+        chatName: "audio", // used by modal to show Phone icon
+        // Use window.location.assign — guaranteed to work from a modal closure
+        onSuccessCallback: () => { window.location.assign(url); },
+      });
+      return;
+    }
+
+    doNavigate(buildCallUrl());
   };
 
   return (

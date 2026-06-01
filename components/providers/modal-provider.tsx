@@ -22,10 +22,17 @@ import { DeleteCommunityModal } from "@/components/modals/delete-community-modal
 import { DeleteBroadcastChannelModal } from "@/components/modals/delete-broadcast-channel-modal";
 import { EditCommunityModal } from "@/components/modals/edit-community-modal";
 import { EditBroadcastChannelModal } from "@/components/modals/edit-broadcast-channel-modal";
-// CallModal removed: incoming-call UI is now driven by CallProvider + IncomingCallOverlay.
-// Keeping both registered competing socket listeners (call:start / call:end / call:decline)
-// and the cleanup of one would clobber the other's handlers — that was the actual root cause
-// of the "zombie ringtone" / "denji keeps ringing" bug.
+import { ClearChatModal } from "@/components/modals/clear-chat-modal";
+import { ExportChatModal } from "@/components/modals/export-chat-modal";
+import { MuteChatModal } from "@/components/modals/mute-chat-modal";
+import { BlockUserModal } from "@/components/modals/block-user-modal";
+import { ForwardMessageModal } from "@/components/modals/forward-message-modal";
+import { ChatMediaGalleryModal } from "@/components/modals/chat-media-gallery-modal";
+import { ChatPinSetupModal } from "@/components/modals/chat-pin-setup-modal";
+import { ForgotPinModal } from "@/components/modals/forgot-pin-modal";
+import { ChangePinModal } from "@/components/modals/change-pin-modal";
+import { UnlockChatVerifyModal } from "@/components/modals/unlock-chat-verify-modal";
+import { CallPinVerifyModal } from "@/components/modals/call-pin-verify-modal";
 
 export function ModalProvider() {
   const [isMounted, setIsMounted] = useState(false);
@@ -58,6 +65,17 @@ export function ModalProvider() {
       <DeleteBroadcastChannelModal />
       <EditCommunityModal />
       <EditBroadcastChannelModal />
+      <ClearChatModal />
+      <ExportChatModal />
+      <MuteChatModal />
+      <BlockUserModal />
+      <ForwardMessageModal />
+      <ChatMediaGalleryModal />
+      <ChatPinSetupModal />
+      <ForgotPinModal />
+      <ChangePinModal />
+      <UnlockChatVerifyModal />
+      <CallPinVerifyModal />
     </>
   );
 }

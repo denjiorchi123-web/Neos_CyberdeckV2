@@ -27,11 +27,13 @@ import axios from "axios";
 interface ChatAttachmentMenuProps {
   apiUrl: string;
   query: Record<string, string>;
+  replyToId?: string;
+  onSent?: () => void;
 }
 
 type OverlayType = "camera" | "location" | "contact" | null;
 
-export function ChatAttachmentMenu({ apiUrl, query }: ChatAttachmentMenuProps) {
+export function ChatAttachmentMenu({ apiUrl, query, replyToId, onSent }: ChatAttachmentMenuProps) {
   const { onOpen } = useModal();
   const [overlay, setOverlay] = useState<OverlayType>(null);
   const [open,    setOpen]    = useState(false);
@@ -48,7 +50,8 @@ export function ChatAttachmentMenu({ apiUrl, query }: ChatAttachmentMenuProps) {
     type?: string;
   }) => {
     const url = qs.stringifyUrl({ url: apiUrl, query });
-    await axios.post(url, payload);
+    await axios.post(url, { ...payload, replyToId });
+    if (onSent) onSent();
   };
 
   const options = [
@@ -58,7 +61,7 @@ export function ChatAttachmentMenu({ apiUrl, query }: ChatAttachmentMenuProps) {
       color: "bg-indigo-500",
       onClick: () => {
         setOpen(false);
-        onOpen("messageFile", { apiUrl, query, fileType: "document" });
+        onOpen("messageFile", { apiUrl, query, fileType: "document", replyToId });
       }
     },
     {
@@ -73,7 +76,7 @@ export function ChatAttachmentMenu({ apiUrl, query }: ChatAttachmentMenuProps) {
       color: "bg-purple-500",
       onClick: () => {
         setOpen(false);
-        onOpen("messageFile", { apiUrl, query, fileType: "image" });
+        onOpen("messageFile", { apiUrl, query, fileType: "image", replyToId });
       }
     },
     {
@@ -82,7 +85,16 @@ export function ChatAttachmentMenu({ apiUrl, query }: ChatAttachmentMenuProps) {
       color: "bg-orange-500",
       onClick: () => {
         setOpen(false);
-        onOpen("messageFile", { apiUrl, query, fileType: "audio" });
+        onOpen("messageFile", { apiUrl, query, fileType: "audio", replyToId });
+      }
+    },
+    {
+      label: "Video",
+      icon: <Video className="h-6 w-6 text-white" />,
+      color: "bg-red-500",
+      onClick: () => {
+        setOpen(false);
+        onOpen("messageFile", { apiUrl, query, fileType: "video", replyToId });
       }
     },
     {
@@ -105,7 +117,7 @@ export function ChatAttachmentMenu({ apiUrl, query }: ChatAttachmentMenuProps) {
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="absolute top-7 left-8 h-[24px] w-[24px] bg-zinc-500 dark:bg-zinc-400 hover:bg-zinc-600 dark:hover:bg-zinc-300 transition rounded-full p-1 flex items-center justify-center"
+            className="absolute top-1/2 -translate-y-1/2 left-4 h-[24px] w-[24px] bg-zinc-500 dark:bg-zinc-400 hover:bg-zinc-600 dark:hover:bg-zinc-300 transition rounded-full p-1 flex items-center justify-center"
           >
             <Plus className="text-white dark:text-[#313338]" />
           </button>

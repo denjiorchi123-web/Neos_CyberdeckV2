@@ -6,17 +6,18 @@ import { MemberRole } from "@/lib/db";
 import {
   Edit, FileIcon, ShieldAlert, ShieldCheck, Trash, Check, CheckCheck,
   PhoneMissed, PhoneCall, MapPin, User, Lock, Play, Pause, X,
-  Download, FileText, Film, Music, Volume2,
+  Download, FileText, Film, Music, Volume2, Maximize, Minimize,
+  Reply, Forward, Share2, Pin, PinOff, Camera, Video
 } from "lucide-react";
 import * as z from "zod";
 import axios from "axios";
 import qs from "query-string";
+import { motion, useAnimation } from "framer-motion";
 import { v4 as uuidv4 } from "uuid";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useParams } from "next/navigation";
 import { storeMedia } from "@/lib/device-storage";
-
 import { UserAvatar }    from "@/components/user-avatar";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { cn }            from "@/lib/utils";
@@ -24,6 +25,14 @@ import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input }  from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useModal } from "@/hooks/use-modal-store";
+import { useReplyStore } from "@/hooks/use-reply-store";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,12 +47,15 @@ interface ChatItemProps {
   mimeType?: string | null;
   thumbnailUrl?: string | null;
   mediaKey?: string | null;
+  type?: string;
   deleted: boolean;
   currentMember: Member;
   isUpdated: boolean;
   socketUrl: string;
   socketQuery: Record<string, string>;
   status?: string;
+  replyTo?: any;
+  isPinned?: boolean;
 }
 
 const roleIconMap: Record<string, React.ReactNode> = {
@@ -64,9 +76,150 @@ function fmtTime(sec: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// ── Lightbox Video Player ──────────────────────────────────────────────────────
+
+function LightboxVideoPlayer({ src }: { src: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    // Attempt autoplay immediately
+    const v = videoRef.current;
+    if (v) {
+      v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    }
+    
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (playing) {
+      v.pause();
+    } else {
+      v.play().catch(() => {});
+    }
+  };
+
+  const handleScrub = (e: React.MouseEvent | React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (!videoRef.current || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    videoRef.current.currentTime = (x / rect.width) * duration;
+  };
+
+  const toggleFullscreen = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (!document.fullscreenElement) {
+        if (containerRef.current?.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      className={cn(
+        "relative flex items-center justify-center w-full h-full group cursor-pointer bg-black",
+        isFullscreen ? "max-w-none max-h-none" : "max-w-[90vw] max-h-[90vh] rounded-xl"
+      )}
+      onClick={togglePlay}
+    >
+      <video
+        ref={videoRef}
+        src={src}
+        className={cn(
+          "max-w-full max-h-full object-contain shadow-2xl bg-black transition-all",
+          isFullscreen ? "rounded-none" : "rounded-xl"
+        )}
+        onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime)}
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        onEnded={() => setPlaying(false)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        playsInline
+      />
+
+      {/* Big Play Overlay */}
+      {!playing && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-xl pointer-events-none transition-all">
+          <div className="h-24 w-24 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-md border border-white/20 shadow-2xl">
+            <Play className="h-12 w-12 text-white fill-white ml-2" />
+          </div>
+        </div>
+      )}
+
+      {/* Scrubber Bottom Bar */}
+      <div 
+        className={cn(
+          "absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 rounded-b-xl flex items-center gap-x-4",
+          playing ? "opacity-0 group-hover:opacity-100" : "opacity-100"
+        )}
+        onClick={e => e.stopPropagation()}
+      >
+        <button onClick={togglePlay} className="text-white hover:text-zinc-300 transition">
+          {playing ? <Pause className="h-7 w-7 fill-white" /> : <Play className="h-7 w-7 fill-white" />}
+        </button>
+        
+        <div 
+          className="flex-1 py-4 cursor-pointer relative group/scrubber flex items-center"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            handleScrub(e);
+          }}
+          onPointerMove={(e) => {
+            e.stopPropagation();
+            if (e.buttons === 1) handleScrub(e);
+          }}
+        >
+          <div className="w-full h-2.5 bg-white/20 rounded-full relative hover:h-3 transition-all">
+            <div 
+              className="absolute top-0 left-0 bottom-0 bg-indigo-500 rounded-full"
+              style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
+            />
+            <div 
+              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover/scrubber:opacity-100 transition-opacity"
+              style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 8px)` }}
+            />
+          </div>
+        </div>
+
+        <span className="text-white text-sm font-mono font-medium drop-shadow-md">
+          {fmtTime(progress)} / {fmtTime(duration)}
+        </span>
+
+        <button onClick={toggleFullscreen} className="text-white hover:text-zinc-300 transition ml-2">
+          {isFullscreen ? <Minimize className="h-6 w-6" /> : <Maximize className="h-6 w-6" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Image Lightbox ────────────────────────────────────────────────────────────
 
-function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt: string; type?: "image" | "video"; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -80,26 +233,47 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
     >
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
+        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-[1000]"
       >
         <X className="h-6 w-6" />
       </button>
-      <a
-        href={src}
-        download={alt}
-        onClick={e => e.stopPropagation()}
-        className="absolute top-4 right-16 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
+      <button
+        onClick={async (e) => {
+          e.stopPropagation();
+          try {
+            const res = await fetch(src);
+            const blob = await res.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.style.display = "none";
+            a.href = blobUrl;
+            a.download = alt || "image";
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+              window.URL.revokeObjectURL(blobUrl);
+              document.body.removeChild(a);
+            }, 1000);
+          } catch (error) {
+            console.error("Download failed:", error);
+          }
+        }}
+        className="absolute top-4 right-16 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-[1000]"
         title="Download"
       >
         <Download className="h-6 w-6" />
-      </a>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      />
+      </button>
+      {type === "image" ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={src}
+          alt={alt}
+          className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain shadow-2xl"
+          onClick={e => e.stopPropagation()}
+        />
+      ) : (
+        <LightboxVideoPlayer src={src} />
+      )}
     </div>
   );
 }
@@ -188,35 +362,22 @@ function AudioPlayer({ src, fileName }: { src: string; fileName?: string | null 
 
 // ── Video Player ──────────────────────────────────────────────────────────────
 
-function VideoPlayer({ src, thumbnail }: { src: string; thumbnail?: string | null }) {
-  const [playing, setPlaying] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const handlePlay = () => {
-    videoRef.current?.play().catch(() => {});
-    setPlaying(true);
-  };
-
+function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: string | null; onClick: () => void }) {
   return (
-    <div className="relative rounded-xl overflow-hidden bg-black max-w-[300px] border border-black/30">
+    <div 
+      className="relative rounded-xl overflow-hidden bg-black max-w-[300px] border border-black/30 cursor-pointer group"
+      onClick={onClick}
+    >
       <video
-        ref={videoRef}
         src={src}
         poster={thumbnail ?? undefined}
-        controls={playing}
         className="w-full"
-        onEnded={() => setPlaying(false)}
       />
-      {!playing && (
-        <button
-          onClick={handlePlay}
-          className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/50 transition group"
-        >
-          <div className="h-14 w-14 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
-            <Play className="h-7 w-7 text-white fill-white ml-1" />
-          </div>
-        </button>
-      )}
+      <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/50 transition">
+        <div className="h-14 w-14 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
+          <Play className="h-7 w-7 text-white fill-white ml-1" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -234,13 +395,34 @@ function DocCell({ url, fileName, fileSize, mimeType }: {
     mimeType?.includes("zip")  ? "bg-yellow-600"  :
     "bg-indigo-500";
 
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      // Fetching and converting to blob bypasses the Android/Windows "No Internet" download manager bug
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = blobUrl;
+      a.download = fileName || "document";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+        document.body.removeChild(a);
+      }, 1000);
+    } catch (error) {
+      console.error("Download failed, falling back to direct open:", error);
+      window.open(url, "_blank");
+    }
+  };
+
   return (
     <a
       href={url}
-      download={fileName ?? true}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-center gap-x-3 px-3 py-2.5 rounded-xl bg-black/20 border border-white/5 hover:bg-black/30 transition max-w-[280px]"
+      onClick={handleDownload}
+      className="flex items-center gap-x-3 px-3 py-2.5 rounded-xl bg-black/20 border border-white/5 hover:bg-black/30 transition max-w-[280px] cursor-pointer"
     >
       <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 text-white text-[9px] font-black", color)}>
         {ext.slice(0, 4)}
@@ -260,22 +442,34 @@ function DocCell({ url, fileName, fileSize, mimeType }: {
 
 function ChatItemInner({
   id, content, member, timestamp, fileUrl, fileName, fileSize,
-  mimeType, thumbnailUrl, mediaKey, deleted, currentMember,
+  mimeType, thumbnailUrl, mediaKey, type, deleted, currentMember,
   isUpdated, socketUrl, socketQuery, status = "SENT",
+  replyTo, isPinned,
 }: ChatItemProps) {
   const [isEditing,    setIsEditing]    = useState(false);
   const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
-  const [lightbox,     setLightbox]     = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxType, setLightboxType] = useState<"image" | "video">("image");
   const [imgError,     setImgError]     = useState(false);
   const { onOpen }  = useModal();
   const params      = useParams();
   const router      = useRouter();
+  const { setReplyingTo } = useReplyStore();
 
   const isOwner     = currentMember.id === member.id;
   const isAdmin     = currentMember.role === MemberRole.ADMIN;
   const isModerator = currentMember.role === MemberRole.MODERATOR;
   const canDelete   = !deleted && (isAdmin || isModerator || isOwner);
   const canEdit     = !deleted && isOwner && !fileUrl;
+
+  const controls = useAnimation();
+  const onDragEnd = (event: any, info: any) => {
+    // If dragged right more than 40px or flicked right with velocity
+    if (info.offset.x > 40 || info.velocity.x > 300) {
+      setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
+    }
+    controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 25 } });
+  };
 
   const effectiveMime = mimeType || "";
   const fileExt       = fileUrl?.split(".").pop()?.toLowerCase() ?? "";
@@ -335,23 +529,64 @@ function ChatItemInner({
     router.push(`/servers/${params?.serverId}/conversations/${member.id}?${q}&start=true&callId=${newId}`);
   };
 
+  const onPin = async () => {
+    try {
+      const url = qs.stringifyUrl({
+        url: `${socketUrl}/${id}`,
+        query: socketQuery
+      });
+      await axios.patch(url, { isPinned: !isPinned });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const onShare = async () => {
+    const textToShare = content || fileName || "Attachment";
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Share Message",
+          text: textToShare,
+          url: resolvedUrl || undefined
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      navigator.clipboard.writeText(textToShare);
+      alert("Message copied to clipboard!");
+    }
+  };
+
   const renderTicks = () => {
     if (!isOwner || deleted) return null;
-    if (status === "READ")      return <ActionTooltip label="Read"><CheckCheck className="h-3.5 w-3.5 text-sky-400 -ml-1" /></ActionTooltip>;
-    if (status === "DELIVERED") return <ActionTooltip label="Delivered"><CheckCheck className="h-3.5 w-3.5 text-zinc-400 -ml-1" /></ActionTooltip>;
-    return <ActionTooltip label="Sent"><Check className="h-3.5 w-3.5 text-zinc-400 -ml-1" /></ActionTooltip>;
+    if (status === "READ")      return <ActionTooltip label="Read"><CheckCheck className="h-3.5 w-3.5 text-sky-200 -ml-1" /></ActionTooltip>;
+    if (status === "DELIVERED") return <ActionTooltip label="Delivered"><CheckCheck className="h-3.5 w-3.5 text-indigo-200 -ml-1" /></ActionTooltip>;
+    return <ActionTooltip label="Sent"><Check className="h-3.5 w-3.5 text-indigo-200 -ml-1" /></ActionTooltip>;
   };
 
   const hasOnlyMedia = !!fileUrl && (!content || content === fileName || content === fileUrl);
 
   return (
     <>
-      {lightbox && resolvedUrl && (
-        <ImageLightbox src={resolvedUrl} alt={fileName ?? content} onClose={() => setLightbox(false)} />
+      {lightboxOpen && resolvedUrl && (
+        <MediaLightbox src={resolvedUrl} alt={fileName ?? content} type={lightboxType} onClose={() => setLightboxOpen(false)} />
       )}
 
-      <div className={cn("relative group flex items-start px-4 mb-4 w-full", isOwner ? "justify-end" : "justify-start")}>
-        <div className={cn("flex max-w-[80%] gap-x-3", isOwner ? "flex-row-reverse" : "flex-row")}>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <motion.div 
+            id={`message-${id}`} 
+            drag="x"
+            dragConstraints={{ left: 0, right: 80 }}
+            dragElastic={0.2}
+            dragDirectionLock
+            onDragEnd={onDragEnd}
+            animate={controls}
+            className={cn("relative group flex items-start px-4 mb-4 w-full cursor-pointer touch-pan-y", isOwner ? "justify-end" : "justify-start")}
+          >
+            <div className={cn("flex max-w-[80%] gap-x-3", isOwner ? "flex-row-reverse" : "flex-row")}>
           {!isOwner && (
             <div className="shrink-0 mt-1">
               <UserAvatar src={member.profile.imageUrl} className="h-10 w-10" />
@@ -443,14 +678,78 @@ function ChatItemInner({
 
             ) : (
               /* ── Standard message bubble ── */
-              <div className={cn(
-                "relative rounded-2xl shadow-lg overflow-hidden",
-                isOwner ? "bg-[#5865f2] text-white rounded-tr-none" : "bg-[#2b2d31] text-[#dbdee1] rounded-tl-none",
-                deleted && "opacity-50 italic text-xs bg-transparent border border-white/10",
-                // Image-only messages: no padding, let image fill bubble
-                isImage && hasOnlyMedia ? "p-0" : "px-4 py-3",
-                isAudio && "px-3 py-2",
-              )}>
+              <div className="flex flex-col">
+                <div className={cn(
+                  "relative rounded-2xl shadow-lg overflow-hidden w-fit",
+                  isOwner ? "bg-indigo-500 text-white rounded-tr-none ml-auto" : "bg-zinc-200 dark:bg-zinc-700/75 text-zinc-900 dark:text-zinc-100 rounded-tl-none mr-auto",
+                  deleted && "opacity-50 italic text-xs bg-transparent border border-zinc-500/20 dark:border-white/10",
+                  // Image-only messages: no padding, let image fill bubble
+                  isImage && hasOnlyMedia && !replyTo ? "p-0" : "px-4 py-3",
+                  isAudio && "px-3 py-2",
+                )}>
+                  {replyTo && !deleted && (
+                    <div 
+                      onClick={() => {
+                        const el = document.getElementById(`message-${replyTo.id}`);
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          el.classList.add('bg-zinc-500/20', 'transition-all', 'duration-500');
+                          setTimeout(() => el.classList.remove('bg-zinc-500/20'), 2000);
+                        }
+                      }}
+                      className="mb-1.5 cursor-pointer active:opacity-80 transition-opacity"
+                    >
+                      {/* Outer rounded container with overflow-hidden so the bar clips to border-radius */}
+                      <div className={cn(
+                        "flex items-stretch rounded-lg overflow-hidden min-w-[180px]",
+                        isOwner ? "bg-indigo-700/30" : "bg-zinc-600/40"
+                      )}>
+                        {/* Left colored vertical bar - flush with the rounded left edge */}
+                        <div className={cn(
+                          "w-[4px] shrink-0",
+                          isOwner ? "bg-indigo-300" : "bg-emerald-400"
+                        )} />
+                        {/* Text content */}
+                        <div className="flex flex-col flex-1 overflow-hidden px-2.5 py-1.5">
+                          <span className={cn(
+                            "text-[13px] font-semibold leading-tight",
+                            isOwner ? "text-indigo-200" : "text-emerald-400"
+                          )}>
+                            {replyTo.member?.profile?.name || "Someone"}
+                          </span>
+                          <span className="text-[13px] leading-snug opacity-80 line-clamp-2 mt-0.5">
+                            {replyTo.fileUrl && !replyTo.content ? (
+                              <span className="flex items-center gap-1">
+                                {(replyTo.mimeType?.startsWith("image/") || replyTo.content === "📷 Photo") ? (
+                                  <><Camera className="h-3.5 w-3.5 inline" /> Photo</>
+                                ) : (replyTo.mimeType?.startsWith("video/") || replyTo.content === "🎥 Video") ? (
+                                  <><Video className="h-3.5 w-3.5 inline" /> Video</>
+                                ) : (
+                                  <><FileIcon className="h-3.5 w-3.5 inline" /> {replyTo.fileName || "File"}</>
+                                )}
+                              </span>
+                            ) : replyTo.content === "📷 Photo" ? (
+                              <span className="flex items-center gap-1"><Camera className="h-3.5 w-3.5" /> Photo</span>
+                            ) : replyTo.content === "🎥 Video" ? (
+                              <span className="flex items-center gap-1"><Video className="h-3.5 w-3.5" /> Video</span>
+                            ) : (
+                              replyTo.content || "Attachment"
+                            )}
+                          </span>
+                        </div>
+                        {/* Optional thumbnail on the right */}
+                        {replyTo.fileUrl && (replyTo.mimeType?.startsWith("image/") || replyTo.mimeType?.startsWith("video/") || replyTo.content === "📷 Photo" || replyTo.content === "🎥 Video") && (
+                          <div className="w-[46px] shrink-0 bg-black/30 flex items-center justify-center">
+                            {replyTo.fileUrl.endsWith('.enc') ? (
+                              <Camera className="h-5 w-5 text-zinc-400" />
+                            ) : (
+                              <img src={replyTo.thumbnailUrl || replyTo.fileUrl} alt="" className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                 {/* Decrypting indicator */}
                 {isDecrypting && (
@@ -473,7 +772,7 @@ function ChatItemInner({
                           : "w-full max-w-[280px] rounded-lg"
                       )}
                       loading="lazy"
-                      onClick={() => setLightbox(true)}
+                      onClick={() => { setLightboxType("image"); setLightboxOpen(true); }}
                       onError={() => setImgError(true)}
                     />
                     {/* Download overlay on hover */}
@@ -503,7 +802,7 @@ function ChatItemInner({
                 {/* ── Video ── */}
                 {isVideo && resolvedUrl && (
                   <div className={cn(hasOnlyMedia ? "" : "mb-2")}>
-                    <VideoPlayer src={resolvedUrl} thumbnail={thumbnailUrl} />
+                    <VideoPlayer src={resolvedUrl} thumbnail={thumbnailUrl} onClick={() => { setLightboxType("video"); setLightboxOpen(true); }} />
                   </div>
                 )}
 
@@ -532,23 +831,16 @@ function ChatItemInner({
                         </p>
                       )}
                       <div className={cn("flex items-center gap-x-1.5", isOwner ? "justify-end" : "justify-start")}>
-                        {isUpdated && !deleted && (
-                          <span className="text-[9px] opacity-40 italic">edited</span>
+                        {isPinned && (
+                          <Pin className="h-3 w-3 text-amber-400 opacity-80" />
                         )}
-                        <span className={cn("text-[10px] font-bold opacity-50", isOwner ? "text-indigo-100" : "text-zinc-500")}>
+                        {isUpdated && !deleted && (
+                          <span className="text-[9px] opacity-60 italic">edited</span>
+                        )}
+                        <span className={cn("text-[10px] font-bold mt-0.5", isOwner ? "text-indigo-100" : "text-zinc-500 dark:text-zinc-400")}>
                           {timestamp}
                         </span>
                         {renderTicks()}
-                        
-                        {/* INLINE EDIT/DELETE BUTTONS FOR TOUCH SCREENS */}
-                        {canDelete && !isEditing && (
-                           <div className="flex items-center gap-x-1.5 ml-1">
-                             {canEdit && (
-                               <Edit onClick={() => setIsEditing(true)} className="w-3.5 h-3.5 text-zinc-400/50 hover:text-white cursor-pointer transition" />
-                             )}
-                             <Trash onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })} className="w-3.5 h-3.5 text-zinc-400/50 hover:text-rose-500 cursor-pointer transition" />
-                           </div>
-                        )}
                       </div>
                     </div>
                   ) : (
@@ -566,26 +858,74 @@ function ChatItemInner({
                 {/* For audio: show time+ticks below waveform */}
                 {isAudio && (
                   <div className={cn("flex items-center gap-x-1.5 px-1 pb-1", isOwner ? "justify-end" : "justify-start")}>
-                    <span className={cn("text-[10px] font-bold opacity-50", isOwner ? "text-indigo-100" : "text-zinc-500")}>
+                    {isPinned && (
+                      <Pin className="h-3 w-3 text-amber-500 dark:text-amber-400 opacity-80" />
+                    )}
+                    <span className={cn("text-[10px] font-bold mt-0.5", isOwner ? "text-indigo-100" : "text-zinc-500 dark:text-zinc-400")}>
                       {timestamp}
                     </span>
                     {renderTicks()}
-                    
-                    {/* INLINE DELETE BUTTON FOR TOUCH SCREENS */}
-                    {canDelete && !isEditing && (
-                       <div className="flex items-center gap-x-1.5 ml-1">
-                         <Trash onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })} className="w-3.5 h-3.5 text-zinc-400/50 hover:text-rose-500 cursor-pointer transition" />
-                       </div>
-                    )}
                   </div>
                 )}
 
                 {/* Hover actions removed - moved inline for touch compatibility */}
               </div>
+              </div>
             )}
           </div>
+
+          {/* Quick Forward Button for Media */}
+          {fileUrl && !deleted && !isEditing && (
+            <div className="flex items-center opacity-0 group-hover:opacity-100 transition duration-200 shrink-0">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpen("forwardMessage", { message: { id, content, fileUrl, fileName, mimeType, mediaKey, type, fileSize, thumbnailUrl }});
+                }}
+                className="p-2 rounded-full bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-zinc-500 dark:text-zinc-400 shadow-sm transition-all"
+                title="Forward Media"
+              >
+                <Forward className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
         </div>
-      </div>
+      </motion.div>
+      </ContextMenuTrigger>
+      
+      <ContextMenuContent className="w-48 bg-black/90 border-white/10 text-zinc-300">
+        <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={() => setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl })}>
+          <Reply className="mr-2 h-4 w-4" /> Reply
+        </ContextMenuItem>
+        <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={() => onOpen("forwardMessage", { message: { id, content, fileUrl, fileName, mimeType, mediaKey, type, fileSize, thumbnailUrl } })}>
+          <Forward className="mr-2 h-4 w-4" /> Forward
+        </ContextMenuItem>
+        <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={onShare}>
+          <Share2 className="mr-2 h-4 w-4" /> Share
+        </ContextMenuItem>
+        <ContextMenuSeparator className="bg-white/10" />
+        <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={onPin}>
+          {isPinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+          {isPinned ? "Unpin" : "Pin"}
+        </ContextMenuItem>
+        {(canDelete || canEdit) && (
+          <>
+            <ContextMenuSeparator className="bg-white/10" />
+            {canEdit && (
+              <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={() => setIsEditing(true)}>
+                <Edit className="mr-2 h-4 w-4" /> Edit
+              </ContextMenuItem>
+            )}
+            {canDelete && (
+              <ContextMenuItem className="hover:bg-rose-500 hover:text-white cursor-pointer text-rose-500" onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })}>
+                <Trash className="mr-2 h-4 w-4" /> Delete
+              </ContextMenuItem>
+            )}
+          </>
+        )}
+      </ContextMenuContent>
+      </ContextMenu>
     </>
   );
 }
@@ -597,5 +937,6 @@ export const ChatItem = React.memo(ChatItemInner, (prev, next) =>
   prev.deleted     === next.deleted     &&
   prev.isUpdated   === next.isUpdated   &&
   prev.fileUrl     === next.fileUrl     &&
-  prev.mediaKey    === next.mediaKey
+  prev.mediaKey    === next.mediaKey    &&
+  prev.isPinned    === next.isPinned
 );

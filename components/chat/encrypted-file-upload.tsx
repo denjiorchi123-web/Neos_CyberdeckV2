@@ -34,8 +34,9 @@ export function EncryptedFileUpload({
   accept = DEFAULT_ACCEPT,
   maxSize = MESSAGE_FILE_MAX_SIZE,
 }: EncryptedFileUploadProps) {
-  const [progress, setProgress] = useState<string | null>(null);
-  const [error,    setError]    = useState<string | null>(null);
+  const [progressText, setProgressText] = useState<string | null>(null);
+  const [progressPct,  setProgressPct]  = useState<number | null>(null);
+  const [error,        setError]        = useState<string | null>(null);
 
   const onDrop = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
@@ -57,14 +58,34 @@ export function EncryptedFileUpload({
       formData.append("file",     encBlob, file.name + ".enc");
       formData.append("mediaKey", mediaKey);
 
-      setProgress("Uploading…");
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+      setProgressText("Uploading…");
+      setProgressPct(0);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload", true);
+      xhr.withCredentials = true;
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          setProgressPct(percentComplete);
+          setProgressText(`Uploading… ${percentComplete}%`);
+        }
+      };
+
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network Error"));
+        xhr.send(formData);
       });
-      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-      const data = await res.json();
+
+      const data = (await uploadPromise) as any;
 
       onUploadComplete({
         url:          data.url,
@@ -75,10 +96,12 @@ export function EncryptedFileUpload({
         type:         data.type ?? "DOCUMENT",
         mediaKey,
       });
-      setProgress(null);
+      setProgressText(null);
+      setProgressPct(null);
     } catch (e: any) {
       setError(e?.message || "Upload failed");
-      setProgress(null);
+      setProgressText(null);
+      setProgressPct(null);
     }
   }, [onUploadComplete]);
 
@@ -99,11 +122,21 @@ export function EncryptedFileUpload({
       }`}
     >
       <input {...getInputProps()} />
-      {progress ? (
-        <div className="flex flex-col items-center gap-3">
+      {progressText ? (
+        <div className="flex flex-col items-center gap-3 w-full">
           <Loader2 className="h-10 w-10 text-indigo-400 animate-spin" />
-          <p className="text-zinc-300 text-sm font-medium">{progress}</p>
-          <div className="flex items-center gap-x-1.5 text-emerald-400 text-xs font-mono">
+          <p className="text-zinc-300 text-sm font-medium">{progressText}</p>
+          
+          {progressPct !== null && (
+            <div className="w-full max-w-[200px] h-2 bg-zinc-800 rounded-full overflow-hidden mt-1">
+              <div 
+                className="h-full bg-indigo-500 transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-x-1.5 text-emerald-400 text-xs font-mono mt-2">
             <ShieldCheck className="h-3.5 w-3.5" /> AES-256 Encrypted
           </div>
         </div>

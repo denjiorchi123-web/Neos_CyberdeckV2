@@ -19,8 +19,25 @@ export async function GET(req: Request) {
     if (!conversationId)
       return new NextResponse("Conversation ID Missing", { status: 400 });
 
+    // ── Check if the chat was cleared ─────────────────────────
+    const clearedChat = await db.clearedChat.findUnique({
+      where: { profileId_chatId: { profileId: profile.id, chatId: conversationId } }
+    });
+    const clearedAt = clearedChat?.clearedAt || new Date(0);
+
     // ── Database Query ───────────────────────────────────────
     let messages: DirectMessage[] = [];
+
+    const includeConfig = {
+      member: {
+        include: { profile: true }
+      },
+      replyTo: {
+        include: {
+          member: { include: { profile: true } }
+        }
+      }
+    };
 
     if (cursor) {
       messages = await db.directMessage.findMany({
@@ -30,28 +47,20 @@ export async function GET(req: Request) {
           id: cursor
         },
         where: {
-          conversationId
+          conversationId,
+          createdAt: { gt: clearedAt }
         },
-        include: {
-          member: {
-            include: {
-              profile: true
-            }
-          }
-        },
+        include: includeConfig,
         orderBy: { createdAt: "desc" }
       });
     } else {
       messages = await db.directMessage.findMany({
         take: MESSAGES_BATCH,
-        where: { conversationId },
-        include: {
-          member: {
-            include: {
-              profile: true
-            }
-          }
+        where: { 
+          conversationId,
+          createdAt: { gt: clearedAt }
         },
+        include: includeConfig,
         orderBy: { createdAt: "desc" }
       });
     }

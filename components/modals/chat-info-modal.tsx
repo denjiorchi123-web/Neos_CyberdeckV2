@@ -16,9 +16,35 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import qs from "query-string";
 import { v4 as uuidv4 } from "uuid";
+import { ChevronRight, FileIcon } from "lucide-react";
+import { storeMedia } from "@/lib/device-storage";
+import Image from "next/image";
+
+function DecryptedThumbnail({ fileUrl, mediaKey, type }: { fileUrl: string, mediaKey?: string, type?: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (mediaKey) {
+      storeMedia(fileUrl, mediaKey, "image/jpeg")
+        .then(decryptedUrl => { if (!cancelled) setUrl(decryptedUrl); })
+        .catch(() => { if (!cancelled) setUrl(fileUrl); });
+    } else {
+      setUrl(fileUrl);
+    }
+    return () => { cancelled = true; };
+  }, [fileUrl, mediaKey]);
+
+  if (!url) return <div className="h-16 w-16 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse" />;
+  
+  if (type === "video") return <video src={url} className="h-16 w-16 object-cover rounded" />;
+  if (type === "document") return <div className="h-16 w-16 bg-zinc-200 dark:bg-zinc-800 rounded flex items-center justify-center"><FileIcon className="h-6 w-6 text-zinc-500" /></div>;
+  
+  return <Image src={url} alt="Media preview" fill className="object-cover rounded" />;
+}
 
 export function ChatInfoModal() {
-  const { isOpen, onClose, type, data } = useModal();
+  const { isOpen, onClose, type, data, onOpen } = useModal();
   const router = useRouter();
 
   const isModalOpen = isOpen && type === "chatInfo";
@@ -27,6 +53,7 @@ export function ChatInfoModal() {
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [recentMedia, setRecentMedia] = useState<any[]>([]);
 
   useEffect(() => {
     if (isModalOpen) {
@@ -41,8 +68,16 @@ export function ChatInfoModal() {
           .catch(console.error)
           .finally(() => setLoading(false));
       }
+      
+      // Fetch recent media for the preview section
+      const endpointId = chatType === "group" ? server?.id : memberId;
+      if (endpointId) {
+        axios.get(`/api/chat-media?chatId=${endpointId}&isDirect=${chatType === "dm"}&limit=3`)
+          .then(res => setRecentMedia(res.data.filter((m: any) => m.fileUrl)))
+          .catch(console.error);
+      }
     }
-  }, [isModalOpen, chatType, server?.id]);
+  }, [isModalOpen, chatType, server?.id, memberId]);
 
   if (!isModalOpen) return null;
 
@@ -123,6 +158,37 @@ export function ChatInfoModal() {
               </div>
               <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Video</span>
             </div>
+          </div>
+        </div>
+
+        {/* Media, links and docs preview section */}
+        <div 
+          onClick={() => {
+            const endpointId = chatType === "group" ? server?.id : memberId;
+            onOpen("chatMediaGallery", { chatId: endpointId, isDirect: chatType === "dm" });
+          }}
+          className="flex flex-col p-6 border-b border-zinc-200 dark:border-zinc-800 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm text-zinc-600 dark:text-zinc-400">
+              Media, links and docs
+            </h3>
+            <div className="flex items-center text-zinc-400">
+              <span className="text-xs mr-1">{recentMedia.length > 0 ? recentMedia.length : ""}</span>
+              <ChevronRight className="h-4 w-4" />
+            </div>
+          </div>
+          
+          <div className="flex gap-x-2">
+            {recentMedia.length > 0 ? (
+              recentMedia.map(m => (
+                <div key={m.id} className="relative h-16 w-16">
+                  <DecryptedThumbnail fileUrl={m.fileUrl} mediaKey={m.mediaKey} type={m.type} />
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-zinc-400 italic">No media shared yet.</p>
+            )}
           </div>
         </div>
 

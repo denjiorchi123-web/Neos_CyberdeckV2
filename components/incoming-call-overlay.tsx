@@ -1,11 +1,12 @@
 "use client";
 
 import { useCall } from "@/hooks/use-call";
-import { Phone, PhoneOff, Video, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Phone, PhoneOff, Video, Loader2, Lock } from "lucide-react";
+import { usePreferences } from "@/components/providers/socket-provider";
 
 export const IncomingCallOverlay = () => {
-  const { status, callType, remotePeer, acceptCall, declineCall } = useCall();
+  const { status, callType, remotePeer, chatId, acceptCall, declineCall } = useCall();
+  const { lockedChats } = usePreferences();
 
   if (status !== "RINGING") return null;
 
@@ -13,14 +14,28 @@ export const IncomingCallOverlay = () => {
   const CallIcon = isVideo ? Video : Phone;
   const initial = remotePeer?.name?.charAt(0)?.toUpperCase() || "?";
 
+  // Informational only — the call itself can be answered freely.
+  // PIN will be required when the user returns to the chat screen after the call.
+  const isLocked = chatId ? lockedChats.some((lc: any) => lc.chatId === chatId) : false;
+
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-between overflow-hidden bg-[#0d0f14] animate-in fade-in duration-500">
 
       {/* Subtle radial glow */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_38%,rgba(99,102,241,0.07)_0%,transparent_70%)] pointer-events-none" />
 
-      {/* Top badge */}
-      <div className="relative z-10 flex justify-end w-full px-5 pt-5">
+      {/* Top row */}
+      <div className="relative z-10 flex justify-between w-full px-5 pt-5">
+        {/* Lock notice — shown when the call is from a locked chat */}
+        {isLocked ? (
+          <div className="flex items-center gap-x-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 rounded-full">
+            <Lock className="h-3 w-3" />
+            PIN needed after call
+          </div>
+        ) : (
+          <div /> /* spacer */
+        )}
+
         <div className="flex items-center gap-x-1.5 bg-white/5 border border-white/10 text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 rounded-full">
           <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           E2E Encrypted
@@ -73,7 +88,7 @@ export const IncomingCallOverlay = () => {
             <span className="text-[11px] font-mono text-zinc-500 group-hover:text-rose-400 transition-colors uppercase tracking-widest">Decline</span>
           </button>
 
-          {/* Accept */}
+          {/* Accept — always works, no PIN required */}
           <button
             onClick={acceptCall}
             className="group flex flex-col items-center gap-y-3"

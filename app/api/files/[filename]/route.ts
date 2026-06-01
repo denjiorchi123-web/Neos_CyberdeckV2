@@ -41,16 +41,38 @@ export async function GET(
 
   try {
     const data = await readFile(filePath);
+    const fileSize = data.byteLength;
     const ext  = extname(filename).toLowerCase();
     const mime = MIME[ext] ?? "application/octet-stream";
+
+    const range = req.headers.get("range");
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = (end - start) + 1;
+      
+      const chunk = data.subarray(start, end + 1);
+      
+      return new NextResponse(chunk, {
+        status: 206,
+        headers: {
+          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(chunksize),
+          "Content-Type": mime,
+          "Cache-Control": "private, max-age=86400",
+        }
+      });
+    }
 
     return new NextResponse(data, {
       status: 200,
       headers: {
         "Content-Type":        mime,
-        "Content-Length":      String(data.byteLength),
+        "Content-Length":      String(fileSize),
+        "Accept-Ranges":       "bytes",
         "Content-Disposition": `inline; filename="${filename}"`,
-        // Long cache on the client side — files are immutable (UUID names)
         "Cache-Control":       "private, max-age=86400",
       }
     });

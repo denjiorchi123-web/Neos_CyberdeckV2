@@ -17,6 +17,7 @@ export interface QueuedMessage {
   thumbnailUrl?: string;
   mediaKey?: string;
   type?: string;
+  replyToId?: string;
   queuedAt: number;     // Date.now() when queued
   retryCount: number;
   lastAttempt?: number;

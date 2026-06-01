@@ -687,18 +687,21 @@ export function MediaRoom({
     // Show ending screen
     setCallEndedState(wasConnected ? "Call Ended" : "Call Disconnected");
 
-    setTimeout(() => {
-      // Per user request, always route back to the dashboard when a call ends
-      const destinationUrl = "/me";
+    // Strip call params and return to the chat page (not the dashboard)
+    const chatUrl = qs.stringifyUrl(
+      { url: pathName || "/me", query: { video: undefined, audio: undefined, start: undefined, callId: undefined } },
+      { skipNull: true }
+    );
 
-      router.push(destinationUrl);
+    setTimeout(() => {
+      router.push(chatUrl);
       router.refresh();
-      
+
       // Fallback in case router fails (Next.js client-side navigation quirk)
       setTimeout(() => {
-         if (isEndingRef.current) {
-            window.location.assign(destinationUrl);
-         }
+        if (isEndingRef.current) {
+          window.location.assign(chatUrl);
+        }
       }, 1000);
     }, 2000);
   }, [chatId, pathName, router, socket, video, callId, targetUserId, currentProfileName]);
@@ -1070,26 +1073,37 @@ export function MediaRoom({
 
 
   if (callEndedState) {
+    const returnToChat = () => {
+      const url = qs.stringifyUrl(
+        { url: pathName || "/", query: { video: undefined, audio: undefined, start: undefined, callId: undefined } },
+        { skipNull: true }
+      );
+      window.location.assign(url);
+    };
     return (
-      <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 backdrop-blur-3xl animate-in fade-in duration-500">
+      // Tap anywhere on the screen to return to chat
+      <div
+        className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 backdrop-blur-3xl animate-in fade-in duration-500 cursor-pointer select-none"
+        onClick={returnToChat}
+      >
+        {/* Tap hint at top */}
+        <p className="absolute top-6 left-0 right-0 text-center text-zinc-600 text-[11px] font-mono uppercase tracking-widest">
+          Tap anywhere to return to chat
+        </p>
         <div className="flex flex-col items-center space-y-6 animate-in zoom-in-50 duration-700">
-           <div className="h-24 w-24 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center shadow-[0_0_50px_rgba(244,63,94,0.4)]">
-              <PhoneOff className="h-10 w-10 text-rose-500" />
-           </div>
-           <div className="flex flex-col items-center space-y-2">
-             <h2 className="text-4xl font-black text-white tracking-tight drop-shadow-md">{callEndedState}</h2>
-             {duration > 0 && <p className="text-emerald-500 font-mono text-xl uppercase tracking-widest">Duration: {formatDuration(duration)}</p>}
-           </div>
-           
-           <button 
-             onClick={() => {
-               const url = qs.stringifyUrl({ url: pathName || "", query: { video: undefined, audio: undefined } }, { skipNull: true });
-               window.location.assign(url);
-             }}
-             className="mt-8 px-8 py-3 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-bold transition-all shadow-lg active:scale-95 border border-zinc-700"
-           >
-             Return to Chat
-           </button>
+          <div className="h-24 w-24 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center shadow-[0_0_50px_rgba(244,63,94,0.4)]">
+            <PhoneOff className="h-10 w-10 text-rose-500" />
+          </div>
+          <div className="flex flex-col items-center space-y-2">
+            <h2 className="text-4xl font-black text-white tracking-tight drop-shadow-md">{callEndedState}</h2>
+            {duration > 0 && <p className="text-emerald-500 font-mono text-xl uppercase tracking-widest">Duration: {formatDuration(duration)}</p>}
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); returnToChat(); }}
+            className="mt-4 px-8 py-3 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-bold transition-all shadow-lg active:scale-95 border border-zinc-700"
+          >
+            Return to Chat
+          </button>
         </div>
       </div>
     );
@@ -1113,10 +1127,21 @@ export function MediaRoom({
     const showRetry = kind === "ice_failed";
     const showOpenSettings = kind === "mic_denied";
 
+    const dismissError = () => leaveCall(false);
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900 to-black overflow-hidden">
-        <div className="relative flex flex-col items-center justify-center z-10 animate-in fade-in duration-500">
-
+      // Tap anywhere to dismiss and return to chat (except on Retry/Settings buttons)
+      <div
+        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900 to-black overflow-hidden cursor-pointer select-none"
+        onClick={dismissError}
+      >
+        {/* Tap hint */}
+        <p className="absolute top-6 left-0 right-0 text-center text-zinc-600 text-[11px] font-mono uppercase tracking-widest">
+          Tap anywhere to return to chat
+        </p>
+        <div
+          className="relative flex flex-col items-center justify-center z-10 animate-in fade-in duration-500"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="relative flex items-center justify-center mb-8">
             <div className="absolute inset-0 h-48 w-48 -m-12 rounded-full border " />
             <div className={cn("absolute inset-0 h-48 w-48 -m-12 rounded-full border", palette.ring)} />
@@ -1156,10 +1181,10 @@ export function MediaRoom({
             {message}
           </p>
 
-          <div className="flex items-center gap-x-6">
+          <div className="flex items-center gap-x-4 flex-wrap justify-center">
             {showRetry && (
               <button
-                onClick={onIceRetry}
+                onClick={(e) => { e.stopPropagation(); onIceRetry(); }}
                 className="px-8 py-3 rounded-full bg-amber-500 text-black font-bold text-sm hover:bg-amber-400 transition-all duration-300"
               >
                 Retry
@@ -1167,8 +1192,8 @@ export function MediaRoom({
             )}
             {showOpenSettings && (
               <button
-                onClick={() => {
-                  // No cross-browser API for opening site settings — show instructions.
+                onClick={(e) => {
+                  e.stopPropagation();
                   window.alert(
                     "Chrome / Edge: click the padlock icon in the address bar, set Microphone to Allow.\n" +
                     "Firefox: click the icon to the left of the address bar, allow microphone.\n" +
@@ -1181,10 +1206,10 @@ export function MediaRoom({
               </button>
             )}
             <button
-              onClick={() => leaveCall(false)}
+              onClick={(e) => { e.stopPropagation(); dismissError(); }}
               className="px-8 py-3 rounded-full bg-zinc-800 text-zinc-300 font-bold text-sm hover:bg-zinc-700 transition-all duration-300"
             >
-              Close
+              Return to Chat
             </button>
           </div>
         </div>
@@ -1290,7 +1315,18 @@ export function MediaRoom({
 
         {/* ── TOP STATUS ROW ── */}
         <div className="relative z-20 flex items-center justify-between px-5 pt-5">
+          {/* Back to chat button — always visible top-left */}
           <div className="flex items-center gap-x-2">
+            <button
+              onClick={() => leaveCall(true)}
+              aria-label="Return to chat"
+              className="flex items-center gap-x-1.5 bg-white/8 border border-white/10 text-zinc-300 text-[11px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 rounded-full hover:bg-white/15 active:scale-95 transition-all"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+              Chat
+            </button>
             {!isConnected && (
               <div className="flex items-center gap-x-1.5 bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 rounded-full animate-pulse">
                 <Loader2 className="h-3 w-3 animate-spin" /> No server
@@ -1503,8 +1539,19 @@ export function MediaRoom({
       {/* ── GRADIENT SCRIM — bottom ── */}
       <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/85 via-black/45 to-transparent pointer-events-none z-10" />
 
-      {/* ── TOP LEFT: status badges ── */}
+      {/* ── TOP LEFT: back button + status badges ── */}
       <div className="absolute top-4 left-4 z-20 flex items-center gap-x-2">
+        {/* Back to chat — always visible */}
+        <button
+          onClick={() => leaveCall(true)}
+          aria-label="Return to chat"
+          className="flex items-center gap-x-1.5 bg-black/50 backdrop-blur-xl border border-white/10 text-zinc-300 text-[11px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 rounded-full hover:bg-black/70 active:scale-95 transition-all shadow-lg"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+          Chat
+        </button>
         {!isConnected && (
           <div className="flex items-center gap-x-1.5 bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 rounded-full animate-pulse backdrop-blur-md">
             <Loader2 className="h-3 w-3 animate-spin" /> No server

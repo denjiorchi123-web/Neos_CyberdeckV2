@@ -28,6 +28,19 @@ const nextConfig = {
       "utf-8-validate": "commonjs utf-8-validate",
       bufferutil: "commonjs bufferutil"
     });
+
+    // Fix Watchpack EINVAL errors on Windows by ignoring protected root files
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: [
+        "**/DumpStack.log.tmp",
+        "**/hiberfil.sys",
+        "**/swapfile.sys",
+        "**/pagefile.sys",
+        "**/node_modules",
+      ],
+    };
+
     return config;
   },
   images: {

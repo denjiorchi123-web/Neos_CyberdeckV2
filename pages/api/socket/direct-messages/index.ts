@@ -14,7 +14,7 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { content, fileUrl, fileName, fileSize, mimeType, thumbnailUrl, mediaKey, type } = req.body;
+    const { content, fileUrl, fileName, fileSize, mimeType, thumbnailUrl, mediaKey, type, replyToId } = req.body;
     const { conversationId } = req.query;
 
     if (!profile) return res.status(401).json({ error: "Unauthorized" });
@@ -59,6 +59,20 @@ export default async function handler(
     if (!member)
       return res.status(404).json({ message: "Member not found" });
 
+    // Block Guard
+    const isBlocked = await db.blockedUser.findFirst({
+      where: {
+        OR: [
+          { blockerId: profile.id, blockedId: otherMember.profileId },
+          { blockerId: otherMember.profileId, blockedId: profile.id }
+        ]
+      }
+    });
+
+    if (isBlocked) {
+      return res.status(403).json({ error: "Message blocked by recipient preferences." });
+    }
+
     // Check if recipient is online to set "DELIVERED" status
     const isOtherOnline = await redis.sismember("presence:online", otherMember.profileId);
     const initialStatus = isOtherOnline ? "DELIVERED" : "SENT";
@@ -73,6 +87,7 @@ export default async function handler(
         thumbnailUrl: thumbnailUrl ?? undefined,
         mediaKey:     mediaKey     ?? undefined,
         type:         type         ?? "TEXT",
+        replyToId:    replyToId    ?? undefined,
         conversationId: conversationId as string,
         memberId: member.id,
         status: initialStatus
@@ -81,6 +96,15 @@ export default async function handler(
         member: {
           include: {
             profile: true
+          }
+        },
+        replyTo: {
+          include: {
+            member: {
+              include: {
+                profile: true
+              }
+            }
           }
         }
       }

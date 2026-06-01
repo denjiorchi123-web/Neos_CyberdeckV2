@@ -31,6 +31,16 @@ model Profile {
   broadcastChannels BroadcastChannel[]
   broadcastFollows  BroadcastFollower[]
 
+  mutedChats   MutedChat[]
+  clearedChats ClearedChat[]
+  lockedChats  LockedChat[]
+  blockedUsers BlockedUser[] @relation("BlockedUsers")
+  blockedBy    BlockedUser[] @relation("BlockedBy")
+
+  pinHash          String?
+  securityQuestion String?
+  securityAnswer   String? // Store hash of the answer
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -124,6 +134,11 @@ model Message {
   edited             Boolean @default(false)
   editedAt           DateTime?
 
+  replyToId          String?
+  replyTo            Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies            Message[] @relation("MessageReplies")
+  isPinned           Boolean   @default(false)
+
   status      String    @default("SENT") // SENT, DELIVERED, READ
   deliveredAt DateTime?
   readAt      DateTime?
@@ -193,6 +208,11 @@ model DirectMessage {
   edited             Boolean @default(false)
   editedAt           DateTime?
 
+  replyToId          String?
+  replyTo            DirectMessage?  @relation("DirectMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies            DirectMessage[] @relation("DirectMessageReplies")
+  isPinned           Boolean         @default(false)
+
   status      String    @default("SENT")
   deliveredAt DateTime?
   readAt      DateTime?
@@ -248,11 +268,66 @@ model MessageEdit {
   id              String   @id @default(uuid())
   messageId       String
   message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  previousContent String
-  editedAt        DateTime @default(now())
+  content         String
+  createdAt       DateTime @default(now())
 
   @@index([messageId])
 }
+
+model MutedChat {
+  id        String @id @default(uuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  chatId    String // Can be channelId or conversationId
+  expiresAt DateTime? // Null means always muted
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, chatId])
+  @@index([profileId])
+}
+
+model BlockedUser {
+  id        String @id @default(uuid())
+  blockerId String
+  blocker   Profile @relation("BlockedUsers", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   Profile @relation("BlockedBy", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+model ClearedChat {
+  id        String @id @default(uuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  chatId    String // Can be channelId or conversationId
+  clearedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, chatId])
+  @@index([profileId])
+}
+
+model LockedChat {
+  id        String @id @default(uuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  chatId    String // Can be channelId or conversationId
+
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, chatId])
+  @@index([profileId])
+}
+
 
 model DirectMessageEdit {
   id              String         @id @default(uuid())

@@ -15,7 +15,7 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { content } = req.body;
+    const { content, isPinned } = req.body;
     const { directMessageId, conversationId } = req.query;
 
     if (!profile) return res.status(401).json({ error: "Unauthorized" });
@@ -70,7 +70,7 @@ export default async function handler(
     const isModerator = member.role === MemberRole.MODERATOR;
     const canModify = isMessageOwner || isAdmin || isModerator;
 
-    if (!canModify) return res.status(401).json({ error: "Unauthorized" });
+    if (!canModify && req.method === "DELETE") return res.status(401).json({ error: "Unauthorized" });
 
     if (req.method === "DELETE") {
       directMessage = await db.directMessage.update({
@@ -87,12 +87,23 @@ export default async function handler(
     }
 
     if (req.method === "PATCH") {
-      if (!isMessageOwner)
+      // For pinning: allow any conversation participant. For content edits: restrict to owner.
+      const isPinOnly = isPinned !== undefined && content === undefined;
+      
+      if (!isPinOnly && !canModify) {
         return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (content !== undefined && !isMessageOwner) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const updateData: any = {};
+      if (content !== undefined) updateData.content = content;
+      if (isPinned !== undefined) updateData.isPinned = isPinned;
 
       directMessage = await db.directMessage.update({
         where: { id: directMessageId as string },
-        data: { content },
+        data: updateData,
         include: {
           member: { include: { profile: true } }
         }

@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
-import { LogOut, UserCircle2 } from "lucide-react";
-import axios from "axios";
+import React, { useState } from "react";
+import { LogOut, UserCircle2, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { ModeToggle } from "@/components/mode-toggle";
@@ -14,13 +13,28 @@ interface NavigationUserControlProps {
 
 export function NavigationUserControl({ userName }: NavigationUserControlProps) {
   const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const onLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
     try {
-      await axios.delete("/api/auth");
-      window.location.href = "/sign-in";
-    } catch (error) {
-      console.error(error);
+      // Use fetch with a 4-second timeout so it never hangs forever
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+
+      await fetch("/api/auth", {
+        method: "DELETE",
+        signal: controller.signal,
+      }).catch(() => {/* ignore — we navigate regardless */});
+
+      clearTimeout(timer);
+    } catch {
+      // Network error or timeout — still log out locally
+    } finally {
+      // Always navigate to sign-in regardless of API result
+      window.location.assign("/sign-in");
     }
   };
 
@@ -39,12 +53,16 @@ export function NavigationUserControl({ userName }: NavigationUserControlProps) 
       </ActionTooltip>
 
       {/* Logout button */}
-      <ActionTooltip side="right" align="center" label="Sign out">
+      <ActionTooltip side="right" align="center" label={isLoggingOut ? "Signing out…" : "Sign out"}>
         <button
           onClick={onLogout}
-          className="group relative flex items-center justify-center p-3 rounded-[24px] hover:rounded-[16px] transition-all overflow-hidden bg-background dark:bg-zinc-700 hover:bg-rose-500/20 text-rose-500"
+          disabled={isLoggingOut}
+          className="group relative flex items-center justify-center p-3 rounded-[24px] hover:rounded-[16px] transition-all overflow-hidden bg-background dark:bg-zinc-700 hover:bg-rose-500/20 text-rose-500 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <LogOut size={20} />
+          {isLoggingOut
+            ? <Loader2 size={20} className="animate-spin" />
+            : <LogOut size={20} />
+          }
         </button>
       </ActionTooltip>
     </div>

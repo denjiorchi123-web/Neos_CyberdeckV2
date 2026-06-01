@@ -136,6 +136,7 @@ export function ChatMessages({
               mimeType={(message as any).mimeType}
               thumbnailUrl={(message as any).thumbnailUrl}
               mediaKey={(message as any).mediaKey}
+              type={message.type}
               deleted={message.deleted}
               timestamp={format(
                 new Date(message.createdAt),
@@ -145,6 +146,8 @@ export function ChatMessages({
               socketQuery={socketQuery}
               socketUrl={socketUrl}
               status={(message as any).status}
+              replyTo={(message as any).replyTo}
+              isPinned={(message as any).isPinned}
             />
           ))}
         </Fragment>

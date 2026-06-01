@@ -29,6 +29,16 @@ type PresenceContextType = {
   onlineUsers: OnlineUser[];
 };
 
+type PreferencesContextType = {
+  mutedChats: any[];
+  blockedUsers: any[];
+  blockedBy: any[];
+  lockedChats: any[];
+  hasPinEnabled: boolean;
+  securityQuestion: string | null;
+  refreshPreferences: () => void;
+};
+
 const SocketContext = createContext<SocketContextType>({
   socket: null,
   isConnected: false,
@@ -38,13 +48,30 @@ const PresenceContext = createContext<PresenceContextType>({
   onlineUsers: [],
 });
 
+const PreferencesContext = createContext<PreferencesContextType>({
+  mutedChats: [],
+  blockedUsers: [],
+  blockedBy: [],
+  lockedChats: [],
+  hasPinEnabled: false,
+  securityQuestion: null,
+  refreshPreferences: () => {},
+});
+
 export const useSocket  = () => useContext(SocketContext);
 export const usePresence = () => useContext(PresenceContext);
+export const usePreferences = () => useContext(PreferencesContext);
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket,      setSocket]      = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [mutedChats, setMutedChats] = useState<any[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
+  const [blockedBy, setBlockedBy] = useState<any[]>([]);
+  const [lockedChats, setLockedChats] = useState<any[]>([]);
+  const [hasPinEnabled, setHasPinEnabled] = useState(false);
+  const [securityQuestion, setSecurityQuestion] = useState<string | null>(null);
 
   const fetchPresence = useCallback(async () => {
     try {
@@ -68,9 +95,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     const onConnect = async () => {
       setIsConnected(true);
+      refreshPreferences();
+    };
+
+    const refreshPreferences = async () => {
       try {
-        const res     = await fetch("/api/auth/me");
+        const res     = await fetch("/api/auth/me?t=" + Date.now());
         const profile = await res.json();
+        
+        if (profile?.mutedChats) setMutedChats(profile.mutedChats);
+        if (profile?.blockedUsers) setBlockedUsers(profile.blockedUsers);
+        if (profile?.blockedBy) setBlockedBy(profile.blockedBy);
+        if (profile?.lockedChats) setLockedChats(profile.lockedChats);
+        setHasPinEnabled(!!profile?.hasPinEnabled);
+        setSecurityQuestion(profile?.securityQuestion || null);
+
         if (profile?.id) s.emit("presence:identify", profile.id);
       } catch {}
     };
@@ -101,11 +140,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   // Memoize both context values so downstream only re-renders on actual changes
   const socketValue  = useMemo(() => ({ socket, isConnected }), [socket, isConnected]);
   const presenceValue = useMemo(() => ({ onlineUsers }), [onlineUsers]);
+  const preferencesValue = useMemo(() => ({ 
+    mutedChats, blockedUsers, blockedBy, lockedChats, hasPinEnabled, securityQuestion, 
+    refreshPreferences: () => {
+      fetch("/api/auth/me?t=" + Date.now()).then(r => r.json()).then(p => {
+        if (p?.mutedChats) setMutedChats(p.mutedChats);
+        if (p?.blockedUsers) setBlockedUsers(p.blockedUsers);
+        if (p?.blockedBy) setBlockedBy(p.blockedBy);
+        if (p?.lockedChats) setLockedChats(p.lockedChats);
+        setHasPinEnabled(!!p?.hasPinEnabled);
+        setSecurityQuestion(p?.securityQuestion || null);
+      }).catch(()=>{});
+  } }), [mutedChats, blockedUsers, blockedBy, lockedChats, hasPinEnabled, securityQuestion]);
 
   return (
     <SocketContext.Provider value={socketValue}>
       <PresenceContext.Provider value={presenceValue}>
-        {children}
+        <PreferencesContext.Provider value={preferencesValue}>
+          {children}
+        </PreferencesContext.Provider>
       </PresenceContext.Provider>
     </SocketContext.Provider>
   );

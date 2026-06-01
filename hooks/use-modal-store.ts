@@ -19,10 +19,21 @@ export type ModalType =
   | "createBroadcastChannel"
   | "communityMembers"
   | "channelFollowers"
-  | "deleteCommunity"
   | "deleteBroadcastChannel"
   | "editCommunity"
-  | "editBroadcastChannel";
+  | "editBroadcastChannel"
+  | "forwardMessage"
+  | "chatMediaGallery"
+  | "muteChat"
+  | "clearChat"
+  | "chatPinSetup"
+  | "forgotPin"
+  | "exportChat"
+  | "blockUser"
+  | "changePin"
+  | "unlockChatVerify"
+  | "callPinVerify"
+  | "deleteCommunity";
 
 interface ModalData {
   server?: Server;
@@ -35,8 +46,14 @@ interface ModalData {
   fileType?: string;
   chatType?: "dm" | "group";
   memberId?: string;
+  memberProfileId?: string;
   chatName?: string;
   chatImage?: string;
+  message?: any;
+  isDirect?: boolean;
+  chatId?: string;
+  replyToId?: string;
+  onSuccessCallback?: () => void;
 }
 
 interface ModalStore {

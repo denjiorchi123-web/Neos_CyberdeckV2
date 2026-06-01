@@ -15,7 +15,7 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { content } = req.body;
+    const { content, isPinned } = req.body;
     const { serverId, channelId, messageId } = req.query;
 
     if (!profile) return res.status(401).json({ error: "Unauthorized" });
@@ -82,7 +82,7 @@ export default async function handler(
     const isModerator = member.role === MemberRole.MODERATOR;
     const canModify = isMessageOwner || isAdmin || isModerator;
 
-    if (!canModify) return res.status(401).json({ error: "Unauthorized" });
+    if (!canModify && req.method === "DELETE") return res.status(401).json({ error: "Unauthorized" });
 
     if (req.method === "DELETE") {
       message = await db.message.update({
@@ -99,12 +99,23 @@ export default async function handler(
     }
 
     if (req.method === "PATCH") {
-      if (!isMessageOwner)
+      // For pinning: allow any channel member. For content edits: restrict to owner.
+      const isPinOnly = isPinned !== undefined && content === undefined;
+      
+      if (!isPinOnly && !canModify) {
         return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (content !== undefined && !isMessageOwner) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const updateData: any = {};
+      if (content !== undefined) updateData.content = content;
+      if (isPinned !== undefined) updateData.isPinned = isPinned;
 
       message = await db.message.update({
         where: { id: messageId as string },
-        data: { content },
+        data: updateData,
         include: {
           member: { include: { profile: true } }
         }

@@ -26,6 +26,21 @@ export async function UnifiedChatSidebar() {
   });
   const pinnedChatIds = new Set(pinnedChats.map(p => p.chatId));
 
+  const lockedChats = await db.lockedChat.findMany({
+    where: { profileId: profile.id }
+  });
+  const lockedChatIds = new Set(lockedChats.map(l => l.chatId));
+
+  const clearedChats = await db.clearedChat.findMany({
+    where: { profileId: profile.id }
+  });
+  const clearedChatMap = new Map(clearedChats.map(c => [c.chatId, c.clearedAt.getTime()]));
+
+  const mutedChats = await db.mutedChat.findMany({
+    where: { profileId: profile.id }
+  });
+  const mutedChatIds = new Set(mutedChats.map(m => m.chatId));
+
   // Get 1-on-1s (Direct Messages)
   const defaultServer = await db.server.findFirst({
     where: { inviteCode: "cyberdeck-default" },
@@ -62,25 +77,38 @@ export async function UnifiedChatSidebar() {
         }
       });
 
-      const lastMessage = conversation?.directMessages[0]?.content || null;
-      const lastMessageTime = conversation?.directMessages[0]?.createdAt || null;
-      const lastMessageStatus = conversation?.directMessages[0]?.status || null;
-      const lastMessageMemberId = conversation?.directMessages[0]?.memberId || null;
+      let lastMessageObj: any = conversation?.directMessages[0];
+      if (conversation && lastMessageObj) {
+        const clearedAt = clearedChatMap.get(conversation.id) || 0;
+        if (lastMessageObj.createdAt.getTime() <= clearedAt) {
+          lastMessageObj = undefined;
+        }
+      }
+
+      const lastMessage = lastMessageObj?.content || null;
+      const lastMessageTime = lastMessageObj?.createdAt || null;
+      const lastMessageStatus = lastMessageObj?.status || null;
+      const lastMessageMemberId = lastMessageObj?.memberId || null;
       const amILastSender = lastMessageMemberId === currentMember.id;
+
+      const isLocked = conversation ? lockedChatIds.has(conversation.id) : false;
 
       dmChats.push({
         id: member.id, // For DM routing, we need the memberId
+        profileId: member.profile.id, // For online status tracking
         name: member.profile.name,
         imageUrl: member.profile.imageUrl,
         type: "DM",
-        lastMessage,
+        lastMessage: isLocked ? "Locked Chat" : lastMessage,
         lastMessageTime,
         lastMessageTimeLabel: formatChatTime(lastMessageTime),
         lastMessageStatus,
         amILastSender,
         serverId: defaultServer.id,
         isArchived: archivedChatIds.has(member.id),
-        isPinned: pinnedChatIds.has(member.id)
+        isPinned: pinnedChatIds.has(member.id),
+        isLocked,
+        isMuted: conversation ? mutedChatIds.has(conversation.id) : false
       });
     }
   }
@@ -109,12 +137,20 @@ export async function UnifiedChatSidebar() {
   let groupChats: any[] = [];
   servers.forEach(server => {
     server.channels.forEach(channel => {
-      const lastMessage = channel.messages[0]?.content || null;
-      const lastMessageTime = channel.messages[0]?.createdAt || null;
-      // Group chats don't have a single 'status' field for read receipts usually, but we can map it if we want.
-      // For now, let's just see if we are the sender.
-      const lastMessageMemberId = channel.messages[0]?.memberId || null;
+      let lastMessageObj: any = channel.messages[0];
+      if (lastMessageObj) {
+        const clearedAt = clearedChatMap.get(channel.id) || 0;
+        if (lastMessageObj.createdAt.getTime() <= clearedAt) {
+          lastMessageObj = undefined;
+        }
+      }
+
+      const lastMessage = lastMessageObj?.content || null;
+      const lastMessageTime = lastMessageObj?.createdAt || null;
+      const lastMessageMemberId = lastMessageObj?.memberId || null;
       const amILastSender = server.members.find(m => m.profileId === profile.id)?.id === lastMessageMemberId;
+
+      const isLocked = lockedChatIds.has(channel.id);
 
       groupChats.push({
         id: channel.id,
@@ -122,16 +158,18 @@ export async function UnifiedChatSidebar() {
         channelName: channel.name,
         imageUrl: server.imageUrl,
         type: "GROUP",
-        lastMessage,
+        lastMessage: isLocked ? "Locked Chat" : lastMessage,
         lastMessageTime,
         lastMessageTimeLabel: formatChatTime(lastMessageTime),
-        lastMessageStatus: channel.messages[0]?.status || null,
+        lastMessageStatus: lastMessageObj?.status || null,
         amILastSender,
         serverId: server.id,
         communityId: server.community?.id,
         communityImageUrl: server.community?.imageUrl,
         isArchived: archivedChatIds.has(channel.id),
-        isPinned: pinnedChatIds.has(channel.id)
+        isPinned: pinnedChatIds.has(channel.id),
+        isLocked,
+        isMuted: mutedChatIds.has(channel.id)
       });
     });
   });
@@ -152,7 +190,8 @@ export async function UnifiedChatSidebar() {
     lastMessageTimeLabel: formatChatTime(comm.createdAt),
     serverId: comm.id, // used for routing later
     isArchived: archivedChatIds.has(comm.id),
-    isPinned: pinnedChatIds.has(comm.id)
+    isPinned: pinnedChatIds.has(comm.id),
+    isMuted: mutedChatIds.has(comm.id)
   }));
 
   // Get Broadcast Channels
@@ -170,18 +209,29 @@ export async function UnifiedChatSidebar() {
   });
 
   let broadcastChats: any[] = broadcastData.map((channel) => {
-    const lastMessageTime = channel.messages[0]?.createdAt || channel.createdAt;
+    let lastMessageObj: any = channel.messages[0];
+    if (lastMessageObj) {
+      const clearedAt = clearedChatMap.get(channel.id) || 0;
+      if (lastMessageObj.createdAt.getTime() <= clearedAt) {
+        lastMessageObj = undefined;
+      }
+    }
+    const lastMessageTime = lastMessageObj?.createdAt || channel.createdAt;
+    const isLocked = lockedChatIds.has(channel.id);
+
     return {
       id: channel.id,
       name: channel.name,
       imageUrl: channel.imageUrl,
       type: "CHANNEL",
-      lastMessage: channel.messages[0]?.content || "No messages yet",
+      lastMessage: isLocked ? "Locked Chat" : (lastMessageObj?.content || "No messages yet"),
       lastMessageTime,
       lastMessageTimeLabel: formatChatTime(lastMessageTime),
       serverId: channel.id,
       isArchived: archivedChatIds.has(channel.id),
-      isPinned: pinnedChatIds.has(channel.id)
+      isPinned: pinnedChatIds.has(channel.id),
+      isLocked,
+      isMuted: mutedChatIds.has(channel.id)
     };
   });
 

@@ -6,7 +6,7 @@ import { Search } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Check, CheckCheck, Megaphone, Users, User, Trash, Edit, Phone, Video, Archive, ArchiveRestore, Pin, PinOff, MessageSquare } from "lucide-react";
+import { Check, CheckCheck, Megaphone, Users, User, Trash, Edit, Phone, Video, Archive, ArchiveRestore, Pin, PinOff, MessageSquare, Lock, BellOff } from "lucide-react";
 import { useChatFilterStore } from "@/hooks/use-chat-filter-store";
 import {
   ContextMenu,
@@ -16,10 +16,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useModal } from "@/hooks/use-modal-store";
+import { usePresence } from "@/components/providers/socket-provider";
 import axios from "axios";
 
 interface ChatItem {
   id: string; // memberId for DM, channelId for GROUP
+  profileId?: string; // profileId of the other member for DM
   name: string;
   channelName?: string;
   imageUrl?: string;
@@ -34,6 +36,8 @@ interface ChatItem {
   communityImageUrl?: string | null;
   isArchived?: boolean;
   isPinned?: boolean;
+  isLocked?: boolean;
+  isMuted?: boolean;
 }
 
 interface UnifiedChatListProps {
@@ -44,6 +48,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const router = useRouter();
   const params = useParams();
   const { onOpen } = useModal();
+  const { onlineUsers } = usePresence();
   const { searchTerm, setSearchTerm, activeTab, setActiveTab } = useChatFilterStore();
 
   const onArchive = async (chat: ChatItem) => {
@@ -259,17 +264,23 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
                 )}
               </div>
             ) : (
-              <UserAvatar src={chat.imageUrl} className="h-10 w-10 md:h-12 md:w-12" />
+              <UserAvatar 
+                src={chat.imageUrl} 
+                className="h-10 w-10 md:h-12 md:w-12" 
+                status={chat.profileId ? (onlineUsers.some((u: any) => u.userId === chat.profileId) ? "online" : "offline") : undefined}
+              />
             )}
             
             <div className="flex flex-col items-start overflow-hidden w-full">
               <div className="flex items-center justify-between w-full">
                 <p
                   className={cn(
-                    "font-semibold text-[15px] truncate text-zinc-700 dark:text-zinc-200 group-hover:text-zinc-900 dark:group-hover:text-white transition",
+                    "font-semibold text-[15px] truncate text-zinc-700 dark:text-zinc-200 group-hover:text-zinc-900 dark:group-hover:text-white transition flex items-center gap-x-1",
                     isActive(chat) && "text-primary dark:text-white"
                   )}
                 >
+                  {chat.isLocked && <Lock className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />}
+                  {chat.isMuted && <BellOff className="h-3.5 w-3.5 text-zinc-400 flex-shrink-0" />}
                   {chat.name}
                   {chat.type === "GROUP" && chat.channelName !== "general" && (
                      <span className="text-xs text-zinc-500 ml-1">({chat.channelName})</span>
@@ -371,7 +382,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
         ))}
         {filteredChats.length === 0 && searchTerm && (
           <div className="flex flex-col items-center justify-center pt-10 text-zinc-500 text-sm">
-            <p>No chats found for "{searchTerm}"</p>
+            <p>No chats found for &quot;{searchTerm}&quot;</p>
           </div>
         )}
       </div>

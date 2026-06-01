@@ -35,8 +35,9 @@ export function MessageFileModal() {
     isOpen,
     onClose,
     type,
-    data: { apiUrl, query }
+    data
   } = useModal();
+  const { apiUrl, query, replyToId } = data;
   const router = useRouter();
 
   const isModalOpen = isOpen && type === "messageFile";
@@ -61,7 +62,7 @@ export function MessageFileModal() {
         url: apiUrl || "",
         query
       });
-      await axios.post(url, { ...values, content: values.fileUrl });
+      await axios.post(url, { ...values, content: values.fileUrl, replyToId });
 
       form.reset();
       router.refresh();

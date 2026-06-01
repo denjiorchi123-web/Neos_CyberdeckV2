@@ -4,7 +4,7 @@ import React from "react";
 import { Hash } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { UserAvatar } from "@/components/user-avatar";
-import { ChatHeaderStatus } from "@/components/chat/chat-header-status";
+import { usePreferences, usePresence } from "@/components/providers/socket-provider";
 
 interface ChatHeaderProfileProps {
   name: string;
@@ -12,6 +12,7 @@ interface ChatHeaderProfileProps {
   type: "channel" | "conversation";
   imageUrl?: string;
   otherMemberId?: string;
+  otherProfileId?: string;
 }
 
 export function ChatHeaderProfile({
@@ -19,15 +20,27 @@ export function ChatHeaderProfile({
   serverId,
   type,
   imageUrl,
-  otherMemberId
+  otherMemberId,
+  otherProfileId
 }: ChatHeaderProfileProps) {
   const { onOpen } = useModal();
+  const { blockedUsers, blockedBy } = usePreferences();
+  const { onlineUsers } = usePresence();
+
+  const isBlocked = otherProfileId && (
+    blockedUsers.some(u => u.blockedId === otherProfileId) ||
+    blockedBy.some(u => u.blockerId === otherProfileId)
+  );
+
+  const isOnline = otherMemberId ? onlineUsers.some((u: any) => u.userId === otherMemberId) : false;
+
+  const displayImageUrl = isBlocked ? undefined : imageUrl;
 
   const handleInfoClick = () => {
     onOpen("chatInfo", {
       chatType: type === "channel" ? "group" : "dm",
       chatName: name,
-      chatImage: imageUrl,
+      chatImage: displayImageUrl,
       memberId: otherMemberId,
       server: { id: serverId } as any // Pass serverId to fetch group members
     });
@@ -43,17 +56,15 @@ export function ChatHeaderProfile({
       )}
       {type === "conversation" && (
         <UserAvatar
-          src={imageUrl}
+          src={displayImageUrl}
           className="h-8 w-8 md:h-8 md:w-8 mr-2"
+          status={isOnline && !isBlocked ? "online" : "offline"}
         />
       )}
       <div className="flex flex-col">
         <p className="font-semibold text-md text-black dark:text-white leading-tight">
           {name}
         </p>
-        {type === "conversation" && (
-          <ChatHeaderStatus otherMemberId={otherMemberId} />
-        )}
       </div>
     </div>
   );

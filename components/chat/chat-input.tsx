@@ -20,22 +20,31 @@ import { EmojiPicker } from "@/components/emoji-picker";
 import { ChatAttachmentMenu } from "@/components/chat/chat-attachment-menu";
 import { useSocket } from "@/components/providers/socket-provider";
 import { enqueue, drainQueue, QueuedMessage } from "@/lib/offline-queue";
+import { useReplyStore } from "@/hooks/use-reply-store";
+import { X, Reply, Camera, Video, FileIcon, Ban } from "lucide-react";
+import { usePreferences } from "@/components/providers/socket-provider";
 
 interface ChatInputProps {
   apiUrl: string;
   query: Record<string, any>;
   name: string;
   type: "conversation" | "channel" | "broadcast";
+  otherProfileId?: string;
 }
 
 const formSchema = z.object({
   content: z.string().min(1)
 });
 
-export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
+export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInputProps) {
   const router = useRouter();
   const { socket, isConnected } = useSocket() as { socket: any; isConnected: boolean };
+  const { blockedUsers, refreshPreferences } = usePreferences();
   const draining = useRef(false);
+  const { replyingTo, setReplyingTo } = useReplyStore();
+  const [isUnblocking, setIsUnblocking] = React.useState(false);
+
+  const isBlocked = type === "conversation" && otherProfileId && blockedUsers.some(u => u.blockedId === otherProfileId);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,6 +72,7 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
           thumbnailUrl: msg.thumbnailUrl,
           mediaKey:     msg.mediaKey,
           type:         msg.type,
+          replyToId:    msg.replyToId,
         });
         return true;
       } catch {
@@ -104,6 +114,7 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
           apiUrl,
           query,
           content:    values.content,
+          replyToId:  replyingTo?.id,
           queuedAt:   Date.now(),
           retryCount: 0,
         });
@@ -115,47 +126,120 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
         return;
       }
 
-      await axios.post(url, { content: values.content });
+      await axios.post(url, { content: values.content, replyToId: replyingTo?.id });
+      setReplyingTo(null);
       router.refresh();
-    } catch (error) {
+    } catch (error: any) {
       console.error("[ChatInput] send failed:", error);
+      
+      // If the server explicitly rejected the message (e.g. we were blocked),
+      // do not queue it for offline retry, just discard it.
+      if (error?.response?.status === 403) {
+        return;
+      }
+
       // Fallback: queue even on unexpected send error
       await enqueue({
         id:         uuidv4(),
         apiUrl,
         query,
         content:    values.content,
+        replyToId:  replyingTo?.id,
         queuedAt:   Date.now(),
         retryCount: 0,
       });
     }
   };
 
+  const onUnblock = async () => {
+    if (!otherProfileId || isUnblocking) return;
+    try {
+      setIsUnblocking(true);
+      await axios.delete(`/api/block-user?profileId=${otherProfileId}`);
+      refreshPreferences();
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsUnblocking(false);
+    }
+  };
+
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        <FormField
-          control={form.control}
-          name="content"
+    <div className="w-full">
+      {isBlocked ? (
+        <div className="p-4 pb-6 flex justify-center">
+          <button 
+            onClick={onUnblock}
+            disabled={isUnblocking}
+            className="bg-zinc-200/90 hover:bg-zinc-300/90 dark:hover:bg-zinc-600/75 dark:bg-zinc-700/75 text-zinc-500 dark:text-zinc-400 text-sm px-6 py-3 rounded-full flex items-center justify-center w-fit shadow-sm transition cursor-pointer disabled:opacity-50"
+          >
+            <Ban className="h-4 w-4 mr-2" />
+            {isUnblocking ? "Unblocking..." : "You blocked this contact. Tap to unblock."}
+          </button>
+        </div>
+      ) : (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <FormField
+              control={form.control}
+              name="content"
           render={({ field }) => (
             <FormItem>
               <FormControl>
-                <div className="relative p-4 pb-6">
-                  <ChatAttachmentMenu apiUrl={apiUrl} query={query} />
-                  <Input
-                    placeholder={`${
-                      type === "conversation" ? `Message ${name}` : type === "broadcast" ? `Broadcast to ${name}` : `Message #${name}`
-                    }${!isConnected ? " (queued — server offline)" : ""}`}
-                    disabled={isLoading}
-                    className="px-14 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200"
-                    {...field}
-                  />
-                  <div className="absolute top-7 right-8">
-                    <EmojiPicker
-                      onChange={(emoji: string) =>
-                        field.onChange(`${field.value} ${emoji}`)
-                      }
+                <div className="p-4 pb-6">
+                  {replyingTo && (
+                    <div className="flex items-stretch bg-zinc-200/50 dark:bg-zinc-700/50 rounded-t-lg mb-[-8px] relative z-10 overflow-hidden">
+                      {/* Left colored vertical bar */}
+                      <div className="w-[4px] shrink-0 bg-indigo-500" />
+                      {/* Content */}
+                      <div className="flex items-center gap-x-2 overflow-hidden flex-1 px-3 py-2">
+                        <div className="flex flex-col text-sm truncate flex-1">
+                          <span className="font-semibold text-indigo-500 text-[13px] leading-tight">{replyingTo.memberName}</span>
+                          <span className="truncate flex items-center mt-0.5 text-[13px] opacity-80 text-zinc-500 dark:text-zinc-300">
+                            {replyingTo.content === "📷 Photo" ? (
+                              <><Camera className="h-3.5 w-3.5 mr-1"/> Photo</>
+                            ) : replyingTo.content === "🎥 Video" ? (
+                              <><Video className="h-3.5 w-3.5 mr-1"/> Video</>
+                            ) : (
+                              replyingTo.content || "Attachment"
+                            )}
+                          </span>
+                        </div>
+                        {/* Optional thumbnail */}
+                        {replyingTo.fileUrl && (replyingTo.mimeType?.startsWith("image/") || replyingTo.mimeType?.startsWith("video/") || replyingTo.content === "📷 Photo" || replyingTo.content === "🎥 Video") && (
+                          <div className="w-[40px] h-[40px] shrink-0 overflow-hidden rounded bg-black/20 flex items-center justify-center">
+                            {replyingTo.fileUrl.endsWith('.enc') ? (
+                              <Camera className="h-4 w-4 text-zinc-400" />
+                            ) : (
+                              <img src={replyingTo.thumbnailUrl || replyingTo.fileUrl} alt="" className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {/* Close button */}
+                      <button type="button" onClick={() => setReplyingTo(null)} className="px-3 hover:bg-black/10 dark:hover:bg-white/10 transition shrink-0 flex items-center justify-center">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="relative w-full">
+                    <ChatAttachmentMenu apiUrl={apiUrl} query={query} replyToId={replyingTo?.id} onSent={() => setReplyingTo(null)} />
+                    <Input
+                      placeholder={`${
+                        type === "conversation" ? `Message ${name}` : type === "broadcast" ? `Broadcast to ${name}` : `Message #${name}`
+                      }${!isConnected ? " (queued — server offline)" : ""}`}
+                      disabled={isLoading}
+                      className="px-14 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200"
+                      {...field}
                     />
+                    <div className="absolute top-1/2 -translate-y-1/2 right-4">
+                      <EmojiPicker
+                        onChange={(emoji: string) =>
+                          field.onChange(`${field.value} ${emoji}`)
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
               </FormControl>
@@ -164,5 +248,7 @@ export function ChatInput({ apiUrl, query, name, type }: ChatInputProps) {
         />
       </form>
     </Form>
+    )}
+    </div>
   );
 }

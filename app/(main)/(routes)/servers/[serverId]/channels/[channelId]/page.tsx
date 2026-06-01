@@ -8,6 +8,7 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { MediaRoom } from "@/components/media-room";
+import { ChatLockGuard } from "@/components/chat/chat-lock-guard";
 
 
 interface ChannelIdPageProps {
@@ -60,41 +61,43 @@ export default async function ChannelIdPage({
         server={server}
         role={member.role}
       />
-      {!searchParams.video && !searchParams.audio && (
-        <>
-          <ChatMessages
-            member={member}
-            name={channel.name}
-            chatId={channel.id}
-            type="channel"
-            apiUrl="/api/messages"
-            socketUrl="/api/socket/messages"
-            socketQuery={{
-              channelId: channel.id,
-              serverId: channel.serverId
-            }}
-            paramKey="channelId"
-            paramValue={channel.id}
+      <ChatLockGuard chatId={channel.id}>
+        {!searchParams.video && !searchParams.audio && (
+          <>
+            <ChatMessages
+              member={member}
+              name={channel.name}
+              chatId={channel.id}
+              type="channel"
+              apiUrl="/api/messages"
+              socketUrl="/api/socket/messages"
+              socketQuery={{
+                channelId: channel.id,
+                serverId: channel.serverId
+              }}
+              paramKey="channelId"
+              paramValue={channel.id}
+            />
+            <ChatInput
+              name={channel.name}
+              type="channel"
+              apiUrl="/api/socket/messages"
+              query={{
+                channelId: channel.id,
+                serverId: channel.serverId
+              }}
+            />
+          </>
+        )}
+        {(searchParams.video || searchParams.audio) && (
+          <MediaRoom 
+            chatId={channel.id} 
+            video={!!searchParams.video} 
+            audio={true} 
+            peerName={channel.name} 
           />
-          <ChatInput
-            name={channel.name}
-            type="channel"
-            apiUrl="/api/socket/messages"
-            query={{
-              channelId: channel.id,
-              serverId: channel.serverId
-            }}
-          />
-        </>
-      )}
-      {(searchParams.video || searchParams.audio) && (
-        <MediaRoom 
-          chatId={channel.id} 
-          video={!!searchParams.video} 
-          audio={true} 
-          peerName={channel.name} 
-        />
-      )}
+        )}
+      </ChatLockGuard>
     </div>
   );
 }

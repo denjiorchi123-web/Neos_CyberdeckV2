@@ -13,7 +13,7 @@ import {
 interface FileUploadProps {
   onChange: (url?: string) => void;
   value: string;
-  endpoint: "messageFile" | "serverImage";
+  endpoint: "messageFile" | "serverImage" | "communityImage" | "channelImage";
 }
 
 export function FileUpload({
@@ -53,7 +53,7 @@ export function FileUpload({
   const audioTypes = { "audio/*": [".mp3", ".wav", ".m4a", ".flac", ".ogg"] };
 
   // serverImage = avatar / server icon (small); messageFile = chat attachment (FAT32-bounded)
-  const isAvatar = endpoint === "serverImage";
+  const isAvatar = endpoint === "serverImage" || endpoint === "communityImage" || endpoint === "channelImage";
   const accept = isAvatar
     ? imageTypes
     : {
@@ -139,7 +139,7 @@ export function FileUpload({
           <p className="text-xs text-zinc-500">
             {isAvatar
               ? `Image (max ${formatMaxSize(SERVER_IMAGE_MAX_SIZE)})`
-              : `Any file (max ${formatMaxSize(MESSAGE_FILE_MAX_SIZE)} — FAT32 limit)`}
+              : `Any file (max ${formatMaxSize(MESSAGE_FILE_MAX_SIZE)})`}
           </p>
         </div>
       )}

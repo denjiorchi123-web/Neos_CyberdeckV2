@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Camera, X, RotateCcw, Send, SwitchCamera } from "lucide-react";
+import { Camera, X, RotateCcw, Send, SwitchCamera, Video } from "lucide-react";
 import { generateMediaKey, encryptMedia } from "@/lib/device-storage";
 
 interface CameraCaptureProps {
@@ -26,9 +26,14 @@ export function CameraCapture({ onClose, onSend }: CameraCaptureProps) {
   const streamRef   = useRef<MediaStream | null>(null);
 
   const [isFront,   setIsFront]   = useState(true);
-  const [captured,  setCaptured]  = useState<string | null>(null); // data URL
+  const [captured,  setCaptured]  = useState<string | null>(null); // data URL for photo
+  const [recordedVideo, setRecordedVideo] = useState<string | null>(null); // blob URL for video
+  const [isRecording, setIsRecording] = useState(false);
   const [sending,   setSending]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   const startCamera = useCallback(async (front: boolean) => {
     if (streamRef.current) {
@@ -72,8 +77,44 @@ export function CameraCapture({ onClose, onSend }: CameraCaptureProps) {
     setCaptured(canvas.toDataURL("image/jpeg", 0.88));
   };
 
+  const startRecording = () => {
+    if (!streamRef.current) return;
+    chunksRef.current = [];
+    
+    let mimeType = "video/webm";
+    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
+      mimeType = "video/webm;codecs=vp9";
+    } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8")) {
+      mimeType = "video/webm;codecs=vp8";
+    } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+      mimeType = "video/mp4";
+    }
+
+    const mr = new MediaRecorder(streamRef.current, { mimeType });
+    mr.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+    mr.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      setRecordedVideo(url);
+    };
+    mr.start();
+    mediaRecorderRef.current = mr;
+    setIsRecording(true);
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
   const retake = () => {
     setCaptured(null);
+    if (recordedVideo) URL.revokeObjectURL(recordedVideo);
+    setRecordedVideo(null);
     startCamera(isFront);
   };
 
@@ -84,13 +125,35 @@ export function CameraCapture({ onClose, onSend }: CameraCaptureProps) {
   };
 
   const send = async () => {
-    if (!captured) return;
+    if (!captured && !recordedVideo) return;
     setSending(true);
     try {
-      // Convert data URL to Blob
-      const res  = await fetch(captured);
-      const blob = await res.blob();
-      const buf  = await blob.arrayBuffer();
+      let uploadBlob: Blob;
+      let finalMimeType: string;
+      let finalFileName: string;
+      let finalType: string;
+      let thumbUrl: string | undefined = undefined;
+
+      if (captured) {
+        const res = await fetch(captured);
+        uploadBlob = await res.blob();
+        finalMimeType = "image/jpeg";
+        finalFileName = `photo_${Date.now()}.jpg`;
+        finalType = "IMAGE";
+        
+        const canvas = canvasRef.current;
+        thumbUrl = canvas?.toDataURL("image/jpeg", 0.4) ?? undefined;
+      } else {
+        const res = await fetch(recordedVideo!);
+        uploadBlob = await res.blob();
+        finalMimeType = uploadBlob.type || "video/webm";
+        finalFileName = `video_${Date.now()}.webm`;
+        finalType = "VIDEO";
+        
+        // Video thumbnail generation could go here if needed, keeping it undefined for now
+      }
+
+      const buf  = await uploadBlob.arrayBuffer();
 
       // Generate per-file AES-GCM key and encrypt
       const mediaKey  = await generateMediaKey();
@@ -113,19 +176,15 @@ export function CameraCapture({ onClose, onSend }: CameraCaptureProps) {
       if (!uploadRes.ok) throw new Error("Upload failed");
       const data = await uploadRes.json();
 
-      // Also create an in-browser thumbnail from the canvas
-      const canvas = canvasRef.current;
-      const thumbUrl = canvas?.toDataURL("image/jpeg", 0.4) ?? undefined;
-
       await onSend({
         fileUrl:      data.url,
-        fileName:     `photo_${Date.now()}.jpg`,
-        fileSize:     blob.size,
-        mimeType:     "image/jpeg",
+        fileName:     finalFileName,
+        fileSize:     uploadBlob.size,
+        mimeType:     finalMimeType,
         thumbnailUrl: thumbUrl,
         mediaKey,
-        type:         "IMAGE",
-        content:      "📷 Photo",
+        type:         finalType,
+        content:      finalType === "IMAGE" ? "📷 Photo" : "🎥 Video",
       });
       onClose();
     } catch (e: any) {
@@ -141,23 +200,25 @@ export function CameraCapture({ onClose, onSend }: CameraCaptureProps) {
         <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20">
           <X className="h-6 w-6 text-white" />
         </button>
-        {!captured && (
+        {!captured && !recordedVideo && !isRecording && (
           <button onClick={flipCamera} className="p-2 rounded-full bg-white/10 hover:bg-white/20">
             <SwitchCamera className="h-6 w-6 text-white" />
           </button>
         )}
       </div>
 
-      {/* Live preview / captured image */}
+      {/* Live preview / captured image / captured video */}
       <div className="flex-1 flex items-center justify-center overflow-hidden">
-        {!captured ? (
+        {!captured && !recordedVideo ? (
           <video
             ref={videoRef}
             autoPlay playsInline muted
             className={`w-full h-full object-cover ${isFront ? "scale-x-[-1]" : ""}`}
           />
+        ) : recordedVideo ? (
+          <video src={recordedVideo} controls autoPlay className="w-full h-full object-contain bg-black" />
         ) : (
-          <img src={captured} alt="Captured" className="w-full h-full object-contain" />
+          <img src={captured!} alt="Captured" className="w-full h-full object-contain" />
         )}
       </div>
 
@@ -172,13 +233,35 @@ export function CameraCapture({ onClose, onSend }: CameraCaptureProps) {
 
       {/* Bottom controls */}
       <div className="absolute inset-x-0 bottom-0 pb-10 flex items-center justify-center gap-x-12 bg-gradient-to-t from-black/70 to-transparent pt-8">
-        {!captured ? (
-          <button
-            onClick={capture}
-            className="h-20 w-20 rounded-full border-4 border-white bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all active:scale-90 shadow-xl"
-          >
-            <Camera className="h-8 w-8 text-white" />
-          </button>
+        {!captured && !recordedVideo ? (
+          <div className="flex gap-x-8">
+            {!isRecording ? (
+              <>
+                <button
+                  onClick={capture}
+                  className="h-16 w-16 rounded-full border-4 border-white bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all active:scale-90 shadow-xl"
+                  title="Take Photo"
+                >
+                  <Camera className="h-6 w-6 text-white" />
+                </button>
+                <button
+                  onClick={startRecording}
+                  className="h-16 w-16 rounded-full border-4 border-white bg-rose-500/80 hover:bg-rose-500 flex items-center justify-center transition-all active:scale-90 shadow-xl"
+                  title="Record Video"
+                >
+                  <Video className="h-6 w-6 text-white fill-current" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={stopRecording}
+                className="h-20 w-20 rounded-full border-4 border-rose-500 bg-rose-500 flex items-center justify-center transition-all active:scale-90 shadow-xl animate-pulse"
+                title="Stop Recording"
+              >
+                <div className="h-6 w-6 rounded-sm bg-white" />
+              </button>
+            )}
+          </div>
         ) : (
           <>
             <button

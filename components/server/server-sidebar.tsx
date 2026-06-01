@@ -40,8 +40,11 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
     },
     include: {
       channels: {
-        orderBy: {
-          createdAt: "asc"
+        include: {
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 1
+          }
         }
       },
       members: {
@@ -55,15 +58,43 @@ export async function ServerSidebar({ serverId }: { serverId: string }) {
     }
   });
 
-  const textChannels = server?.channels.filter(
-    (channel) => channel.type === ChannelType.TEXT
-  );
+  const textChannels = server?.channels
+    .filter((channel) => channel.type === ChannelType.TEXT)
+    .sort((a, b) => {
+      const aTime = a.messages[0]?.createdAt?.getTime() || a.createdAt.getTime();
+      const bTime = b.messages[0]?.createdAt?.getTime() || b.createdAt.getTime();
+      return bTime - aTime;
+    });
+
+  const conversations = await db.conversation.findMany({
+    where: {
+      OR: [
+        { memberOne: { profileId: profile.id } },
+        { memberTwo: { profileId: profile.id } }
+      ]
+    },
+    include: {
+      directMessages: {
+        orderBy: { createdAt: "desc" },
+        take: 1
+      }
+    }
+  });
 
   const members = server?.members
     .filter((member) => member.profileId !== profile.id)
     .filter((member, index, self) => 
       index === self.findIndex((m) => m.profile.name === member.profile.name)
-    );
+    )
+    .sort((a, b) => {
+      const convA = conversations.find(c => c.memberOneId === a.id || c.memberTwoId === a.id);
+      const convB = conversations.find(c => c.memberOneId === b.id || c.memberTwoId === b.id);
+      
+      const aTime = convA?.directMessages[0]?.createdAt?.getTime() || 0;
+      const bTime = convB?.directMessages[0]?.createdAt?.getTime() || 0;
+      
+      return bTime - aTime;
+    });
 
   if (!server) return redirect("/");
 

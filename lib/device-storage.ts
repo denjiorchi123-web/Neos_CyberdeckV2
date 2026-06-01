@@ -12,7 +12,7 @@
 //   await DeviceStorage.remove(fileUrl);
 
 const DB_NAME    = "cyberdeck-media";
-const DB_VER     = 1;
+const DB_VER     = 2;
 const STORE_BLOB = "blobs";
 const STORE_META = "meta";
 
@@ -21,6 +21,13 @@ function openMediaDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
+      
+      // Clear old corrupted cache on upgrade to v2
+      if (e.oldVersion < 2) {
+        if (db.objectStoreNames.contains(STORE_BLOB)) db.deleteObjectStore(STORE_BLOB);
+        if (db.objectStoreNames.contains(STORE_META)) db.deleteObjectStore(STORE_META);
+      }
+
       if (!db.objectStoreNames.contains(STORE_BLOB)) {
         db.createObjectStore(STORE_BLOB, { keyPath: "id" });
       }
@@ -137,8 +144,15 @@ export async function storeMedia(
   if (!response.ok) throw new Error(`[DeviceStorage] fetch ${fileUrl} → ${response.status}`);
   const raw = await response.arrayBuffer();
 
-  // 3. Encrypt and store
-  const { ivHex, ciphertextHex } = await encryptMedia(raw, mediaKey);
+  // 3. Parse the server's ciphertext
+  // The server stores the payload as "ivHex:ciphertextHex" (UTF-8 text)
+  const textPayload = new TextDecoder().decode(raw);
+  const [ivHex, ciphertextHex] = textPayload.split(":");
+
+  if (!ivHex || !ciphertextHex) {
+    throw new Error(`[DeviceStorage] Invalid encrypted payload format for ${fileUrl}`);
+  }
+
   const entry: BlobEntry = {
     id: fileUrl,
     ivHex,
@@ -155,8 +169,9 @@ export async function storeMedia(
     tx.onerror    = () => reject(tx.error);
   });
 
-  // 4. Return a fresh blob URL from the decrypted content
-  return URL.createObjectURL(new Blob([raw], { type: mimeType }));
+  // 4. Decrypt and return a fresh blob URL
+  const plain = await decryptMedia(ciphertextHex, mediaKey, ivHex);
+  return URL.createObjectURL(new Blob([plain], { type: mimeType }));
 }
 
 /** Remove a cached media entry (e.g. when message is deleted). */

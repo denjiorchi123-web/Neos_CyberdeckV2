@@ -13,7 +13,7 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { content, fileUrl, fileName, fileSize, mimeType, thumbnailUrl, mediaKey, type } = req.body;
+    const { content, fileUrl, fileName, fileSize, mimeType, thumbnailUrl, mediaKey, type, replyToId } = req.body;
     const { serverId, channelId } = req.query;
 
     if (!profile) return res.status(401).json({ error: "Unauthorized" });
@@ -71,6 +71,7 @@ export default async function handler(
         thumbnailUrl: thumbnailUrl ?? undefined,
         mediaKey:     mediaKey     ?? undefined,
         type:         type         ?? "TEXT",
+        replyToId:    replyToId    ?? undefined,
         channelId: channelId as string,
         memberId: member.id
       },
@@ -78,6 +79,15 @@ export default async function handler(
         member: {
           include: {
             profile: true
+          }
+        },
+        replyTo: {
+          include: {
+            member: {
+              include: {
+                profile: true
+              }
+            }
           }
         }
       }

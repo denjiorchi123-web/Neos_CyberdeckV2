@@ -151,9 +151,9 @@ export default function FilesPage() {
           </button>
         ) : (
           <button
-            onClick={() => window.history.back()}
+            onClick={() => window.location.href = "/"}
             className="p-1 -ml-1 rounded-lg hover:bg-zinc-800 text-indigo-400 hover:text-indigo-300 transition"
-            title="Go Back"
+            title="Go to Dashboard"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>

@@ -1,16 +1,35 @@
 const { createServer } = require("https");
+const http = require("http");
 const { parse } = require("url");
 const next = require("next");
 const fs = require("fs");
 const path = require("path");
 const cluster = require("cluster");
 const os = require("os");
+const { spawn, execSync } = require("child_process");
+
+// ── Spawn Mesh Daemon ────────────────────────────────────────────────────────
+// Ensure the python peer discovery and mesh diagnostic daemon is running.
+// We spawn it natively alongside the Next.js process.
+const pyBin = process.platform === "win32" ? "python" : "python3";
+function spawnMeshDaemon() {
+  const meshDaemon = spawn(pyBin, [path.join(__dirname, "scripts", "mesh_node.py")], { stdio: "inherit" });
+  
+  meshDaemon.on('error', (err) => {
+    console.log(`> [MESH DAEMON] Warning: Could not start python daemon. Ensure python is installed.`, err.message);
+  });
+
+  meshDaemon.on('exit', (code) => {
+    console.log(`> [MESH DAEMON] Exited with code ${code}. Restarting in 1s...`);
+    setTimeout(spawnMeshDaemon, 1000);
+  });
+}
+
 
 // ── Windows: self-elevate to Administrator ───────────────────────────────────
 // Network config (netsh) requires admin rights. If not elevated, re-launch
 // via PowerShell Start-Process -Verb RunAs which triggers a UAC prompt once.
 if (process.platform === "win32") {
-  const { execSync, spawn } = require("child_process");
   let elevated = false;
   try { execSync("net session", { stdio: "pipe" }); elevated = true; } catch {}
   if (!elevated) {
@@ -26,6 +45,28 @@ if (process.platform === "win32") {
     return; // stop the non-elevated process
   }
 }
+
+// ── Only spawn the daemon if we are the actual running server instance (elevated if Windows)
+spawnMeshDaemon();
+
+// Register the chat service with the mesh daemon after it boots up
+setTimeout(() => {
+  const postData = JSON.stringify({ service: "cyberdeck-chat", port: 3000 });
+  const req = http.request({
+    hostname: '127.0.0.1',
+    port: 5007,
+    path: '/register_service',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+  }, (res) => {
+    console.log(`> [MESH] Registered local chat service (status: ${res.statusCode})`);
+  });
+  req.on('error', (e) => {
+    console.error(`> [MESH] Failed to register service: ${e.message}`);
+  });
+  req.write(postData);
+  req.end();
+}, 3000);
 
 // Load SSL certificates
 const options = {
