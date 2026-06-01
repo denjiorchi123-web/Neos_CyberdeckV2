@@ -20,8 +20,6 @@ exec /usr/bin/chromium \
   --force-device-scale-factor=0.85 \
   --password-store=basic \
   --user-data-dir="$PROFILE_DIR" \
-  --ozone-platform=wayland \
-  --enable-features=UseOzonePlatform \
   --no-first-run \
   --no-default-browser-check \
   --disable-translate \
