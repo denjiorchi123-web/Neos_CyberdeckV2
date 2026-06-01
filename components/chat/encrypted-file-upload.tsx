@@ -42,7 +42,7 @@ export function EncryptedFileUpload({
     if (files.length === 0) return;
     const file = files[0];
     setError(null);
-    setProgress("Encrypting…");
+    setProgressText("Encrypting…");
 
     try {
       const buf      = await file.arrayBuffer();
