@@ -27,6 +27,16 @@ body {
   display: none;
 }
 
+.touch-scroll-rail {
+  overscroll-behavior-y: contain;
+  scroll-snap-type: y proximity;
+}
+
+.touch-scroll-rail > * {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
 button,
 [role="button"] {
   touch-action: manipulation;

@@ -13,9 +13,9 @@ export function NavigationFileManager() {
 
   return (
     <ActionTooltip side="right" align="center" label="File Manager">
-      <button onClick={() => router.push("/filemanager")} className="group flex items-center">
+      <button onClick={() => router.push("/filemanager")} className="group flex shrink-0 items-center">
         <div className={cn(
-          "flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden items-center justify-center bg-background dark:bg-neutral-700 group-hover:bg-zinc-500",
+          "flex shrink-0 mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden items-center justify-center bg-background dark:bg-neutral-700 group-hover:bg-zinc-500",
           active && "bg-zinc-500 text-white rounded-[16px]"
         )}>
           <FolderOpen className={cn(
