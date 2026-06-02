@@ -162,7 +162,7 @@ export default function FilesPage() {
         <div className="flex-1 flex items-center gap-x-2 overflow-hidden">
           {listing ? (
             // Breadcrumb
-            <div className="flex items-center gap-x-1 text-sm overflow-x-auto">
+            <div className="touch-scroll-x flex items-center gap-x-1 text-sm overflow-x-auto">
               <button
                 onClick={() => setListing(null)}
                 className="text-indigo-400 hover:text-indigo-300 shrink-0"

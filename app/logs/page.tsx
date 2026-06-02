@@ -187,7 +187,7 @@ export default function LogsPage() {
       ) : (
         <>
           {/* Log output */}
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="touch-scroll flex-1 overflow-y-auto px-4 py-4">
             {loading ? (
               <div className="flex items-center justify-center py-20 text-zinc-500">
                 <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…

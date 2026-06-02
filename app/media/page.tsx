@@ -232,7 +232,7 @@ export default function MediaPage() {
           </button>
         </div>
         {/* Category tabs */}
-        <div className="flex gap-x-1 overflow-x-auto pb-1">
+        <div className="touch-scroll-x flex gap-x-1 overflow-x-auto pb-1">
           {TABS.map(t => (
             <button
               key={t.id}

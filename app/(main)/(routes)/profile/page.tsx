@@ -185,7 +185,7 @@ export default function ProfilePage() {
   const initials  = (profile?.name ?? "?").charAt(0).toUpperCase();
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#313338] overflow-y-auto">
+    <div className="touch-scroll flex flex-col h-full bg-white dark:bg-[#313338] overflow-y-auto">
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
 
       {lightboxOpen && avatarSrc && !imgError && (

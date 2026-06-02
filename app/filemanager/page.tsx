@@ -245,7 +245,7 @@ export default function FileManagerPage() {
 
           {/* Breadcrumb */}
           {listing && (
-            <div className="flex items-center gap-x-1 text-xs flex-1 overflow-x-auto min-w-0">
+            <div className="touch-scroll-x flex items-center gap-x-1 text-xs flex-1 overflow-x-auto min-w-0">
               {listing.crumbs.map((c, i) => (
                 <React.Fragment key={c.path}>
                   {i > 0 && <ChevronRight className="h-3 w-3 text-zinc-700 shrink-0" />}
@@ -332,7 +332,7 @@ export default function FileManagerPage() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── File listing ─────────────────────────────────────────────────── */}
-        <div className={`flex flex-col ${editPath ? "w-1/2 border-r border-zinc-800" : "w-full"} overflow-y-auto`}>
+        <div className={`touch-scroll flex flex-col ${editPath ? "w-1/2 border-r border-zinc-800" : "w-full"} overflow-y-auto`}>
           {loading ? (
             <div className="flex items-center justify-center py-20 text-zinc-500">
               <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…

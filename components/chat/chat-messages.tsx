@@ -118,7 +118,7 @@ export function ChatMessages({
   return (
     <div
       ref={chatRef}
-      className="flex-1 flex flex-col-reverse py-4 overflow-y-auto"
+      className="touch-scroll flex-1 flex flex-col-reverse py-4 overflow-y-auto"
     >
       <div ref={bottomRef} />
       {data?.pages.map((group, index) => (

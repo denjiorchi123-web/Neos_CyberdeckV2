@@ -182,7 +182,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
             className="w-full bg-zinc-200 dark:bg-[#1e1f22] text-sm text-black dark:text-zinc-200 rounded-md pl-8 pr-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-zinc-500 transition-all"
           />
         </div>
-        <div className="flex items-center gap-x-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className="touch-scroll-x flex items-center gap-x-2 overflow-x-auto pb-1 scrollbar-none">
           <TabButton label="All" />
           <TabButton label="Unread" />
           <TabButton label="Groups" />
@@ -191,7 +191,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
           <TabButton label="Archived" />
         </div>
       </div>
-      <div className="flex-1 w-full overflow-y-auto scrollbar-hide">
+      <div className="touch-scroll flex-1 w-full overflow-y-auto scrollbar-hide">
       <div className="flex flex-col gap-y-[2px] p-2">
         {filteredChats.map((chat) => (
           <ContextMenu key={chat.id + chat.type}>

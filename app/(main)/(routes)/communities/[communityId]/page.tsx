@@ -49,7 +49,7 @@ export default async function CommunityIdPage({ params }: CommunityIdPageProps) 
         </div>
         {isAdmin && <CommunityHeaderAction community={community} />}
       </div>
-      <div className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-[#2b2d31] p-4">
+      <div className="touch-scroll flex-1 overflow-y-auto bg-zinc-50 dark:bg-[#2b2d31] p-4">
         
         {/* Announcements Tile */}
         {community.announcementsChannelId && (

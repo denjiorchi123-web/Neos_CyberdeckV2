@@ -17,13 +17,31 @@ body {
 .overflow-y-auto {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+  overscroll-behavior-y: contain;
 }
 
 .touch-scroll {
   scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .touch-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.touch-scroll-x,
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+}
+
+.touch-scroll-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.touch-scroll-x::-webkit-scrollbar {
   display: none;
 }
 
@@ -35,6 +53,12 @@ body {
 .touch-scroll-rail > * {
   flex: 0 0 auto;
   scroll-snap-align: start;
+}
+
+button,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
 button,
