@@ -9,6 +9,7 @@ import React, {
   useMemo,
 } from "react";
 import { io as ClientIO } from "socket.io-client";
+import { useModal } from "@/hooks/use-modal-store";
 
 type OnlineUser = {
   userId: string;
@@ -63,6 +64,7 @@ export const usePresence = () => useContext(PresenceContext);
 export const usePreferences = () => useContext(PreferencesContext);
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
+  const { onOpen } = useModal();
   const [socket,      setSocket]      = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
@@ -82,18 +84,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const s = new (ClientIO as any)(window.location.origin, {
+    // Resolve URL explicitly (avoids undefined origin issues in some headless environments)
+    const socketUrl = window.location.protocol + "//" + window.location.hostname + (window.location.port ? ":" + window.location.port : "");
+
+    const s = new (ClientIO as any)(socketUrl, {
       path:                  "/api/socket/io",
       addTrailingSlash:      false,
       reconnection:          true,
-      reconnectionAttempts:  3,
+      reconnectionAttempts:  Infinity,
       reconnectionDelay:     1000,
-      reconnectionDelayMax:  4000,
-      randomizationFactor:   0,
+      reconnectionDelayMax:  8000,
+      randomizationFactor:   0.5,
       timeout:               10000,
+      transports:            ["polling", "websocket"], // Explicitly start with polling to bypass strict WSS blocks, then upgrade
+    });
+
+    s.on("connect_error", (err: any) => {
+      console.error(`[SocketProvider] Connection error: ${err.message}`, err);
+    });
+
+    s.on("reconnect_attempt", (attempt: number) => {
+      console.log(`[SocketProvider] Reconnection attempt ${attempt}`);
     });
 
     const onConnect = async () => {
+      console.log("[SocketProvider] Connected successfully with ID:", s.id);
       setIsConnected(true);
       refreshPreferences();
     };
@@ -132,10 +147,33 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
+    s.on("mesh:pair-request", (data: { mac: string; hostname: string; ip: string }) => {
+      console.log("[SocketProvider] Received mesh:pair-request global event:", data);
+      onOpen("pairingRequest", { query: data });
+    });
+
     setSocket(s);
     fetchPresence();
     return () => s.disconnect();
-  }, [fetchPresence]);
+  }, [fetchPresence, onOpen]);
+
+  useEffect(() => {
+    let shownRequestId = "";
+    const pollIncomingRequests = async () => {
+      try {
+        const res = await fetch("/api/peers/requests", { cache: "no-store" });
+        if (!res.ok) return;
+        const [request] = await res.json();
+        if (!request || request.requestId === shownRequestId) return;
+        shownRequestId = request.requestId;
+        onOpen("pairingRequest", { query: request });
+      } catch {}
+    };
+
+    pollIncomingRequests();
+    const timer = setInterval(pollIncomingRequests, 3000);
+    return () => clearInterval(timer);
+  }, [onOpen]);
 
   // Memoize both context values so downstream only re-renders on actual changes
   const socketValue  = useMemo(() => ({ socket, isConnected }), [socket, isConnected]);

@@ -1,6 +1,6 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import { ChannelType } from "@/lib/db";
+import { ChannelType } from "@/lib/db-enums";
 
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";

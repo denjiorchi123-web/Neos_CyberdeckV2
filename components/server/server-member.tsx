@@ -1,7 +1,7 @@
 "use client";
 
 import { Member, Profile, Server } from "@prisma/client";
-import { MemberRole } from "@/lib/db";
+import { MemberRole } from "@/lib/db-enums";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 

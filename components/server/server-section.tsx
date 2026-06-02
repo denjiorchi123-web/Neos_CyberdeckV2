@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChannelType, MemberRole } from "@/lib/db";
+import { ChannelType, MemberRole } from "@/lib/db-enums";
 import { Plus, Settings } from "lucide-react";
 
 import { ServerWithMembersWithProfiles } from "@/types";

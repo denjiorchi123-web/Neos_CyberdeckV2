@@ -1,10 +1,6 @@
 #!/bin/sh
 set -e
 
-# Ensure mesh DB directory exists and is writable for persistence
-mkdir -p /var/lib/mesh
-chmod 777 /var/lib/mesh
-
 cd /opt/cyberdeck
 
 if [ ! -f ssl/server.cert ]; then

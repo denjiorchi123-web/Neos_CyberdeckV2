@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Member, Profile } from "@prisma/client";
-import { MemberRole } from "@/lib/db";
+import { MemberRole } from "@/lib/db-enums";
 import {
   Edit, FileIcon, ShieldAlert, ShieldCheck, Trash, Check, CheckCheck,
   PhoneMissed, PhoneCall, MapPin, User, Lock, Play, Pause, X,
@@ -194,7 +194,7 @@ function LightboxVideoPlayer({ src }: { src: string }) {
           }}
         >
           <div className="w-full h-2.5 bg-white/20 rounded-full relative hover:h-3 transition-all">
-            <div 
+            <div
               className="absolute top-0 left-0 bottom-0 bg-indigo-500 rounded-full"
               style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
             />
@@ -233,9 +233,9 @@ function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt
     >
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-[1000]"
+        className="absolute top-4 left-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition z-[1000]"
       >
-        <X className="h-6 w-6" />
+        <X className="h-5 w-5" /> Back
       </button>
       <button
         onClick={async (e) => {
@@ -450,6 +450,8 @@ function ChatItemInner({
   const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxType, setLightboxType] = useState<"image" | "video">("image");
+  const [lightboxSrc, setLightboxSrc]   = useState<string | null>(null);
+  const [lightboxAlt, setLightboxAlt]   = useState<string>("");
   const [imgError,     setImgError]     = useState(false);
   const { onOpen }  = useModal();
   const params      = useParams();
@@ -570,8 +572,8 @@ function ChatItemInner({
 
   return (
     <>
-      {lightboxOpen && resolvedUrl && (
-        <MediaLightbox src={resolvedUrl} alt={fileName ?? content} type={lightboxType} onClose={() => setLightboxOpen(false)} />
+      {lightboxOpen && lightboxSrc && (
+        <MediaLightbox src={lightboxSrc} alt={lightboxAlt} type={lightboxType} onClose={() => { setLightboxOpen(false); setLightboxSrc(null); }} />
       )}
 
       <ContextMenu>
@@ -588,7 +590,17 @@ function ChatItemInner({
           >
             <div className={cn("flex max-w-[80%] gap-x-3", isOwner ? "flex-row-reverse" : "flex-row")}>
           {!isOwner && (
-            <div className="shrink-0 mt-1">
+            <div
+              className="shrink-0 mt-1 cursor-pointer hover:opacity-80 transition"
+              onClick={() => {
+                if (member.profile.imageUrl) {
+                  setLightboxSrc(member.profile.imageUrl);
+                  setLightboxAlt(member.profile.name);
+                  setLightboxType("image");
+                  setLightboxOpen(true);
+                }
+              }}
+            >
               <UserAvatar src={member.profile.imageUrl} className="h-10 w-10" />
             </div>
           )}
@@ -772,7 +784,7 @@ function ChatItemInner({
                           : "w-full max-w-[280px] rounded-lg"
                       )}
                       loading="lazy"
-                      onClick={() => { setLightboxType("image"); setLightboxOpen(true); }}
+                      onClick={() => { setLightboxSrc(resolvedUrl); setLightboxAlt(fileName ?? content); setLightboxType("image"); setLightboxOpen(true); }}
                       onError={() => setImgError(true)}
                     />
                     {/* Download overlay on hover */}

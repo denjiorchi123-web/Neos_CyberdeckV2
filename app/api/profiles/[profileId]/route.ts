@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { currentProfile } from "@/lib/current-profile";
 
 /**
  * PATCH /api/profiles/[profileId]
@@ -10,6 +11,11 @@ export async function PATCH(
   { params }: { params: { profileId: string } }
 ) {
   try {
+    const me = await currentProfile();
+    if (!me || me.id !== params.profileId) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     const { name, email, imageUrl } = await req.json();
 
     if (!params.profileId) return new NextResponse("Profile ID missing", { status: 400 });
@@ -35,6 +41,11 @@ export async function DELETE(
   { params }: { params: { profileId: string } }
 ) {
   try {
+    const me = await currentProfile();
+    if (!me || me.id !== params.profileId) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     if (!params.profileId) return new NextResponse("Profile ID missing", { status: 400 });
 
     const profile = await db.profile.delete({

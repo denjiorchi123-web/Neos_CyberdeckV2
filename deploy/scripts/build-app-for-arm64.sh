@@ -20,7 +20,6 @@ mkdir -p "$STAGE_DIR/.next"
 cp -a .next/static "$STAGE_DIR/.next/"
 cp -a public "$STAGE_DIR/" || true
 cp -a prisma "$STAGE_DIR/"
-cp -a backend "$STAGE_DIR/"
 cp -a deploy "$STAGE_DIR/"
 cp server.js "$STAGE_DIR/"
 
@@ -28,7 +27,6 @@ cat > "$STAGE_DIR/.env" << 'ENVEOF'
 DATABASE_URL="file:./prisma/dev.db?journal_mode=WAL"
 REDIS_URL=redis://127.0.0.1:6379
 NEXT_PUBLIC_SITE_URL=https://localhost:3000
-NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
 CYBERDECK_HOME=/opt/cyberdeck
 ENVEOF
 

@@ -1,7 +1,7 @@
 [Unit]
 Description=CyberDeck Web
-After=network.target redis-cyberdeck.service cyberdeck-backend.service
-Requires=redis-cyberdeck.service cyberdeck-backend.service
+After=network.target redis-cyberdeck.service
+Requires=redis-cyberdeck.service
 
 [Service]
 Type=simple

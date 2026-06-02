@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, statSync } from "fs";
-import { normalize, sep } from "path";
+import { currentProfile } from "@/lib/current-profile";
+import { resolveFileManagerPath } from "@/lib/file-manager-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_EDIT_SIZE = 2 * 1024 * 1024; // 2 MB — above this we refuse to load into editor
 
-function resolvePath(raw: string | null): string | null {
-  if (!raw) return null;
-  const abs = normalize(raw);
-  if (abs.includes(".." + sep)) return null;
-  return abs;
-}
-
 // GET — read file as text
 export async function GET(req: NextRequest) {
-  const path = resolvePath(req.nextUrl.searchParams.get("path"));
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const path = resolveFileManagerPath(req.nextUrl.searchParams.get("path"));
   if (!path) return NextResponse.json({ error: "Invalid path" }, { status: 400 });
 
   try {
@@ -34,11 +31,14 @@ export async function GET(req: NextRequest) {
 
 // PUT — write file content
 export async function PUT(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { path: string; content: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const path = resolvePath(body.path ?? null);
+  const path = resolveFileManagerPath(body.path ?? null);
   if (!path) return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   if (typeof body.content !== "string") {
     return NextResponse.json({ error: "content must be a string" }, { status: 400 });

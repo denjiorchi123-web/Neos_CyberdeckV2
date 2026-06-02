@@ -58,7 +58,7 @@ export function ForwardMessageModal() {
         thumbnailUrl: message.thumbnailUrl,
         mediaKey: message.mediaKey,
         type: message.type,
-        isForwarded: true // could be handled by backend if schema supports it
+        isForwarded: true // Preserve forwarding metadata when the schema supports it.
       };
 
       if (dest.type === "channel") {

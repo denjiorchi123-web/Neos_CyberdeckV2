@@ -1,3 +1,4 @@
+import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
 import { MemberRole } from "@/lib/db";
 
@@ -5,6 +6,7 @@ import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
+import { publicProfileSelect } from "@/lib/public-profile-select";
 
 export default async function handler(
   req: NextApiRequest,
@@ -68,7 +70,7 @@ export default async function handler(
       include: {
         member: {
           include: {
-            profile: true
+            profile: { select: publicProfileSelect }
           }
         }
       }
@@ -93,7 +95,7 @@ export default async function handler(
           deleted: true
         },
         include: {
-          member: { include: { profile: true } }
+          member: { include: { profile: { select: publicProfileSelect } } }
         }
       });
     }
@@ -117,7 +119,7 @@ export default async function handler(
         where: { id: messageId as string },
         data: updateData,
         include: {
-          member: { include: { profile: true } }
+          member: { include: { profile: { select: publicProfileSelect } } }
         }
       });
     }
@@ -132,6 +134,7 @@ export default async function handler(
     }
 
     const updateKey = `chat:${channelId}:messages:update`;
+    if (!res.socket.server.io) { ioHandler(req, res); }
     res?.socket?.server?.io?.emit(updateKey, message);
 
     return res.status(200).json(message);

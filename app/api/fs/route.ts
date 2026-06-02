@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readdirSync, statSync, rmSync } from "fs";
-import { join, normalize, sep } from "path";
+import { join } from "path";
+import { currentProfile } from "@/lib/current-profile";
+import { resolveFileManagerPath } from "@/lib/file-manager-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function resolvePath(raw: string | null): string | null {
-  if (!raw) return null;
-  const abs = normalize(raw);
-  if (abs.includes(".." + sep)) return null;
-  return abs;
-}
 
 function mimeGroup(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -34,8 +29,11 @@ function humanSize(bytes: number): string {
 
 // GET — list directory
 export async function GET(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const raw  = req.nextUrl.searchParams.get("path");
-  const path = resolvePath(raw);
+  const path = resolveFileManagerPath(raw);
   if (!path) return NextResponse.json({ error: "Invalid path" }, { status: 400 });
 
   try {
@@ -85,8 +83,11 @@ export async function GET(req: NextRequest) {
 
 // DELETE — remove file or directory (recursive)
 export async function DELETE(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const raw  = req.nextUrl.searchParams.get("path");
-  const path = resolvePath(raw);
+  const path = resolveFileManagerPath(raw);
   if (!path) return NextResponse.json({ error: "Invalid path" }, { status: 400 });
 
   // Guard: never delete filesystem roots

@@ -16,7 +16,6 @@ export function EditNetworkConfigModal({ isOpen, onClose, onSaved }: EditNetwork
   const [ip, setIp] = useState("");
   const [beaconPort, setBeaconPort] = useState("5005");
   const [controlPort, setControlPort] = useState("5006");
-  const [apiPort, setApiPort] = useState("5007");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -27,7 +26,6 @@ export function EditNetworkConfigModal({ isOpen, onClose, onSaved }: EditNetwork
           if (data.manual_ip) setIp(data.manual_ip);
           if (data.beacon_port) setBeaconPort(data.beacon_port.toString());
           if (data.control_port) setControlPort(data.control_port.toString());
-          if (data.api_port) setApiPort(data.api_port.toString());
         })
         .catch(console.error);
     }
@@ -39,8 +37,7 @@ export function EditNetworkConfigModal({ isOpen, onClose, onSaved }: EditNetwork
       const config = {
         manual_ip: ip || null,
         beacon_port: parseInt(beaconPort) || 5005,
-        control_port: parseInt(controlPort) || 5006,
-        api_port: parseInt(apiPort) || 5007
+        control_port: parseInt(controlPort) || 5006
       };
       await fetch("/api/network/config", {
         method: "POST",
@@ -76,7 +73,7 @@ export function EditNetworkConfigModal({ isOpen, onClose, onSaved }: EditNetwork
               onChange={(e) => setIp(e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="uppercase text-xs font-bold text-zinc-500">Beacon Port</Label>
               <Input 
@@ -95,16 +92,6 @@ export function EditNetworkConfigModal({ isOpen, onClose, onSaved }: EditNetwork
                 className="bg-zinc-900/50 border-0 focus-visible:ring-0 text-white" 
                 value={controlPort}
                 onChange={(e) => setControlPort(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="uppercase text-xs font-bold text-zinc-500">API Port</Label>
-              <Input 
-                type="number"
-                disabled={isLoading}
-                className="bg-zinc-900/50 border-0 focus-visible:ring-0 text-white" 
-                value={apiPort}
-                onChange={(e) => setApiPort(e.target.value)}
               />
             </div>
           </div>

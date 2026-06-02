@@ -6,6 +6,30 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { NextApiResponseServerIo } from "@/types";
 import { redis, redisPub, redisSub } from "@/lib/redis";
 import { db } from "@/lib/db";
+import { publicProfileSelect } from "@/lib/public-profile-select";
+
+function readCookie(cookieHeader: string | undefined, name: string): string | null {
+  if (!cookieHeader) return null;
+
+  for (const part of cookieHeader.split(";")) {
+    const [key, ...value] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(value.join("="));
+  }
+
+  return null;
+}
+
+async function authenticatedProfileId(socket: any): Promise<string | null> {
+  const userId = readCookie(socket.request?.headers?.cookie, "cyberdeck-user-id");
+  if (!userId) return null;
+
+  const profile = await db.profile.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  return profile?.id ?? null;
+}
 
 // ── Terminal PTY helper ───────────────────────────────────────────────────────
 // Spawns a shell via node-pty and pipes i/o over Socket.io events.
@@ -109,14 +133,21 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
     io.adapter(createAdapter(redisPub, redisSub));
 
     // ── Connection Handler ─────────────────────────────────────
-    io.on("connection", (socket) => {
+    io.on("connection", async (socket) => {
+      socket.data.authenticatedProfileId = await authenticatedProfileId(socket);
+
+      // ── Pending Pair-Request Replay ─────────────────────────
+      // The kiosk browser connects AFTER the mesh pair_request event fires
+      // (Pi boots fast, browser loads slow). This replays any PENDING requests
+      // so the modal always shows, regardless of timing.
       // ── Chat Rooms ─────────────────────────────────────────
       socket.on("chat:join", (chatId: string) => {
         socket.join(chatId);
       });
 
       // ── Presence System ────────────────────────────────────
-      socket.on("presence:identify", async (userId: string) => {
+      socket.on("presence:identify", async () => {
+        const userId = socket.data.authenticatedProfileId;
         if (!userId) return;
         socket.data.userId = userId;
 
@@ -160,7 +191,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
                  }
                },
                include: {
-                 member: { include: { profile: true } }
+                 member: { include: { profile: { select: publicProfileSelect } } }
                }
              });
 
@@ -448,6 +479,11 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       let pty: ReturnType<typeof spawnTerminal> = null;
 
       socket.on("terminal:create", ({ cols, rows }: { cols: number; rows: number }) => {
+        if (!socket.data.authenticatedProfileId) {
+          socket.emit("terminal:data", "\r\nTerminal unavailable: authentication required.\r\n");
+          return;
+        }
+
         if (pty) { try { pty.kill(); } catch {} }
         pty = spawnTerminal(socket, cols || 80, rows || 24);
       });
@@ -511,7 +547,10 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
     res.socket.server.io = io;
   }
 
-  res.end();
+  if (req.url?.includes("/api/socket/io")) {
+    console.log(`[Socket:Route] Hit ${req.method} ${req.url} (socket connected: ${!!res.socket?.server?.io})`);
+    res.end();
+  }
 };
 
 /**

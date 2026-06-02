@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { MemberRole } from "@/lib/db";
+import { MemberRole } from "@/lib/db-enums";
 
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";

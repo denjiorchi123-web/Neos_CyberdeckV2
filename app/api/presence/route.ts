@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/presence
  * Returns all currently online users from Redis.
@@ -9,7 +11,7 @@ import { redis } from "@/lib/redis";
 export async function GET() {
   try {
     // Get all online user IDs
-    const onlineUserIds = await redis.smembers("presence:online");
+    const onlineUserIds = (await redis.smembers("presence:online")) ?? [];
 
     // Fetch details for each user
     const users = await Promise.all(

@@ -1,0 +1,117 @@
+import "server-only";
+
+import os from "os";
+import { randomUUID } from "crypto";
+import { db } from "@/lib/db";
+import { getLocalIp, getLocalNodeId, MESH_CONTROL_PORT } from "@/lib/mesh-identity";
+import { sendMeshControl } from "@/lib/mesh-control";
+
+const REQUEST_TTL_MS = 5 * 60 * 1000;
+
+export async function sendConnectionRequest(peerNodeId: string, message?: string) {
+  const peer = await db.meshPeer.findUnique({ where: { macAddress: peerNodeId } });
+  if (!peer?.ipAddress) throw new Error("Peer must be discovered before requesting a connection");
+  if (peer.status === "BLOCKED") throw new Error("Blocked peers cannot receive requests");
+
+  const requestId = randomUUID();
+  const localNodeId = getLocalNodeId();
+  const expiresAt = new Date(Date.now() + REQUEST_TTL_MS);
+
+  await db.$transaction([
+    db.connectionRequest.create({
+      data: {
+        requestId,
+        fromNodeId: localNodeId,
+        toNodeId: peerNodeId,
+        direction: "OUTGOING",
+        status: "PENDING",
+        message,
+        expiresAt,
+      },
+    }),
+    db.meshPeer.update({
+      where: { macAddress: peerNodeId },
+      data: { status: "PENDING_OUTGOING", lastHandshake: new Date() },
+    }),
+  ]);
+
+  await sendMeshControl(peer.ipAddress, {
+    type: "connection_request",
+    requestId,
+    fromNodeId: localNodeId,
+    fromHostname: os.hostname(),
+    fromPublicName: os.hostname(),
+    fromIp: getLocalIp(),
+    message: message || `${os.hostname()} wants to connect`,
+    expiresAt: expiresAt.getTime(),
+  });
+
+  return { requestId, expiresAt };
+}
+
+export async function respondToConnectionRequest(
+  requestId: string,
+  action: "ACCEPTED" | "DECLINED" | "IGNORED" | "BLOCKED",
+) {
+  const request = await db.connectionRequest.findUnique({ where: { requestId } });
+  if (!request || request.direction !== "INCOMING") throw new Error("Incoming request not found");
+  if (request.status !== "PENDING") throw new Error("Request has already been answered");
+  if (request.expiresAt.getTime() < Date.now()) throw new Error("Request has expired");
+
+  const peer = await db.meshPeer.findUnique({ where: { macAddress: request.fromNodeId } });
+  if (!peer?.ipAddress) throw new Error("Peer address is unavailable");
+
+  const peerStatus =
+    action === "ACCEPTED" ? "TRUSTED" :
+    action === "BLOCKED" ? "BLOCKED" :
+    action === "DECLINED" ? "DECLINED" : "UNKNOWN";
+
+  const operations: any[] = [
+    db.connectionRequest.update({
+      where: { requestId },
+      data: { status: action, respondedAt: new Date() },
+    }),
+    db.meshPeer.update({
+      where: { macAddress: request.fromNodeId },
+      data: { status: peerStatus, lastHandshake: new Date() },
+    }),
+    db.meshEvent.create({
+      data: {
+        originNodeId: getLocalNodeId(),
+        entityType: "connection_request",
+        entityId: requestId,
+        operation: `handshake_${action.toLowerCase()}`,
+        payloadJson: JSON.stringify({ peerNodeId: request.fromNodeId, action }),
+      },
+    }),
+  ];
+
+  if (action === "ACCEPTED") {
+    operations.push(
+      db.peerSession.create({
+        data: {
+          peerNodeId: request.fromNodeId,
+          state: "CONNECTED",
+          lastConnected: new Date(),
+          transportIp: peer.ipAddress,
+          transportPort: MESH_CONTROL_PORT,
+        },
+      }),
+      db.syncState.upsert({
+        where: { peerNodeId: request.fromNodeId },
+        update: {},
+        create: { peerNodeId: request.fromNodeId },
+      }),
+    );
+  }
+
+  await db.$transaction(operations);
+  await sendMeshControl(peer.ipAddress, {
+    type: "connection_response",
+    requestId,
+    fromNodeId: getLocalNodeId(),
+    status: action,
+  });
+
+  return { requestId, status: action };
+}

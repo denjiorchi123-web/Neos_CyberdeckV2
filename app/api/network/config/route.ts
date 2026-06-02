@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { currentProfile } from "@/lib/current-profile";
 
 const configPath = path.join(process.cwd(), "mesh_config.json");
 
 export async function GET() {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   try {
     if (fs.existsSync(configPath)) {
       const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
@@ -18,15 +22,13 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const profile = await currentProfile();
+    if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await req.json();
     fs.writeFileSync(configPath, JSON.stringify(body, null, 2));
     
-    // Auto-restart the python daemon so changes take effect
-    try {
-      await fetch("http://127.0.0.1:5007/restart", { method: "POST" }).catch(() => {});
-    } catch {}
-
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, restartRequired: true });
   } catch (error) {
     return NextResponse.json({ error: "Failed to write config" }, { status: 500 });
   }

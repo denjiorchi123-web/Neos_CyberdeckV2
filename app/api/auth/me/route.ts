@@ -21,8 +21,15 @@ export async function GET() {
       }
     });
 
+    const {
+      password: _password,
+      pinHash: _pinHash,
+      securityAnswer: _securityAnswer,
+      ...publicProfile
+    } = profile;
+
     const responseData = {
-      ...profile,
+      ...publicProfile,
       mutedChats: livePrefs?.mutedChats || [],
       blockedUsers: livePrefs?.blockedUsers || [],
       blockedBy: livePrefs?.blockedBy || [],

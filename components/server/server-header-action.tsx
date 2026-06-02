@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MemberRole } from "@/lib/db";
+import { MemberRole } from "@/lib/db-enums";
 import {
   LogOutIcon,
   PlusCircle,

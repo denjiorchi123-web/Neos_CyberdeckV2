@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
+import { currentProfile } from "@/lib/current-profile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +92,9 @@ function applyLinux(iface: string, mode: "static" | "dhcp", ip?: string, prefix?
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { iface: string; mode: "static" | "dhcp"; ip?: string; prefix?: number; gateway?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }

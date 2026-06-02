@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Check, CheckCheck, Megaphone, Users, User, Trash, Edit, Phone, Video, Archive, ArchiveRestore, Pin, PinOff, MessageSquare, Lock, BellOff } from "lucide-react";
 import { useChatFilterStore } from "@/hooks/use-chat-filter-store";
@@ -192,7 +191,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
           <TabButton label="Archived" />
         </div>
       </div>
-      <ScrollArea className="flex-1 w-full">
+      <div className="flex-1 w-full overflow-y-auto scrollbar-hide">
       <div className="flex flex-col gap-y-[2px] p-2">
         {filteredChats.map((chat) => (
           <ContextMenu key={chat.id + chat.type}>
@@ -386,7 +385,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
           </div>
         )}
       </div>
-    </ScrollArea>
+    </div>
     </div>
   );
 }

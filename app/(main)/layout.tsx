@@ -24,13 +24,21 @@ export default async function MainLayout({
   });
 
   if (defaultServer && defaultServer.members.length === 0) {
-    await db.member.create({
-      data: {
-        profileId: profile.id,
-        serverId: defaultServer.id,
-        role: "GUEST"
+    try {
+      await db.member.create({
+        data: {
+          profileId: profile.id,
+          serverId: defaultServer.id,
+          role: "GUEST"
+        }
+      });
+    } catch (error: any) {
+      if (error?.code === "P2002" || error?.code === "P2003") {
+        console.log("[MAIN_LAYOUT] Swallowing concurrent member creation error:", error.code);
+      } else {
+        throw error;
       }
-    });
+    }
   }
 
   return (

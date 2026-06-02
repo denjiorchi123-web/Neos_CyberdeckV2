@@ -1,23 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mkdirSync, writeFileSync, existsSync } from "fs";
-import { normalize, sep } from "path";
+import { currentProfile } from "@/lib/current-profile";
+import { resolveFileManagerPath } from "@/lib/file-manager-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function resolvePath(raw: string | null): string | null {
-  if (!raw) return null;
-  const abs = normalize(raw);
-  if (abs.includes(".." + sep)) return null;
-  return abs;
-}
-
 export async function POST(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { path: string; type: "file" | "dir" };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const path = resolvePath(body.path ?? null);
+  const path = resolveFileManagerPath(body.path ?? null);
   if (!path) return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   if (body.type !== "file" && body.type !== "dir") {
     return NextResponse.json({ error: 'type must be "file" or "dir"' }, { status: 400 });

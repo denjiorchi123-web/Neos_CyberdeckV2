@@ -3,6 +3,7 @@ import { DirectMessage } from "@prisma/client";
 
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
+import { publicProfileSelect } from "@/lib/public-profile-select";
 
 const MESSAGES_BATCH = 30;
 
@@ -30,11 +31,11 @@ export async function GET(req: Request) {
 
     const includeConfig = {
       member: {
-        include: { profile: true }
+        include: { profile: { select: publicProfileSelect } }
       },
       replyTo: {
         include: {
-          member: { include: { profile: true } }
+          member: { include: { profile: { select: publicProfileSelect } } }
         }
       }
     };

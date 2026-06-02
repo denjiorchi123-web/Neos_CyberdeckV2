@@ -1,3 +1,4 @@
+import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
@@ -79,6 +80,7 @@ export default async function handler(
 
     const channelKey = `chat:${broadcastId}:messages`;
 
+    if (!res.socket.server.io) { ioHandler(req, res); }
     res?.socket?.server?.io?.to(broadcastId as string).emit(channelKey, messageWithSpoofedMember);
 
     return res.status(200).json(message);

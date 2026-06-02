@@ -4,6 +4,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { execSync } from "child_process";
 import { ensureDirs } from "@/lib/media-dirs";
+import { currentProfile } from "@/lib/current-profile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ function tail(text: string, n: number): string[] {
 function systemLogs(): string[] {
   try {
     const out = execSync(
-      "journalctl -u cyberdeck-web -u cyberdeck-backend -u cyberdeck-kiosk --no-pager -n 100 --output=short-iso 2>/dev/null",
+      "journalctl -u cyberdeck-web -u cyberdeck-kiosk --no-pager -n 100 --output=short-iso 2>/dev/null",
       { timeout: 3000, encoding: "utf8" }
     );
     return out.split("\n").filter(Boolean).map(l => `[SYSTEM] ${l}`);
@@ -40,6 +41,9 @@ function diskInfo(): string[] {
 }
 
 export async function GET(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   ensureDirs();
 
   const source = req.nextUrl.searchParams.get("source") ?? "app";
@@ -80,6 +84,9 @@ export async function GET(req: NextRequest) {
 // DELETE — clear the app log
 export async function DELETE() {
   try {
+    const profile = await currentProfile();
+    if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { writeFileSync } = await import("fs");
     writeFileSync(LOG_FILE, "", "utf8");
     return NextResponse.json({ success: true });

@@ -1,9 +1,11 @@
+import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
+import { publicProfileSelect } from "@/lib/public-profile-select";
 
 export default async function handler(
   req: NextApiRequest,
@@ -30,8 +32,8 @@ export default async function handler(
         ]
       },
       include: {
-        memberOne: { include: { profile: true } },
-        memberTwo: { include: { profile: true } }
+        memberOne: { include: { profile: { select: publicProfileSelect } } },
+        memberTwo: { include: { profile: { select: publicProfileSelect } } }
       }
     });
 
@@ -75,7 +77,8 @@ export default async function handler(
       
       messagesToUpdate.forEach((msg) => {
         const updatedMsg = { ...msg, status: "READ", member: msg.memberId === conversation.memberOneId ? conversation.memberOne : conversation.memberTwo };
-        res?.socket?.server?.io?.to(conversationId as string).emit(updateKey, updatedMsg);
+        if (!res.socket.server.io) { ioHandler(req, res); }
+    res?.socket?.server?.io?.to(conversationId as string).emit(updateKey, updatedMsg);
       });
 
       console.log(`[READ_RECEIPTS] Marked ${messagesToUpdate.length} messages as READ in ${conversationId}`);

@@ -34,6 +34,9 @@ exec /usr/bin/chromium \
   --use-fake-ui-for-media-stream \
   --ignore-certificate-errors \
   --unsafely-treat-insecure-origin-as-secure="$BASE_URL" \
+  --disable-web-security \
+  --allow-insecure-localhost \
+  --allow-running-insecure-content \
   --touch-events=enabled \
   --enable-multitouch \
   --no-sandbox \

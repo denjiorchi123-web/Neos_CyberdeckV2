@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Channel, Server } from "@prisma/client";
-import { ChannelType, MemberRole } from "@/lib/db";
+import { ChannelType, MemberRole } from "@/lib/db-enums";
 import { Edit, Hash, Lock, Mic, Trash, Video } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 

@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Camera, Check, AlertCircle, Loader2, Lock, LogOut,
-  Pencil, Save, Trash2, User, X, Eye, EyeOff, ShieldAlert,
+  Pencil, Save, Trash2, User, X, Eye, EyeOff, ShieldAlert, ChevronLeft
 } from "lucide-react";
 import { format } from "date-fns";
 import axios from "axios";
@@ -65,6 +65,9 @@ export default function ProfilePage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting,      setDeleting]      = useState(false);
 
+  // Lightbox
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   const notify = (ok: boolean, text: string) => setToast({ ok, text });
 
   useEffect(() => {
@@ -101,6 +104,7 @@ export default function ProfilePage() {
       setAvatarPreview(null);
       setImgError(false);
       notify(true, "Avatar updated");
+      router.refresh(); // Refresh layout so the sidebar avatar updates
     } catch (e: any) {
       setAvatarPreview(null);
       notify(false, e.message ?? "Upload failed");
@@ -184,11 +188,30 @@ export default function ProfilePage() {
     <div className="flex flex-col h-full bg-white dark:bg-[#313338] overflow-y-auto">
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
 
+      {lightboxOpen && avatarSrc && !imgError && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/90 backdrop-blur-sm" onClick={() => setLightboxOpen(false)}>
+          <button className="absolute top-4 left-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition z-[1000]">
+            <X className="h-5 w-5" /> Back
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={avatarSrc} alt={profile?.name || "Profile Photo"} className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain shadow-2xl" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
       <div className="max-w-2xl mx-auto w-full px-6 py-10 space-y-8">
 
         {/* ── Header ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-black dark:text-white">Account Settings</h1>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.back()}
+              className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700/50 text-zinc-500 dark:text-zinc-400 transition"
+              title="Go back"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-2xl font-bold text-black dark:text-white">Account Settings</h1>
+          </div>
           <button
             onClick={async () => { await axios.delete("/api/auth"); window.location.href = "/sign-in"; }}
             className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-rose-400 transition px-3 py-1.5 rounded-lg hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20"
@@ -207,21 +230,37 @@ export default function ProfilePage() {
                 <img 
                   src={avatarSrc} 
                   alt={profile?.name} 
-                  className="h-20 w-20 rounded-full object-cover ring-4 ring-indigo-500/30" 
+                  onClick={() => setLightboxOpen(true)}
+                  className="h-20 w-20 rounded-full object-cover ring-4 ring-indigo-500/30 cursor-pointer hover:opacity-90 transition"
                   onError={() => setImgError(true)}
                 />
               ) : (
-                <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white ring-4 ring-indigo-500/30">
+                <div className="h-20 w-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white ring-4 ring-indigo-500/30 cursor-pointer" onClick={() => setLightboxOpen(true)}>
                   {initials}
                 </div>
               )}
               <button
-                onClick={() => avatarInputRef.current?.click()}
+                onClick={(e) => { e.stopPropagation(); avatarInputRef.current?.click(); }}
                 disabled={uploading}
-                className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                title="Change photo"
               >
                 {uploading ? <Loader2 className="h-6 w-6 text-white animate-spin" /> : <Camera className="h-6 w-6 text-white" />}
               </button>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-black dark:text-white">{profile?.name}</p>
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={uploading}
+                className="mt-4 px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-sm font-semibold rounded-lg flex items-center gap-2 transition"
+              >
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                {uploading ? "Uploading..." : "Change Photo"}
+              </button>
+              <p className="mt-2 text-xs text-zinc-500">
+                Click the photo to view it full-screen.
+              </p>
               <input
                 ref={avatarInputRef}
                 type="file"

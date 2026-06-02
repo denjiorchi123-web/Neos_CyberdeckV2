@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Cpu, Database, Network, Lock, Zap, Users, Cable, Unplug } from 'lucide-react';
 import { NodeMap } from './node-map';
-import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSocket, usePresence } from '@/components/providers/socket-provider';
 
@@ -39,25 +38,20 @@ export const CyberDashboard = () => {
     nodes: []
   });
 
-  // Fetch status from FastAPI backend
+  // Fetch topology from the local Next.js API backed by this Pi's SQLite database.
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-        const response = await axios.get(`${backendUrl}/api/status`);
-        setStatus(response.data);
-      } catch (error) {
-        // Fallback for demo/dev without backend
-        setStatus(prev => ({
-          ...prev,
-          cpu: `${Math.floor(Math.random() * 20) + 10}%`,
-          memory: `${Math.floor(Math.random() * 15) + 30}%`,
-          nodes: [
-            { id: 1, name: "DECK-01", status: "online", ip: "10.0.0.1" },
-            { id: 2, name: "DECK-02", status: "online", ip: "10.0.0.2" },
-            { id: 3, name: "DECK-03", status: "offline", ip: "10.0.0.3" },
-          ]
+        const peers = await fetch("/api/network/peers", { cache: "no-store" }).then(res => res.json());
+        const nodes = Object.entries(peers).map(([mac, peer]: [string, any], index) => ({
+          id: index + 1,
+          name: peer.hostname || mac.slice(0, 8),
+          status: "online",
+          ip: peer.ip || "",
         }));
+        setStatus({ cpu: "0%", memory: "0%", nodes });
+      } catch (error) {
+        setStatus({ cpu: "0%", memory: "0%", nodes: [] });
       }
     };
 

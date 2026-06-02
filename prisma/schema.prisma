@@ -20,14 +20,14 @@ model Profile {
   password String @default("")
 
   isOnline DateTime?
-  lastSeen DateTime @default(now())
+  lastSeen DateTime  @default(now())
 
   servers  Server[]
   members  Member[]
   channels Channel[]
 
-  communities Community[]
-  communityMembers CommunityMember[]
+  communities       Community[]
+  communityMembers  CommunityMember[]
   broadcastChannels BroadcastChannel[]
   broadcastFollows  BroadcastFollower[]
 
@@ -68,8 +68,8 @@ model Server {
 }
 
 model Member {
-  id   String     @id @default(uuid())
-  role String     @default("GUEST")
+  id   String @id @default(uuid())
+  role String @default("GUEST")
 
   profileId String
   profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
@@ -92,9 +92,9 @@ model Member {
 }
 
 model Channel {
-  id   String      @id @default(uuid())
+  id   String @id @default(uuid())
   name String
-  type String      @default("TEXT")
+  type String @default("TEXT")
 
   profileId String
   profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
@@ -121,7 +121,7 @@ model Message {
   fileName     String?
   mimeType     String?
   thumbnailUrl String?
-  mediaKey     String?  // AES-GCM key (hex) for client-side E2E media decryption
+  mediaKey     String? // AES-GCM key (hex) for client-side E2E media decryption
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -129,15 +129,15 @@ model Message {
   channelId String
   channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
-  deleted            Boolean @default(false)
-  deletedForEveryone Boolean @default(false)
-  edited             Boolean @default(false)
+  deleted            Boolean   @default(false)
+  deletedForEveryone Boolean   @default(false)
+  edited             Boolean   @default(false)
   editedAt           DateTime?
 
-  replyToId          String?
-  replyTo            Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies            Message[] @relation("MessageReplies")
-  isPinned           Boolean   @default(false)
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("MessageReplies")
+  isPinned  Boolean   @default(false)
 
   status      String    @default("SENT") // SENT, DELIVERED, READ
   deliveredAt DateTime?
@@ -145,8 +145,8 @@ model Message {
 
   groupStatuses GroupMessageStatus[]
   edits         MessageEdit[]
-  
-  expiresAt     DateTime?
+
+  expiresAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -157,7 +157,7 @@ model Message {
 }
 
 model GroupMessageStatus {
-  id        String @id @default(uuid())
+  id        String  @id @default(uuid())
   messageId String
   message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
@@ -186,7 +186,7 @@ model Conversation {
 }
 
 model DirectMessage {
-  id      String  @id @default(uuid())
+  id      String @id @default(uuid())
   content String
   type    String @default("TEXT")
 
@@ -195,7 +195,7 @@ model DirectMessage {
   fileName     String?
   mimeType     String?
   thumbnailUrl String?
-  mediaKey     String?  // AES-GCM key (hex) for client-side E2E media decryption
+  mediaKey     String? // AES-GCM key (hex) for client-side E2E media decryption
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -203,23 +203,23 @@ model DirectMessage {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  deleted            Boolean @default(false)
-  deletedForEveryone Boolean @default(false)
-  edited             Boolean @default(false)
+  deleted            Boolean   @default(false)
+  deletedForEveryone Boolean   @default(false)
+  edited             Boolean   @default(false)
   editedAt           DateTime?
 
-  replyToId          String?
-  replyTo            DirectMessage?  @relation("DirectMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies            DirectMessage[] @relation("DirectMessageReplies")
-  isPinned           Boolean         @default(false)
+  replyToId String?
+  replyTo   DirectMessage?  @relation("DirectMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   DirectMessage[] @relation("DirectMessageReplies")
+  isPinned  Boolean         @default(false)
 
   status      String    @default("SENT")
   deliveredAt DateTime?
   readAt      DateTime?
-  
-  edits       DirectMessageEdit[]
-  
-  expiresAt   DateTime?
+
+  edits DirectMessageEdit[]
+
+  expiresAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -230,17 +230,17 @@ model DirectMessage {
 }
 
 model CallHistory {
-  id        String @id @default(uuid())
+  id        String  @id @default(uuid())
   callerId  String
   calleeId  String
   channelId String? // Optional if it was a DM call
   roomId    String
-  type      String @default("audio") // audio, video
+  type      String  @default("audio") // audio, video
 
-  status    String @default("ended")  // active, ended, missed, rejected, busy, offline, dropped, failed
-  duration  Int    @default(0)        // duration in seconds
+  status   String @default("ended") // active, ended, missed, rejected, busy, offline, dropped, failed
+  duration Int    @default(0) // duration in seconds
 
-  startedAt DateTime @default(now())
+  startedAt DateTime  @default(now())
   endedAt   DateTime?
 
   createdAt DateTime @default(now())
@@ -253,31 +253,31 @@ model CallHistory {
 // Periodic WebRTC quality samples written by MediaRoom (scenario #14).
 // Caller writes one row every 30s while the call is active.
 model CallQualityLog {
-  id             String   @id @default(uuid())
-  callId         String
-  packetLoss     Float    @default(0)   // percent (0-100)
-  jitter         Float    @default(0)   // milliseconds
-  roundTripTime  Float    @default(0)   // milliseconds
-  timestamp      DateTime @default(now())
+  id            String   @id @default(uuid())
+  callId        String
+  packetLoss    Float    @default(0) // percent (0-100)
+  jitter        Float    @default(0) // milliseconds
+  roundTripTime Float    @default(0) // milliseconds
+  timestamp     DateTime @default(now())
 
   @@index([callId])
   @@index([timestamp])
 }
 
 model MessageEdit {
-  id              String   @id @default(uuid())
-  messageId       String
-  message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  content         String
-  createdAt       DateTime @default(now())
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
 
   @@index([messageId])
 }
 
 model MutedChat {
-  id        String @id @default(uuid())
+  id        String    @id @default(uuid())
   profileId String
-  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
   chatId    String // Can be channelId or conversationId
   expiresAt DateTime? // Null means always muted
 
@@ -289,23 +289,23 @@ model MutedChat {
 }
 
 model BlockedUser {
-  id        String @id @default(uuid())
+  id        String  @id @default(uuid())
   blockerId String
   blocker   Profile @relation("BlockedUsers", fields: [blockerId], references: [id], onDelete: Cascade)
   blockedId String
   blocked   Profile @relation("BlockedBy", fields: [blockedId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
-  
+
   @@unique([blockerId, blockedId])
   @@index([blockerId])
   @@index([blockedId])
 }
 
 model ClearedChat {
-  id        String @id @default(uuid())
+  id        String   @id @default(uuid())
   profileId String
-  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   chatId    String // Can be channelId or conversationId
   clearedAt DateTime @default(now())
 
@@ -317,7 +317,7 @@ model ClearedChat {
 }
 
 model LockedChat {
-  id        String @id @default(uuid())
+  id        String  @id @default(uuid())
   profileId String
   profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   chatId    String // Can be channelId or conversationId
@@ -328,13 +328,12 @@ model LockedChat {
   @@index([profileId])
 }
 
-
 model DirectMessageEdit {
-  id              String         @id @default(uuid())
+  id              String        @id @default(uuid())
   messageId       String
-  message         DirectMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message         DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
   previousContent String
-  editedAt        DateTime       @default(now())
+  editedAt        DateTime      @default(now())
 
   @@index([messageId])
 }
@@ -358,21 +357,21 @@ model FileIndex {
 // ── MESH NETWORK ROUTING (Phase 1) ──────────────────────────────────────────
 
 model Node {
-  id          String   @id // e.g., "pi-a-uuid"
-  hostname    String?
-  ipAddress   String?
-  publicKey   String?
-  isTrusted   Boolean  @default(false)
-  isOnline    Boolean  @default(true)
-  lastSeen    DateTime @default(now())
-  hopCount    Int      @default(0)
+  id        String   @id // e.g., "pi-a-uuid"
+  hostname  String?
+  ipAddress String?
+  publicKey String?
+  isTrusted Boolean  @default(false)
+  isOnline  Boolean  @default(true)
+  lastSeen  DateTime @default(now())
+  hopCount  Int      @default(0)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model RoutingTable {
-  destinationNode String @id
+  destinationNode String   @id
   viaNode         String
   hopCount        Int
   lastUpdated     DateTime @default(now())
@@ -380,7 +379,7 @@ model RoutingTable {
 
 model OutboxQueue {
   id          String   @id @default(uuid())
-  destination String   // node id
+  destination String // node id
   payload     String
   createdAt   DateTime @default(now())
 }
@@ -388,42 +387,42 @@ model OutboxQueue {
 // ── COMMUNITIES (Groups of Groups) ──────────────────────────────────────────
 
 model Community {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   imageUrl    String?
 
-  profileId   String
-  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   // A community contains multiple Groups (which are currently 'Servers')
-  groups      Server[]
+  groups Server[]
 
   // Admins and Moderators of the community
-  members     CommunityMember[]
+  members CommunityMember[]
 
   // Dedicated announcements channel
-  announcementsChannelId String? @unique
+  announcementsChannelId String?           @unique
   announcementsChannel   BroadcastChannel? @relation(fields: [announcementsChannelId], references: [id], onDelete: SetNull)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([profileId])
 }
 
 model CommunityMember {
-  id          String   @id @default(uuid())
-  role        String   @default("MEMBER") // ADMIN, MODERATOR, MEMBER
+  id   String @id @default(uuid())
+  role String @default("MEMBER") // ADMIN, MODERATOR, MEMBER
 
   communityId String
   community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  
-  profileId   String
-  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([communityId, profileId])
   @@index([profileId])
@@ -432,53 +431,53 @@ model CommunityMember {
 // ── BROADCAST CHANNELS (WhatsApp Style) ─────────────────────────────────
 
 model BroadcastChannel {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   imageUrl    String?
-  
+
   // Only the creator (admin) can post
-  profileId   String
-  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   // Followers (read-only)
-  followers   BroadcastFollower[]
-  messages    BroadcastMessage[]
+  followers BroadcastFollower[]
+  messages  BroadcastMessage[]
 
-  community   Community?
+  community Community?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([profileId])
 }
 
 model BroadcastFollower {
-  id         String @id @default(uuid())
-  channelId  String
-  channel    BroadcastChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  
-  profileId  String
-  profile    Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  id        String           @id @default(uuid())
+  channelId String
+  channel   BroadcastChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
-  role       String  @default("FOLLOWER") // ADMIN, FOLLOWER
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  createdAt  DateTime @default(now())
+  role String @default("FOLLOWER") // ADMIN, FOLLOWER
+
+  createdAt DateTime @default(now())
 
   @@unique([channelId, profileId])
 }
 
 model BroadcastMessage {
-  id         String @id @default(uuid())
-  content    String
-  type       String @default("TEXT")
-  fileUrl    String?
-  
-  channelId  String
-  channel    BroadcastChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  id      String  @id @default(uuid())
+  content String
+  type    String  @default("TEXT")
+  fileUrl String?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  channelId String
+  channel   BroadcastChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([channelId])
 }
@@ -501,4 +500,102 @@ model PinnedChat {
   createdAt DateTime @default(now())
 
   @@unique([profileId, chatId])
+}
+
+// WAL Journal Table for Masterless Mesh Syncing
+model Journal {
+  seq         Int    @id @default(autoincrement())
+  rowTable    String
+  rowId       String
+  operation   String // INSERT, UPDATE, DELETE
+  payload     String // JSON string of the row
+  vectorClock String // JSON string {"mac": count}
+  originMac   String
+  contentHash String
+  syncedTo    String @default("{}") // JSON mapping peer MACs to acknowledged sequences
+
+  createdAt DateTime @default(now())
+
+  @@index([rowTable, rowId])
+  @@index([originMac])
+}
+
+// Persists the local Vector Clock state
+model VectorClockState {
+  id        String   @id @default("local")
+  clock     String // JSON string {"mac": count}
+  updatedAt DateTime @updatedAt
+}
+
+// Tracks the handshake connection status between mesh nodes
+model MeshPeer {
+  macAddress    String    @id
+  status        String    @default("UNKNOWN") // UNKNOWN, PENDING_OUTGOING, PENDING_INCOMING, TRUSTED, DECLINED, BLOCKED
+  hostname      String?
+  ipAddress     String?
+  publicName    String?
+  firstSeen     DateTime  @default(now())
+  lastSeen      DateTime  @default(now())
+  lastHandshake DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions  PeerSession[]
+  syncState SyncState?
+}
+
+model ConnectionRequest {
+  requestId   String    @id @default(uuid())
+  fromNodeId  String
+  toNodeId    String
+  direction   String // INCOMING, OUTGOING
+  status      String    @default("PENDING") // PENDING, ACCEPTED, DECLINED, IGNORED, EXPIRED, BLOCKED
+  message     String?
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+  expiresAt   DateTime
+
+  @@index([direction, status])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+}
+
+model PeerSession {
+  sessionId        String    @id @default(uuid())
+  peerNodeId       String
+  peer             MeshPeer  @relation(fields: [peerNodeId], references: [macAddress], onDelete: Cascade)
+  state            String    @default("DISCONNECTED") // DISCONNECTED, CONNECTING, CONNECTED, SYNCING, FAILED
+  lastConnected    DateTime?
+  lastSyncStarted  DateTime?
+  lastSyncFinished DateTime?
+  transportIp      String?
+  transportPort    Int?
+
+  @@index([peerNodeId])
+}
+
+model SyncState {
+  peerNodeId          String   @id
+  peer                MeshPeer @relation(fields: [peerNodeId], references: [macAddress], onDelete: Cascade)
+  localVectorClock    String   @default("{}")
+  remoteVectorClock   String   @default("{}")
+  lastSentEventId     String?
+  lastReceivedEventId String?
+  updatedAt           DateTime @updatedAt
+}
+
+model MeshEvent {
+  eventId         String   @id @default(uuid())
+  originNodeId    String
+  entityType      String
+  entityId        String
+  operation       String
+  payloadJson     String
+  vectorClockJson String   @default("{}")
+  timestamp       DateTime @default(now())
+  receivedFrom    String?
+  signature       String?
+
+  @@index([originNodeId, timestamp])
+  @@index([entityType, entityId])
 }

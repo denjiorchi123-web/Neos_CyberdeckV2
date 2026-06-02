@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   ShieldQuestion
 } from "lucide-react";
-import { MemberRole } from "@/lib/db";
+import { MemberRole } from "@/lib/db-enums";
 import qs from "query-string";
 import axios from "axios";
 import { useRouter } from "next/navigation";

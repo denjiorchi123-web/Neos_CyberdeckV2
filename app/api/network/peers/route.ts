@@ -1,14 +1,28 @@
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import os from "os";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const res = await fetch("http://127.0.0.1:5007/peers", { 
-      cache: "no-store"
-    });
-    const data = await res.json();
-    return NextResponse.json(data);
+    const peers = await db.meshPeer.findMany();
+
+    // Convert to dictionary format expected by frontend
+    const result: Record<string, any> = {};
+    for (const p of peers) {
+       result[p.macAddress] = {
+          ip: p.ipAddress,
+          hostname: p.hostname,
+          trust_status: p.status,
+          last_seen: Math.floor(p.lastSeen.getTime() / 1000),
+          joined_at: Math.floor(p.createdAt.getTime() / 1000)
+       };
+    }
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[NETWORK_PEERS_GET]", error);
-    return NextResponse.json({ error: "Failed to fetch peers from mesh daemon" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch peers" }, { status: 500 });
   }
 }

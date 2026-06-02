@@ -17,6 +17,17 @@ function hashPassword(password: string, salt: string) {
 export async function GET() {
   try {
     const profiles = await db.profile.findMany({
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        imageUrl: true,
+        email: true,
+        isOnline: true,
+        lastSeen: true,
+        createdAt: true,
+        updatedAt: true,
+      },
       orderBy: { createdAt: "desc" }
     });
     return NextResponse.json(profiles);

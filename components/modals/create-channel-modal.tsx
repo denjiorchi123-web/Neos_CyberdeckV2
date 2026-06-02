@@ -6,7 +6,7 @@ import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
-import { ChannelType } from "@/lib/db";
+import { ChannelType } from "@/lib/db-enums";
 import qs from "query-string";
 
 import {

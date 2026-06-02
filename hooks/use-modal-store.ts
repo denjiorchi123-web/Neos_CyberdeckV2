@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { Channel, Server } from "@prisma/client";
-import { ChannelType } from "@/lib/db";
+import { ChannelType } from "@/lib/db-enums";
 
 export type ModalType =
   | "createServer"
@@ -33,6 +33,7 @@ export type ModalType =
   | "changePin"
   | "unlockChatVerify"
   | "callPinVerify"
+  | "pairingRequest"
   | "deleteCommunity";
 
 interface ModalData {

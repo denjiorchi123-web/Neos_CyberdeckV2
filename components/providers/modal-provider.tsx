@@ -33,6 +33,7 @@ import { ForgotPinModal } from "@/components/modals/forgot-pin-modal";
 import { ChangePinModal } from "@/components/modals/change-pin-modal";
 import { UnlockChatVerifyModal } from "@/components/modals/unlock-chat-verify-modal";
 import { CallPinVerifyModal } from "@/components/modals/call-pin-verify-modal";
+import { PairingRequestModal } from "@/components/modals/pairing-request-modal";
 
 export function ModalProvider() {
   const [isMounted, setIsMounted] = useState(false);
@@ -76,6 +77,7 @@ export function ModalProvider() {
       <ChangePinModal />
       <UnlockChatVerifyModal />
       <CallPinVerifyModal />
+      <PairingRequestModal />
     </>
   );
 }

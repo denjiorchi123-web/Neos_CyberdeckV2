@@ -1,6 +1,6 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import { ChannelType, MemberRole } from "@/lib/db";
+import { ChannelType, MemberRole } from "@/lib/db-enums";
 import { Hash, Mic, ShieldAlert, ShieldCheck, Video } from "lucide-react";
 
 import { currentProfile } from "@/lib/current-profile";

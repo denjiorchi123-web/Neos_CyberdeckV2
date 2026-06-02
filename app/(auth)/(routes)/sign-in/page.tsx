@@ -70,7 +70,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-[#1e1f22] p-6 font-sans">
+    <div className="flex min-h-screen w-full flex-col items-center justify-start py-8 px-6 bg-[#1e1f22] font-sans overflow-y-auto">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

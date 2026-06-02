@@ -8,23 +8,8 @@ const cluster = require("cluster");
 const os = require("os");
 const { spawn, execSync } = require("child_process");
 
-// ── Spawn Mesh Daemon ────────────────────────────────────────────────────────
-// Ensure the python peer discovery and mesh diagnostic daemon is running.
-// We spawn it natively alongside the Next.js process.
-const pyBin = process.platform === "win32" ? "python" : "python3";
-function spawnMeshDaemon() {
-  const meshDaemon = spawn(pyBin, [path.join(__dirname, "scripts", "mesh_node.py")], { stdio: "inherit" });
-  
-  meshDaemon.on('error', (err) => {
-    console.log(`> [MESH DAEMON] Warning: Could not start python daemon. Ensure python is installed.`, err.message);
-  });
-
-  meshDaemon.on('exit', (code) => {
-    console.log(`> [MESH DAEMON] Exited with code ${code}. Restarting in 1s...`);
-    setTimeout(spawnMeshDaemon, 1000);
-  });
-}
-
+// ── Native Node.js Mesh Discovery ──────────────────────────────────────────────
+const { startMeshDiscovery } = require("./server/mesh");
 
 // ── Windows: self-elevate to Administrator ───────────────────────────────────
 // Network config (netsh) requires admin rights. If not elevated, re-launch
@@ -44,29 +29,29 @@ if (process.platform === "win32") {
       .on("exit", () => process.exit(0));
     return; // stop the non-elevated process
   }
+
+  // Now we are elevated. Ensure Firewall rules exist for CyberDeck ports.
+  try {
+    const rules = [
+      { name: "CyberDeck Port 3000 TCP", port: 3000, proto: "TCP" },
+      { name: "CyberDeck Port 5005 UDP", port: 5005, proto: "UDP" },
+      { name: "CyberDeck Port 5006 TCP", port: 5006, proto: "TCP" },
+      { name: "CyberDeck Port 5353 UDP", port: 5353, proto: "UDP" }
+    ];
+    for (const rule of rules) {
+      const fwCmd = `New-NetFirewallRule -DisplayName "${rule.name}" -Direction Inbound -LocalPort ${rule.port} -Protocol ${rule.proto} -Action Allow -Profile Any -ErrorAction SilentlyContinue`;
+      execSync(`powershell -NoProfile -Command "${fwCmd}"`, { stdio: "ignore" });
+    }
+    console.log("> Windows Firewall configured for all incoming CyberDeck ports.");
+  } catch (err) {
+    // Ignore if it already exists or fails
+  }
 }
 
-// ── Only spawn the daemon if we are the actual running server instance (elevated if Windows)
-spawnMeshDaemon();
-
-// Register the chat service with the mesh daemon after it boots up
-setTimeout(() => {
-  const postData = JSON.stringify({ service: "cyberdeck-chat", port: 3000 });
-  const req = http.request({
-    hostname: '127.0.0.1',
-    port: 5007,
-    path: '/register_service',
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-  }, (res) => {
-    console.log(`> [MESH] Registered local chat service (status: ${res.statusCode})`);
-  });
-  req.on('error', (e) => {
-    console.error(`> [MESH] Failed to register service: ${e.message}`);
-  });
-  req.write(postData);
-  req.end();
-}, 3000);
+// ── Only spawn the daemon once in the primary cluster process
+if (cluster.isPrimary) {
+  startMeshDiscovery();
+}
 
 // Load SSL certificates
 const options = {
@@ -79,7 +64,8 @@ const dev = process.env.NODE_ENV !== "production";
 // ── Multi-Core Clustering ────────────────────────────────────
 // In a high-traffic community of 5,000+, we utilize every CPU core
 // to handle massive encryption and signaling loads simultaneously.
-if (cluster.isPrimary && !dev && !process.env.SINGLE_CORE) {
+// Socket.IO polling sessions need sticky routing before clustered workers are safe.
+if (cluster.isPrimary && !dev && process.env.CYBERDECK_CLUSTER === "1") {
   const numCPUs = os.cpus().length;
   console.log(`> CyberDeck OS Cluster: Initializing ${numCPUs} High-Performance Cores...`);
   

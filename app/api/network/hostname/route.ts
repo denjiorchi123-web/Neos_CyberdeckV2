@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execSync } from "child_process";
 import os from "os";
+import { currentProfile } from "@/lib/current-profile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const profile = await currentProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   if (process.platform === "win32") {
     return NextResponse.json(
       { error: "Hostname changes are not supported on Windows dev mode." },

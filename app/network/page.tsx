@@ -52,7 +52,7 @@ export default function NetworkDiagnosticsPage() {
       ]);
 
       if (peersRes.error || servicesRes.error || healthRes.error) {
-        setError("Failed to connect to Local Mesh Daemon (port 5007)");
+        setError("Failed to read the local Node mesh state");
       } else {
         setPeers(peersRes);
         setServices(servicesRes);
@@ -90,7 +90,8 @@ export default function NetworkDiagnosticsPage() {
     }
   };
 
-  const totalPeers = Object.keys(peers).length;
+  const remotePeers = Object.entries(peers).filter(([mac]) => mac !== health?.mac);
+  const totalPeers = remotePeers.length;
   const isHealthy = !error && health !== null;
 
   return (
@@ -218,8 +219,7 @@ export default function NetworkDiagnosticsPage() {
           </CardHeader>
           <CardContent className="pt-4 p-6">
             <div className="space-y-3">
-              {Object.entries(peers).map(([mac, peer]) => {
-                const isMe = mac === health?.mac;
+              {remotePeers.map(([mac, peer]) => {
                 const age = health ? health.timestamp - peer.last_seen : 0;
                 const statusColor = age > 15 ? "bg-rose-500" : age > 5 ? "bg-amber-500" : "bg-emerald-500";
                 
@@ -230,7 +230,6 @@ export default function NetworkDiagnosticsPage() {
                       <div>
                         <p className="text-sm font-bold text-white flex items-center gap-2">
                           {peer.hostname}
-                          {isMe && <Badge variant="outline" className="text-[9px] border-indigo-500 text-indigo-400 bg-indigo-500/10 h-4 px-1">THIS NODE</Badge>}
                         </p>
                         <p className="text-xs text-zinc-500 font-mono mt-0.5">{mac}</p>
                       </div>

@@ -3,6 +3,8 @@ import { readFile } from "fs/promises";
 import { join, extname, basename } from "path";
 import { currentProfile } from "@/lib/current-profile";
 
+export const dynamic = "force-dynamic";
+
 const MIME: Record<string, string> = {
   ".jpg":  "image/jpeg",
   ".jpeg": "image/jpeg",

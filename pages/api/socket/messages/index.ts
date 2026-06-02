@@ -1,8 +1,10 @@
+import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
+import { publicProfileSelect } from "@/lib/public-profile-select";
 
 export default async function handler(
   req: NextApiRequest,
@@ -78,14 +80,14 @@ export default async function handler(
       include: {
         member: {
           include: {
-            profile: true
+            profile: { select: publicProfileSelect }
           }
         },
         replyTo: {
           include: {
             member: {
               include: {
-                profile: true
+                profile: { select: publicProfileSelect }
               }
             }
           }
@@ -95,6 +97,7 @@ export default async function handler(
 
     const channelKey = `chat:${channelId}:messages`;
 
+    if (!res.socket.server.io) { ioHandler(req, res); }
     res?.socket?.server?.io?.to(channelId as string).emit(channelKey, message);
 
     return res.status(200).json(message);
