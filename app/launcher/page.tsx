@@ -120,10 +120,10 @@ export default function LauncherPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0e14] text-zinc-100 flex flex-col items-center justify-start py-10 px-6 font-mono overflow-y-auto">
-      <div className="max-w-2xl w-full space-y-8">
+    <div className="touch-scroll min-h-screen bg-[#0a0e14] text-zinc-100 flex flex-col items-center justify-start py-5 sm:py-8 px-4 sm:px-6 font-mono overflow-y-auto">
+      <div className="max-w-2xl w-full space-y-5 sm:space-y-8">
         <div className="text-center space-y-2">
-          <h1 className="text-4xl uppercase tracking-[0.3em] font-black bg-gradient-to-r from-zinc-100 via-indigo-200 to-zinc-100 bg-clip-text text-transparent">CyberDeck</h1>
+          <h1 className="text-3xl sm:text-4xl uppercase tracking-[0.3em] font-black bg-gradient-to-r from-zinc-100 via-indigo-200 to-zinc-100 bg-clip-text text-transparent">CyberDeck</h1>
           <p className="text-zinc-500 text-xs uppercase tracking-widest">
             Air-gapped LAN messenger
           </p>
@@ -133,7 +133,7 @@ export default function LauncherPage() {
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.99 }}
           onClick={useThisDevice}
-          className="w-full p-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 transition flex items-center justify-between group shadow-lg shadow-indigo-900/30"
+          className="w-full p-4 sm:p-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 transition flex items-center justify-between group shadow-lg shadow-indigo-900/30"
         >
           <div className="flex items-center gap-4">
             <Monitor className="h-8 w-8" />

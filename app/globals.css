@@ -8,6 +8,30 @@ body,
   height: 100%;
 }
 
+html,
+body {
+  overscroll-behavior: none;
+}
+
+.touch-scroll,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.touch-scroll {
+  scrollbar-width: none;
+}
+
+.touch-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

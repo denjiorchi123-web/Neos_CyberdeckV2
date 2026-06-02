@@ -39,7 +39,7 @@ export function NavigationUserControl({ userName }: NavigationUserControlProps) 
   };
 
   return (
-    <div className="pb-3 mt-auto flex items-center flex-col gap-y-4">
+    <div className="shrink-0 w-full border-t border-zinc-300/80 dark:border-zinc-700/80 bg-[#e3e5e8] dark:bg-[#1e1f22] py-2 flex items-center flex-col gap-y-2">
       <ModeToggle />
 
       {/* Profile settings button */}
