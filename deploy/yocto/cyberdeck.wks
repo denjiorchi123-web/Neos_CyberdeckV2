@@ -1,6 +1,0 @@
-bootloader --ptable msdos --append="console=tty1 console=ttyAMA0,115200 root=PARTUUID=ROOT_PARTUUID rootfstype=ext4 rw fsck.repair=yes rootwait splash plymouth.ignore-serial-consoles loglevel=7 vt.global_cursor_default=0 systemd.show_status=yes"
-
-part /boot      --source bootimg-partition --fstype=vfat   --label boot     --size 256M --active --align 4096 --fixed-size 256M --uuid=BOOT-PART
-part /          --source rootfs            --fstype=ext4   --label root     --size 4G  --align 4096 --fixed-size 4G  --uuid=ROOT-PART --use-uuid
-part /opt       --source rootfs --rootfs-dir=${IMAGE_ROOTFS}/opt --fstype=ext4 --label opt --size 2G --align 4096 --uuid=OPT-PART --use-uuid
-part /data      --fstype=ext4   --label data     --size 4G  --align 4096 --uuid=DATA-PART --use-uuid

@@ -1,8 +1,0 @@
-[Match]
-Name=bat0
-
-[Network]
-RequiredForOnline=no
-Address=10.0.0.99/24
-LinkLocalAddressing=ipv4
-IPv6AcceptRA=no

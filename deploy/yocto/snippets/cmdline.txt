@@ -1,1 +1,0 @@
-console=tty1 console=ttyAMA0,115200 root=PARTUUID=ROOT_PARTUUID rootfstype=ext4 rw fsck.repair=yes rootwait splash plymouth.ignore-serial-consoles loglevel=7 vt.global_cursor_default=0 systemd.show_status=yes
