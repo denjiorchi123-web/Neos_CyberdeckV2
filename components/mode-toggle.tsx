@@ -19,7 +19,7 @@ export function ModeToggle() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          className="relative h-11 w-11 bg-background dark:bg-zinc-700 border-0 rounded-[22px] hover:rounded-[14px] hover:bg-indigo-500/20 transition-all"
+          className="relative h-9 w-9 bg-background dark:bg-zinc-700 border-0 rounded-[18px] hover:rounded-[12px] hover:bg-indigo-500/20 transition-all"
           variant="outline"
           size="icon"
           aria-label="Choose theme"

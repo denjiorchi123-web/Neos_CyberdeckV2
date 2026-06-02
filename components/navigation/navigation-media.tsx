@@ -15,7 +15,7 @@ export function NavigationMedia() {
     <ActionTooltip side="right" align="center" label="Media Library">
       <button onClick={() => router.push("/media")} className="group flex shrink-0 items-center">
         <div className={cn(
-          "flex shrink-0 mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden items-center justify-center bg-background dark:bg-neutral-700 group-hover:bg-purple-500",
+          "flex shrink-0 mx-3 h-11 w-11 rounded-[22px] group-hover:rounded-[14px] transition-all overflow-hidden items-center justify-center bg-background dark:bg-neutral-700 group-hover:bg-purple-500",
           active && "bg-purple-500 text-white rounded-[16px]"
         )}>
           <Image className={cn(
