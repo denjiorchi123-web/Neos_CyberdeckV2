@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import os from "os";
 import { db } from "@/lib/db";
+import { getLocalNodeId } from "@/lib/mesh-identity";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -8,6 +9,7 @@ export const dynamic  = "force-dynamic";
 export async function GET() {
   try {
     const myHostname = os.hostname();
+    const localNodeId = getLocalNodeId();
 
     // Fetch directly from the Prisma database, ignoring stale peers
     const activeThreshold = new Date(Date.now() - 30 * 1000); // 30 seconds
@@ -20,10 +22,10 @@ export async function GET() {
     const peers = [];
 
     for (const peer of dbPeers) {
-       // Don't list ourselves as a remote peer
-       if (peer.hostname && peer.hostname.toLowerCase() !== myHostname.toLowerCase()) {
+       // Two Pis may intentionally share a hostname. The hardware node ID is the identity.
+       if (peer.macAddress !== localNodeId && !peer.macAddress.startsWith("mock_")) {
           peers.push({
-             name: peer.hostname.toUpperCase(),
+             name: (peer.hostname || `Node-${peer.macAddress.slice(0, 6)}`).toUpperCase(),
              host: peer.ipAddress,
              address: peer.ipAddress,
              macAddress: peer.macAddress,

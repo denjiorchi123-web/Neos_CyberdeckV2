@@ -65,6 +65,9 @@ export async function respondToConnectionRequest(
     action === "ACCEPTED" ? "TRUSTED" :
     action === "BLOCKED" ? "BLOCKED" :
     action === "DECLINED" ? "DECLINED" : "UNKNOWN";
+  const existingSession = action === "ACCEPTED"
+    ? await db.peerSession.findFirst({ where: { peerNodeId: request.fromNodeId } })
+    : null;
 
   const operations: any[] = [
     db.connectionRequest.update({
@@ -88,15 +91,25 @@ export async function respondToConnectionRequest(
 
   if (action === "ACCEPTED") {
     operations.push(
-      db.peerSession.create({
-        data: {
-          peerNodeId: request.fromNodeId,
-          state: "CONNECTED",
-          lastConnected: new Date(),
-          transportIp: peer.ipAddress,
-          transportPort: MESH_CONTROL_PORT,
-        },
-      }),
+      existingSession
+        ? db.peerSession.update({
+            where: { sessionId: existingSession.sessionId },
+            data: {
+              state: "CONNECTED",
+              lastConnected: new Date(),
+              transportIp: peer.ipAddress,
+              transportPort: MESH_CONTROL_PORT,
+            },
+          })
+        : db.peerSession.create({
+            data: {
+              peerNodeId: request.fromNodeId,
+              state: "CONNECTED",
+              lastConnected: new Date(),
+              transportIp: peer.ipAddress,
+              transportPort: MESH_CONTROL_PORT,
+            },
+          }),
       db.syncState.upsert({
         where: { peerNodeId: request.fromNodeId },
         update: {},
