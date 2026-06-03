@@ -7,6 +7,7 @@ import React, {
   useState,
   useCallback,
   useMemo,
+  useRef,
 } from "react";
 import { io as ClientIO } from "socket.io-client";
 import { useModal } from "@/hooks/use-modal-store";
@@ -39,6 +40,8 @@ type PreferencesContextType = {
   securityQuestion: string | null;
   refreshPreferences: () => void;
 };
+
+const PAIRING_DEDUPE_MS = 10_000;
 
 const SocketContext = createContext<SocketContextType>({
   socket: null,
@@ -74,6 +77,29 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [lockedChats, setLockedChats] = useState<any[]>([]);
   const [hasPinEnabled, setHasPinEnabled] = useState(false);
   const [securityQuestion, setSecurityQuestion] = useState<string | null>(null);
+  const pairingRequestIdsRef = useRef<Set<string>>(new Set());
+  const pairingMacWindowRef = useRef<Map<string, number>>(new Map());
+
+  const openPairingRequest = useCallback((request: Record<string, any>) => {
+    const requestId = typeof request?.requestId === "string" ? request.requestId : "";
+    if (requestId && pairingRequestIdsRef.current.has(requestId)) return;
+
+    const mac = String(
+      request?.fromNodeId ||
+      request?.macAddress ||
+      request?.mac ||
+      "",
+    ).trim().toLowerCase();
+    const now = Date.now();
+    if (mac) {
+      const lastSeen = pairingMacWindowRef.current.get(mac) || 0;
+      if (now - lastSeen < PAIRING_DEDUPE_MS) return;
+      pairingMacWindowRef.current.set(mac, now);
+    }
+
+    if (requestId) pairingRequestIdsRef.current.add(requestId);
+    onOpen("pairingRequest", { query: request });
+  }, [onOpen]);
 
   const fetchPresence = useCallback(async () => {
     try {
@@ -149,7 +175,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     s.on("mesh:pair-request", (data: { mac: string; hostname: string; userId?: string; displayName?: string; publicName?: string; ip: string }) => {
       console.log("[SocketProvider] Received mesh:pair-request global event:", data);
-      onOpen("pairingRequest", { query: data });
+      openPairingRequest(data);
     });
 
     setSocket(s);
@@ -159,25 +185,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       clearInterval(presenceTimer);
       s.disconnect();
     };
-  }, [fetchPresence, onOpen]);
+  }, [fetchPresence, openPairingRequest]);
 
   useEffect(() => {
-    let shownRequestId = "";
     const pollIncomingRequests = async () => {
       try {
         const res = await fetch("/api/peers/requests", { cache: "no-store" });
         if (!res.ok) return;
         const [request] = await res.json();
-        if (!request || request.requestId === shownRequestId) return;
-        shownRequestId = request.requestId;
-        onOpen("pairingRequest", { query: request });
+        if (!request) return;
+        openPairingRequest(request);
       } catch {}
     };
 
     pollIncomingRequests();
     const timer = setInterval(pollIncomingRequests, 3000);
     return () => clearInterval(timer);
-  }, [onOpen]);
+  }, [openPairingRequest]);
 
   // Memoize both context values so downstream only re-renders on actual changes
   const socketValue  = useMemo(() => ({ socket, isConnected }), [socket, isConnected]);

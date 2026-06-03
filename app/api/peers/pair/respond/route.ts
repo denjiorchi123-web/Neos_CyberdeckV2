@@ -4,7 +4,7 @@ import { currentProfile } from "@/lib/current-profile";
 import { respondToConnectionRequest } from "@/lib/mesh-handshake";
 
 const schema = z.object({
-  requestId: z.string().uuid(),
+  requestId: z.string().min(1).max(160).regex(/^[A-Za-z0-9:_-]+$/),
   action: z.enum(["ACCEPTED", "DECLINED", "IGNORED", "BLOCKED"]),
 });
 

@@ -5,6 +5,14 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getLocalIp, getLocalNodeId, MESH_CONTROL_PORT } from "@/lib/mesh-identity";
 import { sendMeshControl } from "@/lib/mesh-control";
+import {
+  ensureTrustedPeerTables,
+  logRejectedPeer,
+  normalizeSecurityStatus,
+  readConnectionRequestPayload,
+  VERIFIED_LAN_STATUS,
+  writeTrustedPeer,
+} from "@/lib/trusted-peers";
 
 const REQUEST_TTL_MS = 5 * 60 * 1000;
 
@@ -55,6 +63,7 @@ export async function sendConnectionRequest(
     fromPublicName: profile.name,
     fromDeviceName: os.hostname(),
     fromIp: getLocalIp(),
+    securityStatus: VERIFIED_LAN_STATUS,
     message: message || `${profile.name} wants to connect`,
     expiresAt: expiresAt.getTime(),
   });
@@ -74,9 +83,13 @@ export async function respondToConnectionRequest(
   if (request.status !== "PENDING") throw new Error("Request has already been answered");
   if (request.expiresAt.getTime() < Date.now()) throw new Error("Request has expired");
 
+  await ensureTrustedPeerTables(db as any);
+
   const peer = await db.meshPeer.findUnique({ where: { macAddress: request.fromNodeId } });
   if (!peer?.ipAddress) throw new Error("Peer address is unavailable");
 
+  const requestPayload = await readConnectionRequestPayload(db as any, requestId);
+  const securityStatus = normalizeSecurityStatus(requestPayload?.securityStatus);
   const peerStatus =
     action === "ACCEPTED" ? "TRUSTED" :
     action === "BLOCKED" ? "BLOCKED" :
@@ -85,29 +98,32 @@ export async function respondToConnectionRequest(
     ? await db.peerSession.findFirst({ where: { peerNodeId: request.fromNodeId } })
     : null;
 
-  const operations: any[] = [
-    db.connectionRequest.update({
+  await db.$transaction(async (tx: any) => {
+    await tx.connectionRequest.update({
       where: { requestId },
       data: { status: action, respondedAt: new Date() },
-    }),
-    db.meshPeer.update({
+    });
+    await tx.meshPeer.update({
       where: { macAddress: request.fromNodeId },
       data: { status: peerStatus, lastHandshake: new Date() },
-    }),
-    db.meshEvent.create({
+    });
+    await tx.meshEvent.create({
       data: {
         originNodeId: getLocalNodeId(),
         entityType: "connection_request",
         entityId: requestId,
         operation: `handshake_${action.toLowerCase()}`,
-        payloadJson: JSON.stringify({ peerNodeId: request.fromNodeId, action }),
+        payloadJson: JSON.stringify({
+          peerNodeId: request.fromNodeId,
+          action,
+          hostAddress: peer.ipAddress,
+          securityStatus,
+        }),
       },
-    }),
-  ];
+    });
 
-  if (action === "ACCEPTED") {
-    operations.push(
-      db.meshDevice.upsert({
+    if (action === "ACCEPTED") {
+      await tx.meshDevice.upsert({
         where: {
           ownerId_macAddress: {
             ownerId: peer.userId || request.fromNodeId,
@@ -126,43 +142,57 @@ export async function respondToConnectionRequest(
           approvedAt: new Date(),
           approvedBy: getLocalNodeId(),
         },
-      }),
-      existingSession
-        ? db.peerSession.update({
-            where: { sessionId: existingSession.sessionId },
-            data: {
-              state: "CONNECTED",
-              lastConnected: new Date(),
-              transportIp: peer.ipAddress,
-              transportPort: MESH_CONTROL_PORT,
-            },
-          })
-        : db.peerSession.create({
-            data: {
-              peerNodeId: request.fromNodeId,
-              state: "CONNECTED",
-              lastConnected: new Date(),
-              transportIp: peer.ipAddress,
-              transportPort: MESH_CONTROL_PORT,
-            },
-          }),
-      db.syncState.upsert({
+      });
+      if (existingSession) {
+        await tx.peerSession.update({
+          where: { sessionId: existingSession.sessionId },
+          data: {
+            state: "CONNECTED",
+            lastConnected: new Date(),
+            transportIp: peer.ipAddress,
+            transportPort: MESH_CONTROL_PORT,
+          },
+        });
+      } else {
+        await tx.peerSession.create({
+          data: {
+            peerNodeId: request.fromNodeId,
+            state: "CONNECTED",
+            lastConnected: new Date(),
+            transportIp: peer.ipAddress,
+            transportPort: MESH_CONTROL_PORT,
+          },
+        });
+      }
+      await tx.syncState.upsert({
         where: { peerNodeId: request.fromNodeId },
         update: {},
         create: { peerNodeId: request.fromNodeId },
-      }),
-    );
-  } else if (action === "BLOCKED") {
-    operations.push(
-      db.meshBlocklist.upsert({
+      });
+      await writeTrustedPeer(tx, {
+        macId: request.fromNodeId,
+        hostAddress: peer.ipAddress,
+        securityStatus,
+      });
+    } else {
+      await logRejectedPeer(tx, {
+        requestId,
+        macId: request.fromNodeId,
+        hostAddress: peer.ipAddress,
+        securityStatus,
+        action,
+      });
+    }
+
+    if (action === "BLOCKED") {
+      await tx.meshBlocklist.upsert({
         where: { macAddress: request.fromNodeId },
         update: { reason: "blocked_by_local_user" },
         create: { macAddress: request.fromNodeId, reason: "blocked_by_local_user" },
-      }),
-    );
-  }
+      });
+    }
+  });
 
-  await db.$transaction(operations);
   await sendMeshControl(peer.ipAddress, {
     type: "connection_response",
     requestId,
@@ -171,8 +201,19 @@ export async function respondToConnectionRequest(
     fromUsername: profile.name,
     fromPublicName: profile.name,
     fromDeviceName: os.hostname(),
+    securityStatus,
     status: action,
   });
 
-  return { requestId, status: action };
+  return {
+    requestId,
+    status: action,
+    trustedPeer: action === "ACCEPTED"
+      ? {
+          macId: request.fromNodeId,
+          hostAddress: peer.ipAddress,
+          securityStatus,
+        }
+      : null,
+  };
 }

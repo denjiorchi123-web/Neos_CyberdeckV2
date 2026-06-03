@@ -19,10 +19,29 @@ export async function GET(req: Request) {
     where: requestId ? { requestId } : { direction: "INCOMING", status: "PENDING", expiresAt: { gte: now } },
     orderBy: { createdAt: "desc" },
   });
+  const requestIds = requests.map((request) => request.requestId);
+  const requestEvents = requestIds.length
+    ? await db.meshEvent.findMany({
+        where: {
+          entityType: "connection_request",
+          entityId: { in: requestIds },
+          operation: "handshake_request_received",
+        },
+        orderBy: { timestamp: "desc" },
+      })
+    : [];
+  const payloadByRequestId = new Map<string, Record<string, any>>();
+  for (const event of requestEvents) {
+    if (payloadByRequestId.has(event.entityId)) continue;
+    try {
+      payloadByRequestId.set(event.entityId, JSON.parse(event.payloadJson));
+    } catch {}
+  }
 
   const enriched = await Promise.all(requests.map(async (request) => {
     const peerNodeId = request.direction === "INCOMING" ? request.fromNodeId : request.toNodeId;
     const peer = await db.meshPeer.findUnique({ where: { macAddress: peerNodeId } });
+    const payload = payloadByRequestId.get(request.requestId);
     return {
       requestId: request.requestId,
       fromNodeId: request.fromNodeId,
@@ -38,6 +57,7 @@ export async function GET(req: Request) {
       publicName: peer?.publicName,
       ipAddress: peer?.ipAddress,
       trustStatus: peer?.status,
+      securityStatus: typeof payload?.securityStatus === "string" ? payload.securityStatus : null,
     };
   }));
 

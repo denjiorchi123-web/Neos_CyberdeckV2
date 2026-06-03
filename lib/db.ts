@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { ensureTrustedPeerTables } from "@/lib/trusted-peers";
 
 declare global {
   var prisma: PrismaClient | undefined;
@@ -113,6 +114,7 @@ if (!globalThis._walEnabled) {
       await db.$queryRawUnsafe("PRAGMA temp_store=MEMORY");     // temp tables stay in RAM
       await db.$queryRawUnsafe("PRAGMA mmap_size=268435456");   // 256 MB memory-mapped I/O
       await db.$queryRawUnsafe("PRAGMA foreign_keys=ON");       // enforce relational integrity
+      await ensureTrustedPeerTables(db as any);
       console.log("[DB] SQLite WAL mode enabled");
     } catch (e) {
       console.error("[DB] WAL setup failed:", e);

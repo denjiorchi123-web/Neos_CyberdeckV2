@@ -1,149 +1,218 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Network, ShieldAlert, Cpu, Sparkles, Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CheckCircle2, Cpu, Loader2, Network, ShieldCheck, XCircle } from "lucide-react";
+
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useModal } from "@/hooks/use-modal-store";
-import { Button } from "@/components/ui/button";
+
+type PairingPhase = "idle" | "accepting" | "declining" | "connected" | "declined" | "failed";
+
+const AUTO_DECLINE_MS = 30_000;
 
 export function PairingRequestModal() {
   const { isOpen, onClose, type, data } = useModal();
   const router = useRouter();
-
   const isModalOpen = isOpen && type === "pairingRequest";
-  const { query } = data;
+  const query = data.query || {};
 
-  const requestId = query?.requestId || "";
-  const peerMac = query?.fromNodeId || "";
-  const peerHostname = query?.displayName || query?.publicName || peerMac || "Unknown Peer";
-  const peerIp = query?.ipAddress || "";
+  const requestId = typeof query.requestId === "string" ? query.requestId : "";
+  const peerMac = String(query.fromNodeId || query.macAddress || query.mac || "").trim();
+  const peerHostname = String(
+    query.displayName ||
+    query.publicName ||
+    query.hostname ||
+    peerMac ||
+    "Unknown Peer",
+  ).trim();
+  const peerIp = String(query.ipAddress || query.hostAddress || query.ip || "Unknown").trim();
+  const securityStatus = String(query.securityStatus || "UNKNOWN").trim();
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [phase, setPhase] = useState<PairingPhase>("idle");
   const [error, setError] = useState("");
+  const answeredRef = useRef(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const respond = async (action: "ACCEPTED" | "DECLINED" | "IGNORED" | "BLOCKED") => {
+  const isBusy = phase === "accepting" || phase === "declining";
+  const isFinal = phase === "connected" || phase === "declined";
+  const buttonsDisabled = isBusy || isFinal || !requestId;
+
+  const statusView = useMemo(() => {
+    if (phase === "accepting") return {
+      label: "Writing trust record...",
+      className: "border-amber-400/30 bg-amber-500/10 text-amber-200",
+      icon: <Loader2 className="h-4 w-4 animate-spin" />,
+    };
+    if (phase === "declining") return {
+      label: "Sending rejection...",
+      className: "border-rose-400/30 bg-rose-500/10 text-rose-200",
+      icon: <Loader2 className="h-4 w-4 animate-spin" />,
+    };
+    if (phase === "connected") return {
+      label: "Connected",
+      className: "border-emerald-400/40 bg-emerald-500/15 text-emerald-200",
+      icon: <CheckCircle2 className="h-4 w-4" />,
+    };
+    if (phase === "declined") return {
+      label: "Declined",
+      className: "border-rose-400/40 bg-rose-500/15 text-rose-200",
+      icon: <XCircle className="h-4 w-4" />,
+    };
+    if (phase === "failed") return {
+      label: "Action failed",
+      className: "border-rose-400/40 bg-rose-500/15 text-rose-200",
+      icon: <XCircle className="h-4 w-4" />,
+    };
+    return {
+      label: "Awaiting decision",
+      className: "border-indigo-400/30 bg-indigo-500/10 text-indigo-200",
+      icon: <ShieldCheck className="h-4 w-4" />,
+    };
+  }, [phase]);
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+
+  const scheduleClose = useCallback((delay = 1400) => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => {
+      onClose();
+      router.refresh();
+    }, delay);
+  }, [onClose, router]);
+
+  const respond = useCallback(async (action: "ACCEPTED" | "DECLINED", reason?: "timeout") => {
+    if (!requestId || answeredRef.current) return;
+    answeredRef.current = true;
+    setError("");
+    setPhase(action === "ACCEPTED" ? "accepting" : "declining");
+
     try {
-      setIsLoading(true);
-      setError("");
-
       const res = await fetch("/api/peers/pair/respond", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestId, action })
+        body: JSON.stringify({ requestId, action }),
       });
+      const body = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error("Failed to answer pairing request");
+        throw new Error(body?.error || "Failed to answer pairing request");
       }
 
-      onClose();
-      router.refresh();
+      setPhase(action === "ACCEPTED" ? "connected" : "declined");
+      scheduleClose(action === "ACCEPTED" ? 1600 : reason === "timeout" ? 900 : 1200);
     } catch (err: any) {
       console.error(err);
-      setError("Failed to update the trusted-peer relationship.");
-    } finally {
-      setIsLoading(false);
+      answeredRef.current = false;
+      setPhase("failed");
+      setError(err?.message || "Failed to update the trusted-peer relationship.");
     }
+  }, [requestId, scheduleClose]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    answeredRef.current = false;
+    clearCloseTimer();
+    setPhase("idle");
+    setError("");
+
+    const timeout = setTimeout(() => {
+      void respond("DECLINED", "timeout");
+    }, AUTO_DECLINE_MS);
+
+    return () => {
+      clearTimeout(timeout);
+      clearCloseTimer();
+    };
+  }, [isModalOpen, requestId, respond]);
+
+  const handleOpenChange = (open: boolean) => {
+    if (open) return;
+    if (isFinal || phase === "failed") onClose();
   };
 
-  const onAccept = () => respond("ACCEPTED");
-  const onDecline = () => respond("DECLINED");
-  const onIgnore = () => respond("IGNORED");
-  const onBlock = () => respond("BLOCKED");
-
   return (
-    <Dialog open={isModalOpen} onOpenChange={onClose}>
-      <DialogContent className="border border-indigo-500/20 bg-zinc-955/90 backdrop-blur-xl text-white overflow-hidden max-w-md shadow-[0_0_50px_rgba(99,102,241,0.15)] rounded-2xl p-0 font-mono">
-        <div className="relative p-6 pt-10 flex flex-col items-center">
-
-          {/* Cyberpunk Top Neon Line */}
-          <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-500 to-transparent animate-pulse" />
-
-          {/* Futuristic Icon Ring */}
-          <div className="relative mb-6 flex items-center justify-center h-20 w-20 rounded-full border border-indigo-500/30 bg-indigo-950/30 shadow-[0_0_20px_rgba(99,102,241,0.2)] animate-pulse">
-            <Network className="h-10 w-10 text-indigo-400" />
-            <div className="absolute -inset-0.5 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 opacity-20 blur-sm" />
-          </div>
-
-          <DialogHeader className="space-y-3 text-center w-full">
-            <div className="text-[10px] text-indigo-400 font-bold uppercase tracking-[0.3em] flex items-center justify-center gap-1">
-              <Cpu className="h-3 w-3 animate-spin" /> Incoming Deck Pairing
+    <Dialog open={isModalOpen} onOpenChange={handleOpenChange}>
+      <DialogContent className="[&>button]:hidden w-[min(760px,calc(100vw-24px))] max-w-none max-h-[432px] border border-indigo-500/25 bg-[#10131b]/95 text-white shadow-[0_0_44px_rgba(99,102,241,0.18)] rounded-2xl p-0 overflow-hidden font-mono">
+        <div className="grid grid-cols-[220px_1fr] min-h-[308px] max-h-[432px]">
+          <div className="relative flex flex-col justify-between bg-indigo-950/30 border-r border-indigo-400/15 p-5">
+            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-400 to-transparent" />
+            <div>
+              <div className="h-16 w-16 rounded-2xl border border-indigo-400/30 bg-indigo-500/10 flex items-center justify-center shadow-[0_0_24px_rgba(99,102,241,0.2)]">
+                <Network className="h-8 w-8 text-indigo-300" />
+              </div>
+              <div className="mt-5 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-indigo-200">
+                <Cpu className="h-4 w-4" />
+                Pairing
+              </div>
+              <DialogTitle className="mt-2 text-[20px] leading-6 font-black uppercase tracking-wide text-zinc-50">
+                Incoming Deck
+              </DialogTitle>
+              <DialogDescription className="mt-3 text-[14px] leading-5 text-zinc-400">
+                Accept only if this LAN device is physically connected and expected.
+              </DialogDescription>
             </div>
-            <DialogTitle className="text-2xl font-black uppercase tracking-wider bg-gradient-to-r from-zinc-100 via-indigo-200 to-zinc-100 bg-clip-text text-transparent">
-              {peerHostname}
-            </DialogTitle>
-            <DialogDescription className="text-zinc-400 text-xs normal-case tracking-normal max-w-xs mx-auto">
-              A device is requesting an air-gapped peer handshake to initiate end-to-end SQLite WAL database syncing and direct messaging.
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Connection Metadata Panel */}
-          <div className="w-full mt-6 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 backdrop-blur-md flex flex-col gap-2.5 text-xs text-zinc-300">
-            <div className="flex justify-between items-center">
-              <span className="text-zinc-500 uppercase tracking-widest text-[10px]">Host Address</span>
-              <span className="font-bold text-zinc-100 selection:bg-indigo-500">{peerIp}</span>
-            </div>
-            <div className="h-[1px] bg-zinc-800/80 w-full" />
-            <div className="flex justify-between items-center">
-              <span className="text-zinc-500 uppercase tracking-widest text-[10px]">MAC Identity</span>
-              <span className="font-bold text-indigo-300 select-all">{peerMac}</span>
-            </div>
-            <div className="h-[1px] bg-zinc-800/80 w-full" />
-            <div className="flex justify-between items-center">
-              <span className="text-zinc-500 uppercase tracking-widest text-[10px]">Security Status</span>
-              <span className="font-bold text-emerald-400 uppercase tracking-wide flex items-center gap-1">
-                <Sparkles className="h-3 w-3" /> VERIFIED LAN
-              </span>
+            <div className={`min-h-12 rounded-xl border px-3 py-2 flex items-center gap-2 text-[13px] font-bold ${statusView.className}`}>
+              {statusView.icon}
+              <span>{statusView.label}</span>
             </div>
           </div>
 
-          {error && (
-            <div className="w-full mt-4 p-3 rounded-lg border border-red-500/20 bg-red-950/20 text-red-400 text-xs flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+          <div className="flex min-w-0 flex-col justify-between p-5">
+            <div className="min-w-0">
+              <p className="text-[12px] uppercase tracking-[0.24em] text-zinc-500">Requesting peer</p>
+              <h2 className="mt-1 truncate text-[20px] leading-7 font-black text-white">
+                {peerHostname}
+              </h2>
 
-          {/* Dialog Footer Actions */}
-          <div className="w-full mt-8 grid grid-cols-2 gap-3">
-            <button
-              disabled={isLoading}
-              onClick={onDecline}
-              className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 uppercase tracking-widest text-xs h-12 rounded-xl transition-all font-mono"
-            >
-              DECLINE
-            </button>
-            <button
-              disabled={isLoading}
-              onClick={onIgnore}
-              className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 uppercase tracking-widest text-xs h-12 rounded-xl transition-all font-mono"
-            >
-              IGNORE
-            </button>
-            <button
-              disabled={isLoading}
-              onClick={onBlock}
-              className="bg-rose-950/40 hover:bg-rose-900/60 border border-rose-900/70 text-rose-300 uppercase tracking-widest text-xs h-12 rounded-xl transition-all font-mono"
-            >
-              BLOCK
-            </button>
-            <button
-              disabled={isLoading}
-              onClick={onAccept}
-              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 uppercase tracking-widest text-xs h-12 rounded-xl transition-all duration-300 font-bold flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] font-mono"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  CONNECTING
-                </>
-              ) : (
-                "ACCEPT"
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950/55 p-3 min-h-[72px]">
+                  <p className="text-[12px] uppercase tracking-widest text-zinc-500">Host</p>
+                  <p className="mt-1 truncate text-[15px] font-bold text-zinc-100">{peerIp}</p>
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950/55 p-3 min-h-[72px]">
+                  <p className="text-[12px] uppercase tracking-widest text-zinc-500">MAC</p>
+                  <p className="mt-1 truncate text-[15px] font-bold text-indigo-200">{peerMac || "Unknown"}</p>
+                </div>
+                <div className="col-span-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 min-h-[64px]">
+                  <p className="text-[12px] uppercase tracking-widest text-emerald-300/70">Security Status</p>
+                  <p className="mt-1 flex items-center gap-2 truncate text-[15px] font-black uppercase text-emerald-200">
+                    <ShieldCheck className="h-4 w-4 shrink-0" />
+                    {securityStatus}
+                  </p>
+                </div>
+              </div>
+
+              {error && (
+                <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[13px] leading-5 text-rose-200">
+                  {error}
+                </div>
               )}
-            </button>
-          </div>
+            </div>
 
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={buttonsDisabled}
+                onClick={() => void respond("DECLINED")}
+                className="min-h-12 rounded-xl border border-rose-500/45 bg-rose-950/45 px-4 text-[13px] font-black uppercase tracking-widest text-rose-100 transition active:scale-[0.98] disabled:opacity-55"
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                disabled={buttonsDisabled}
+                onClick={() => void respond("ACCEPTED")}
+                className="min-h-12 rounded-xl border border-emerald-400/40 bg-emerald-500 px-4 text-[13px] font-black uppercase tracking-widest text-white shadow-lg shadow-emerald-500/20 transition active:scale-[0.98] disabled:opacity-55"
+              >
+                Accept
+              </button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
