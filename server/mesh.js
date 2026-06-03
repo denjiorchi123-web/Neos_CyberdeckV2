@@ -995,99 +995,107 @@ async function receiveConnectionResponse(data, peerIp) {
   const securityStatus = normalizeSecurityStatus(data.securityStatus);
   const responsePayload = { ...data, securityStatus };
 
-  await db.$transaction(async (tx) => {
-    await tx.connectionRequest.update({
-      where: { requestId: data.requestId },
-      data: { status: data.status, respondedAt: new Date() },
-    });
-    await tx.meshPeer.update({
-      where: { macAddress: data.fromNodeId },
-      data: {
-        userId: fromUserId || undefined,
-        status: peerStatus,
-        ipAddress: peerIp,
-        publicName: fromUsername,
-        displayName: fromUsername,
-        hostname: data.fromDeviceName || undefined,
-        lastHandshake: new Date(),
-      },
-    });
-    await tx.meshEvent.create({
-      data: {
-        originNodeId: data.fromNodeId,
-        entityType: "connection_request",
-        entityId: data.requestId,
-        operation: `handshake_${data.status.toLowerCase()}`,
-        payloadJson: JSON.stringify(responsePayload),
-        receivedFrom: data.fromNodeId,
-      },
-    });
+  await db.connectionRequest.update({
+    where: { requestId: data.requestId },
+    data: { status: data.status, respondedAt: new Date() },
+  });
+  await db.meshPeer.upsert({
+    where: { macAddress: data.fromNodeId },
+    update: {
+      userId: fromUserId || undefined,
+      status: peerStatus,
+      ipAddress: peerIp,
+      publicName: fromUsername,
+      displayName: fromUsername,
+      hostname: data.fromDeviceName || undefined,
+      lastHandshake: new Date(),
+    },
+    create: {
+      macAddress: data.fromNodeId,
+      userId: fromUserId || null,
+      status: peerStatus,
+      ipAddress: peerIp,
+      publicName: fromUsername,
+      displayName: fromUsername,
+      hostname: data.fromDeviceName || null,
+      lastHandshake: new Date(),
+    },
+  });
+  await db.meshEvent.create({
+    data: {
+      originNodeId: data.fromNodeId,
+      entityType: "connection_request",
+      entityId: data.requestId,
+      operation: `handshake_${data.status.toLowerCase()}`,
+      payloadJson: JSON.stringify(responsePayload),
+      receivedFrom: data.fromNodeId,
+    },
+  });
 
-    if (data.status === "ACCEPTED") {
-      await tx.meshDevice.upsert({
-        where: { ownerId_macAddress: { ownerId: fromUserId || data.fromNodeId, macAddress: data.fromNodeId } },
-        update: {
-          deviceName: data.fromDeviceName || undefined,
-          approvedAt: new Date(),
-          approvedBy: getMac(),
+  if (data.status === "ACCEPTED") {
+    await db.meshDevice.upsert({
+      where: { ownerId_macAddress: { ownerId: fromUserId || data.fromNodeId, macAddress: data.fromNodeId } },
+      update: {
+        deviceName: data.fromDeviceName || undefined,
+        approvedAt: new Date(),
+        approvedBy: getMac(),
+      },
+      create: {
+        ownerId: fromUserId || data.fromNodeId,
+        macAddress: data.fromNodeId,
+        deviceName: data.fromDeviceName || undefined,
+        approvedAt: new Date(),
+        approvedBy: getMac(),
+      },
+    });
+    if (existingSession) {
+      await db.peerSession.update({
+        where: { sessionId: existingSession.sessionId },
+        data: {
+          state: "CONNECTED",
+          lastConnected: new Date(),
+          transportIp: peerIp,
+          transportPort: CONTROL_PORT,
         },
-        create: {
-          ownerId: fromUserId || data.fromNodeId,
-          macAddress: data.fromNodeId,
-          deviceName: data.fromDeviceName || undefined,
-          approvedAt: new Date(),
-          approvedBy: getMac(),
-        },
-      });
-      if (existingSession) {
-        await tx.peerSession.update({
-          where: { sessionId: existingSession.sessionId },
-          data: {
-            state: "CONNECTED",
-            lastConnected: new Date(),
-            transportIp: peerIp,
-            transportPort: CONTROL_PORT,
-          },
-        });
-      } else {
-        await tx.peerSession.create({
-          data: {
-            peerNodeId: data.fromNodeId,
-            state: "CONNECTED",
-            lastConnected: new Date(),
-            transportIp: peerIp,
-            transportPort: CONTROL_PORT,
-          },
-        });
-      }
-      await tx.syncState.upsert({
-        where: { peerNodeId: data.fromNodeId },
-        update: {},
-        create: { peerNodeId: data.fromNodeId },
-      });
-      await writeTrustedPeer(tx, {
-        macId: data.fromNodeId,
-        hostAddress: peerIp,
-        securityStatus,
       });
     } else {
-      await logRejectedPeer(tx, {
-        requestId: data.requestId,
-        macId: data.fromNodeId,
-        hostAddress: peerIp,
-        securityStatus,
-        action: data.status,
+      await db.peerSession.create({
+        data: {
+          peerNodeId: data.fromNodeId,
+          state: "CONNECTED",
+          lastConnected: new Date(),
+          transportIp: peerIp,
+          transportPort: CONTROL_PORT,
+        },
       });
     }
+    await db.syncState.upsert({
+      where: { peerNodeId: data.fromNodeId },
+      update: {},
+      create: { peerNodeId: data.fromNodeId },
+    });
+    await writeTrustedPeer(db, {
+      macId: data.fromNodeId,
+      hostAddress: peerIp,
+      securityStatus,
+    });
+  } else {
+    await logRejectedPeer(db, {
+      requestId: data.requestId,
+      macId: data.fromNodeId,
+      hostAddress: peerIp,
+      securityStatus,
+      action: data.status,
+    });
+  }
 
-    if (data.status === "BLOCKED") {
-      await tx.meshBlocklist.upsert({
-        where: { macAddress: data.fromNodeId },
-        update: { reason: "blocked_by_peer_response" },
-        create: { macAddress: data.fromNodeId, reason: "blocked_by_peer_response" },
-      });
-    }
-  });
+  if (data.status === "BLOCKED") {
+    await db.meshBlocklist.upsert({
+      where: { macAddress: data.fromNodeId },
+      update: { reason: "blocked_by_peer_response" },
+      create: { macAddress: data.fromNodeId, reason: "blocked_by_peer_response" },
+    });
+  }
   console.log(`> [NodeMesh] Connection request ${data.requestId} is ${data.status}`);
 }
 

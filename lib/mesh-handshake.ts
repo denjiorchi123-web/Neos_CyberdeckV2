@@ -47,9 +47,19 @@ export async function sendConnectionRequest(
         expiresAt,
       },
     }),
-    db.meshPeer.update({
+    db.meshPeer.upsert({
       where: { macAddress: peerNodeId },
-      data: { status: "PENDING_OUTGOING", lastHandshake: new Date() },
+      update: { status: "PENDING_OUTGOING", lastHandshake: new Date(), ipAddress: peer.ipAddress },
+      create: {
+        macAddress: peerNodeId,
+        userId: peer.userId || null,
+        hostname: peer.hostname || null,
+        ipAddress: peer.ipAddress,
+        publicName: peer.publicName || null,
+        displayName: peer.displayName || peer.publicName || null,
+        status: "PENDING_OUTGOING",
+        lastHandshake: new Date(),
+      },
     }),
   ]);
 
@@ -98,100 +108,112 @@ export async function respondToConnectionRequest(
     ? await db.peerSession.findFirst({ where: { peerNodeId: request.fromNodeId } })
     : null;
 
-  await db.$transaction(async (tx: any) => {
-    await tx.connectionRequest.update({
-      where: { requestId },
-      data: { status: action, respondedAt: new Date() },
-    });
-    await tx.meshPeer.update({
-      where: { macAddress: request.fromNodeId },
-      data: { status: peerStatus, lastHandshake: new Date() },
-    });
-    await tx.meshEvent.create({
-      data: {
-        originNodeId: getLocalNodeId(),
-        entityType: "connection_request",
-        entityId: requestId,
-        operation: `handshake_${action.toLowerCase()}`,
-        payloadJson: JSON.stringify({
-          peerNodeId: request.fromNodeId,
-          action,
-          hostAddress: peer.ipAddress,
-          securityStatus,
-        }),
-      },
-    });
+  await db.connectionRequest.update({
+    where: { requestId },
+    data: { status: action, respondedAt: new Date() },
+  });
+  await db.meshPeer.upsert({
+    where: { macAddress: request.fromNodeId },
+    update: {
+      status: peerStatus,
+      lastHandshake: new Date(),
+      ipAddress: peer.ipAddress,
+    },
+    create: {
+      macAddress: request.fromNodeId,
+      userId: peer.userId || null,
+      hostname: peer.hostname || null,
+      ipAddress: peer.ipAddress,
+      publicName: peer.publicName || null,
+      displayName: peer.displayName || peer.publicName || null,
+      status: peerStatus,
+      lastHandshake: new Date(),
+    },
+  });
+  await db.meshEvent.create({
+    data: {
+      originNodeId: getLocalNodeId(),
+      entityType: "connection_request",
+      entityId: requestId,
+      operation: `handshake_${action.toLowerCase()}`,
+      payloadJson: JSON.stringify({
+        peerNodeId: request.fromNodeId,
+        action,
+        hostAddress: peer.ipAddress,
+        securityStatus,
+      }),
+    },
+  });
 
-    if (action === "ACCEPTED") {
-      await tx.meshDevice.upsert({
-        where: {
-          ownerId_macAddress: {
-            ownerId: peer.userId || request.fromNodeId,
-            macAddress: request.fromNodeId,
-          },
-        },
-        update: {
-          deviceName: peer.hostname || undefined,
-          approvedAt: new Date(),
-          approvedBy: getLocalNodeId(),
-        },
-        create: {
+  if (action === "ACCEPTED") {
+    await db.meshDevice.upsert({
+      where: {
+        ownerId_macAddress: {
           ownerId: peer.userId || request.fromNodeId,
           macAddress: request.fromNodeId,
-          deviceName: peer.hostname || undefined,
-          approvedAt: new Date(),
-          approvedBy: getLocalNodeId(),
+        },
+      },
+      update: {
+        deviceName: peer.hostname || undefined,
+        approvedAt: new Date(),
+        approvedBy: getLocalNodeId(),
+      },
+      create: {
+        ownerId: peer.userId || request.fromNodeId,
+        macAddress: request.fromNodeId,
+        deviceName: peer.hostname || undefined,
+        approvedAt: new Date(),
+        approvedBy: getLocalNodeId(),
+      },
+    });
+    if (existingSession) {
+      await db.peerSession.update({
+        where: { sessionId: existingSession.sessionId },
+        data: {
+          state: "CONNECTED",
+          lastConnected: new Date(),
+          transportIp: peer.ipAddress,
+          transportPort: MESH_CONTROL_PORT,
         },
       });
-      if (existingSession) {
-        await tx.peerSession.update({
-          where: { sessionId: existingSession.sessionId },
-          data: {
-            state: "CONNECTED",
-            lastConnected: new Date(),
-            transportIp: peer.ipAddress,
-            transportPort: MESH_CONTROL_PORT,
-          },
-        });
-      } else {
-        await tx.peerSession.create({
-          data: {
-            peerNodeId: request.fromNodeId,
-            state: "CONNECTED",
-            lastConnected: new Date(),
-            transportIp: peer.ipAddress,
-            transportPort: MESH_CONTROL_PORT,
-          },
-        });
-      }
-      await tx.syncState.upsert({
-        where: { peerNodeId: request.fromNodeId },
-        update: {},
-        create: { peerNodeId: request.fromNodeId },
-      });
-      await writeTrustedPeer(tx, {
-        macId: request.fromNodeId,
-        hostAddress: peer.ipAddress,
-        securityStatus,
-      });
     } else {
-      await logRejectedPeer(tx, {
-        requestId,
-        macId: request.fromNodeId,
-        hostAddress: peer.ipAddress,
-        securityStatus,
-        action,
+      await db.peerSession.create({
+        data: {
+          peerNodeId: request.fromNodeId,
+          state: "CONNECTED",
+          lastConnected: new Date(),
+          transportIp: peer.ipAddress,
+          transportPort: MESH_CONTROL_PORT,
+        },
       });
     }
+    await db.syncState.upsert({
+      where: { peerNodeId: request.fromNodeId },
+      update: {},
+      create: { peerNodeId: request.fromNodeId },
+    });
+    await writeTrustedPeer(db as any, {
+      macId: request.fromNodeId,
+      hostAddress: peer.ipAddress,
+      securityStatus,
+    });
+  } else {
+    await logRejectedPeer(db as any, {
+      requestId,
+      macId: request.fromNodeId,
+      hostAddress: peer.ipAddress,
+      securityStatus,
+      action,
+    });
+  }
 
-    if (action === "BLOCKED") {
-      await tx.meshBlocklist.upsert({
-        where: { macAddress: request.fromNodeId },
-        update: { reason: "blocked_by_local_user" },
-        create: { macAddress: request.fromNodeId, reason: "blocked_by_local_user" },
-      });
-    }
-  });
+  if (action === "BLOCKED") {
+    await db.meshBlocklist.upsert({
+      where: { macAddress: request.fromNodeId },
+      update: { reason: "blocked_by_local_user" },
+      create: { macAddress: request.fromNodeId, reason: "blocked_by_local_user" },
+    });
+  }
 
   await sendMeshControl(peer.ipAddress, {
     type: "connection_response",
