@@ -7,6 +7,7 @@ import { NextApiResponseServerIo } from "@/types";
 import { redis, redisPub, redisSub } from "@/lib/redis";
 import { db } from "@/lib/db";
 import { publicProfileSelect } from "@/lib/public-profile-select";
+import { sendMeshControl } from "@/lib/mesh-control";
 
 function readCookie(cookieHeader: string | undefined, name: string): string | null {
   if (!cookieHeader) return null;
@@ -109,6 +110,68 @@ async function logCallHistory(opts: {
   } catch (err) {
     console.error("[CallHistory] write failed:", err);
   }
+}
+
+async function findMeshCallPeer(targetUserId?: string) {
+  if (!targetUserId) return null;
+
+  const targetProfile = await db.profile.findUnique({
+    where: { id: targetUserId },
+    select: { id: true, name: true },
+  });
+
+  const activeThreshold = new Date(Date.now() - 30 * 1000);
+  return db.meshPeer.findFirst({
+    where: {
+      status: { in: ["TRUSTED", "ACCEPTED"] },
+      ipAddress: { not: null },
+      lastSeen: { gte: activeThreshold },
+      OR: [
+        { userId: targetUserId },
+        ...(targetProfile?.name ? [{ publicName: targetProfile.name }] : []),
+      ],
+    },
+  });
+}
+
+async function relayMeshCallSignal(
+  event: string,
+  data: any,
+  socket: any,
+) {
+  let peer = await findMeshCallPeer(data?.targetUserId);
+  if (!peer && data?.callId) {
+    const route = await redis.hgetall(`mesh:call:${data.callId}`);
+    if (route?.peerMac) {
+      peer = await db.meshPeer.findUnique({ where: { macAddress: route.peerMac } });
+    }
+  }
+  if (!peer?.ipAddress) return false;
+
+  const localUserId = socket?.data?.userId || socket?.data?.authenticatedProfileId || "";
+  const localProfile = localUserId
+    ? await db.profile.findUnique({ where: { id: localUserId }, select: { name: true } })
+    : null;
+
+  if (data?.callId) {
+    await redis.hset(`mesh:call:${data.callId}`, {
+      localChatId: data.chatId || "",
+      localUserId,
+      peerMac: peer.macAddress,
+      peerIp: peer.ipAddress,
+      peerName: peer.publicName || "",
+    });
+    await redis.expire(`mesh:call:${data.callId}`, 60 * 60);
+  }
+
+  await sendMeshControl(peer.ipAddress, {
+    type: "call_signal",
+    event,
+    fromUsername: localProfile?.name || data?.callerName || "Unknown",
+    fromUserId: localUserId,
+    payload: data,
+  });
+  return true;
 }
 
 const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
@@ -224,7 +287,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
 
       // ── WebRTC Signaling ───────────────────────────────────
       // Join a media room
-      socket.on("webrtc:join", async (data: { roomId: string; type?: string; callId?: string }) => {
+      socket.on("webrtc:join", async (data: { roomId: string; type?: string; callId?: string; isInitiator?: boolean }) => {
         const roomId = typeof data === "string" ? data : data.roomId;
         const callType = typeof data === "string" ? "audio" : (data.type || "audio");
 
@@ -265,10 +328,22 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
             peerId: socket.id,
           });
         }
+
+        if (typeof data !== "string" && data.callId && !data.isInitiator) {
+          await relayMeshCallSignal("webrtc:peer-joined", {
+            chatId: roomId,
+            callId: data.callId,
+            peerId: socket.id,
+          }, socket);
+        }
       });
 
       // Relay WebRTC offer
-      socket.on("webrtc:offer", ({ targetId, offer }) => {
+      socket.on("webrtc:offer", async ({ targetId, offer, callId, chatId }) => {
+        if (!io.sockets.sockets.has(targetId)) {
+          await relayMeshCallSignal("webrtc:offer", { targetId, offer, callId, chatId, peerId: socket.id }, socket);
+          return;
+        }
         io.to(targetId).emit("webrtc:offer", {
           peerId: socket.id,
           offer,
@@ -276,7 +351,11 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       });
 
       // Relay WebRTC answer
-      socket.on("webrtc:answer", ({ targetId, answer }) => {
+      socket.on("webrtc:answer", async ({ targetId, answer, callId, chatId }) => {
+        if (!io.sockets.sockets.has(targetId)) {
+          await relayMeshCallSignal("webrtc:answer", { targetId, answer, callId, chatId, peerId: socket.id }, socket);
+          return;
+        }
         io.to(targetId).emit("webrtc:answer", {
           peerId: socket.id,
           answer,
@@ -284,22 +363,38 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       });
 
       // Relay ICE candidates
-      socket.on("webrtc:ice-candidate", ({ targetId, candidate }) => {
+      socket.on("webrtc:ice-candidate", async ({ targetId, candidate, callId, chatId }) => {
+        if (!io.sockets.sockets.has(targetId)) {
+          await relayMeshCallSignal("webrtc:ice-candidate", { targetId, candidate, callId, chatId, peerId: socket.id }, socket);
+          return;
+        }
         io.to(targetId).emit("webrtc:ice-candidate", {
           peerId: socket.id,
           candidate,
         });
       });
 
+      socket.on("webrtc:error", async ({ targetId, message, callId, chatId }) => {
+        if (!io.sockets.sockets.has(targetId)) {
+          await relayMeshCallSignal("webrtc:error", { targetId, message, callId, chatId, peerId: socket.id }, socket);
+          return;
+        }
+        io.to(targetId).emit("webrtc:error", {
+          peerId: socket.id,
+          message,
+        });
+      });
+
       // ── Call Notifications (Ringing) ───────────────────────
       // Route to a specific user-room when targetUserId is supplied (1:1 DM calls).
       // Fall back to the chatId room for group/channel calls so existing members still get notified.
-      const routeCallEvent = (event: string, data: { chatId: string; targetUserId?: string }) => {
+      const routeCallEvent = async (event: string, data: { chatId: string; targetUserId?: string; callId?: string }) => {
         if (data.targetUserId) {
           io.to(`user:${data.targetUserId}`).emit(event, data);
         } else {
           io.to(data.chatId).emit(event, data);
         }
+        await relayMeshCallSignal(event, data, socket);
       };
 
       // Common meta-write helper so the cleanup path always sees consistent fields
@@ -327,6 +422,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
           // #1: offline check
           const isOnline = await redis.sismember("presence:online", data.targetUserId);
           if (!isOnline) {
+            if (await relayMeshCallSignal("call:start", data, socket)) return;
             await writeCallMeta(data.chatId, { ...startMeta, status: "offline" });
             if (data.callerUserId) {
               io.to(`user:${data.callerUserId}`).emit("call:offline", {
@@ -363,7 +459,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
           });
         }
 
-        routeCallEvent("call:start", data);
+        await routeCallEvent("call:start", data);
       });
 
       // Scenario #2 (rejected): the client just declined — record the reason for the
@@ -372,11 +468,11 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
         if (data.chatId) {
           await writeCallMeta(data.chatId, { status: "rejected" });
         }
-        routeCallEvent("call:decline", data);
+        await routeCallEvent("call:decline", data);
       });
 
-      socket.on("call:accept", (data: { chatId: string; callId?: string; targetUserId?: string }) => {
-        routeCallEvent("call:accept", data);
+      socket.on("call:accept", async (data: { chatId: string; callId?: string; targetUserId?: string }) => {
+        await routeCallEvent("call:accept", data);
       });
 
       // Scenario #3 (no answer): caller's 30s timer fired. Tell the callee to stop ringing
@@ -386,7 +482,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
           await writeCallMeta(data.chatId, { status: "missed" });
         }
         // Notify the callee so their ring UI dismisses immediately.
-        routeCallEvent("call:timeout", data);
+        await routeCallEvent("call:timeout", data);
       });
 
       // Scenario #8 (dropped): the client detected ICE failure and is ending. The `reason`
@@ -395,7 +491,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
         if (data.chatId && data.reason) {
           await writeCallMeta(data.chatId, { status: data.reason });
         }
-        routeCallEvent("call:end", data);
+        await routeCallEvent("call:end", data);
       });
 
       // Client-side busy: callee's CallProvider detected a second incoming call while
@@ -405,7 +501,7 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
         if (data.chatId) {
           await writeCallMeta(data.chatId, { status: "busy" });
         }
-        routeCallEvent("call:busy", data);
+        await routeCallEvent("call:busy", data);
       });
 
       // Leave media room

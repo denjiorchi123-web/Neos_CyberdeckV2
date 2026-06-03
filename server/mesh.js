@@ -7,11 +7,13 @@ const path = require("path");
 const { PrismaClient } = require("@prisma/client");
 
 const db = new PrismaClient();
+let redisClient = null;
 let ioEmitter = null;
 try {
   const Redis = require("ioredis");
   const { Emitter } = require("@socket.io/redis-emitter");
-  ioEmitter = new Emitter(new Redis(process.env.REDIS_URL || "redis://127.0.0.1:6379"));
+  redisClient = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:6379");
+  ioEmitter = new Emitter(redisClient);
 } catch {}
 const BEACON_PORT = Number(process.env.MESH_BEACON_PORT || 5005);
 const CONTROL_PORT = Number(process.env.MESH_CONTROL_PORT || 5006);
@@ -469,6 +471,153 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
   }
 }
 
+async function findTrustedSignalPeer(fromUsername, fromUserId, peerIp) {
+  const candidates = await db.meshPeer.findMany({
+    where: {
+      status: { in: Array.from(TRUSTED_STATUSES) },
+      OR: [
+        { publicName: fromUsername },
+        ...(fromUserId ? [{ userId: fromUserId }] : []),
+        ...(peerIp ? [{ ipAddress: peerIp }] : []),
+      ],
+    },
+  });
+
+  return candidates.find((peer) => {
+    const nameOk = !peer.publicName || peer.publicName === fromUsername;
+    const userOk = !fromUserId || !peer.userId || peer.userId === fromUserId;
+    return nameOk && userOk;
+  }) || null;
+}
+
+async function storeMeshCallRoute(callId, fields) {
+  if (!redisClient || !callId) return;
+  await redisClient.hset(`mesh:call:${callId}`, fields);
+  await redisClient.expire(`mesh:call:${callId}`, 60 * 60);
+}
+
+async function getMeshCallRoute(callId) {
+  if (!redisClient || !callId) return {};
+  return redisClient.hgetall(`mesh:call:${callId}`);
+}
+
+async function receiveCallStartSignal(payload, fromUsername, fromUserId, peerIp, peer) {
+  const session = getMeshSession();
+  if (!session) {
+    console.error("> [NodeMesh][CALL] Rejected call:start: no local session");
+    return;
+  }
+
+  const found = await findDirectConversationByNames(fromUsername, session.username);
+  if (!found) {
+    console.error(`> [NodeMesh][CALL] Rejected call:start: missing local conversation for ${fromUsername}/${session.username}`);
+    return;
+  }
+
+  const callId = typeof payload.callId === "string" ? payload.callId : crypto.randomUUID();
+  const localPayload = {
+    ...payload,
+    chatId: found.conversation.id,
+    callId,
+    callerName: fromUsername,
+    callerMemberId: found.firstMember.id,
+    callerUserId: found.firstMember.profileId,
+    targetUserId: found.secondMember.profileId,
+    serverId: found.secondMember.serverId,
+  };
+
+  await storeMeshCallRoute(callId, {
+    localChatId: found.conversation.id,
+    localUserId: found.secondMember.profileId,
+    peerMac: peer.macAddress,
+    peerIp,
+    peerName: fromUsername,
+    peerUserId: fromUserId || "",
+  });
+
+  ioEmitter?.to(`user:${found.secondMember.profileId}`).emit("call:start", localPayload);
+  console.log(`> [NodeMesh][CALL] Incoming ${localPayload.type || "audio"} call from ${fromUsername}`);
+}
+
+async function emitRoutedCallSignal(event, payload, fromUsername, fromUserId, peerIp, peer) {
+  const callId = typeof payload.callId === "string" ? payload.callId : "";
+  const route = await getMeshCallRoute(callId);
+  const localPayload = {
+    ...payload,
+    chatId: route.localChatId || payload.chatId,
+  };
+
+  if (callId) {
+    await storeMeshCallRoute(callId, {
+      localChatId: localPayload.chatId || "",
+      localUserId: route.localUserId || "",
+      peerMac: peer.macAddress,
+      peerIp,
+      peerName: fromUsername,
+      peerUserId: fromUserId || "",
+    });
+  }
+
+  if (event.startsWith("webrtc:") && localPayload.targetId) {
+    ioEmitter?.to(localPayload.targetId).emit(event, {
+      ...localPayload,
+      peerId: localPayload.peerId,
+    });
+    return;
+  }
+
+  if (route.localUserId) {
+    ioEmitter?.to(`user:${route.localUserId}`).emit(event, localPayload);
+    return;
+  }
+
+  if (localPayload.chatId) {
+    ioEmitter?.to(localPayload.chatId).emit(event, localPayload);
+  }
+}
+
+async function receiveCallSignal(data, peerIp) {
+  peerIp = normalizeIp(peerIp);
+  const allowedEvents = new Set([
+    "call:start",
+    "call:accept",
+    "call:decline",
+    "call:timeout",
+    "call:end",
+    "call:busy",
+    "call:offline",
+    "webrtc:peer-joined",
+    "webrtc:offer",
+    "webrtc:answer",
+    "webrtc:ice-candidate",
+    "webrtc:error",
+    "webrtc:peer-left",
+  ]);
+
+  const event = typeof data.event === "string" ? data.event : "";
+  const payload = data.payload && typeof data.payload === "object" ? data.payload : null;
+  const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
+  const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
+
+  if (!allowedEvents.has(event) || !payload || !fromUsername) {
+    console.error("> [NodeMesh][CALL] Rejected call_signal: invalid payload");
+    return;
+  }
+
+  const peer = await findTrustedSignalPeer(fromUsername, fromUserId, peerIp);
+  if (!peer) {
+    console.error(`> [NodeMesh][CALL] Rejected ${event} from untrusted peer ${fromUsername}`);
+    return;
+  }
+
+  if (event === "call:start") {
+    await receiveCallStartSignal(payload, fromUsername, fromUserId, peerIp, peer);
+    return;
+  }
+
+  await emitRoutedCallSignal(event, payload, fromUsername, fromUserId, peerIp, peer);
+}
+
 async function receiveConnectionRequest(data, peerIp) {
   peerIp = normalizeIp(peerIp);
   const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
@@ -680,6 +829,7 @@ function startControlServer() {
         if (data.type === "connection_response") await receiveConnectionResponse(data, socket.remoteAddress);
         if (data.type === "direct_message_sync") await receiveDirectMessageSync(data, socket.remoteAddress);
         if (data.type === "direct_message_ack") await receiveDirectMessageAck(data);
+        if (data.type === "call_signal") await receiveCallSignal(data, socket.remoteAddress);
       } catch (error) {
         console.error("> [NodeMesh] Rejected control packet:", error.message);
       }

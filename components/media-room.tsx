@@ -439,7 +439,7 @@ export function MediaRoom({
           try {
             const offer = await pc.createOffer({ iceRestart: true });
             await pc.setLocalDescription(offer);
-            socket?.emit("webrtc:offer", { targetId: peerId, offer });
+            socket?.emit("webrtc:offer", { targetId: peerId, offer, callId, chatId });
             console.log("[CyberDeck:Call] #8 ICE restart offer sent");
           } catch (err) {
             console.error("[CyberDeck:Call] #8 ICE restart failed:", err);
@@ -483,6 +483,8 @@ export function MediaRoom({
           socket.emit("webrtc:ice-candidate", {
             targetId: peerId,
             candidate: event.candidate,
+            callId,
+            chatId,
           });
         }
       }
@@ -735,7 +737,7 @@ export function MediaRoom({
         if (isInitiator) {
           const offer = await peer.pc.createOffer({ iceRestart: true });
           await peer.pc.setLocalDescription(offer);
-          socket?.emit("webrtc:offer", { targetId: peerId, offer });
+          socket?.emit("webrtc:offer", { targetId: peerId, offer, callId, chatId });
         }
       } catch (err) {
         console.error("[CyberDeck:Call] #7 restartIce failed:", err);
@@ -862,10 +864,10 @@ export function MediaRoom({
           const pc = createPeerConnection(peerId, stream);
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          socket.emit("webrtc:offer", { targetId: peerId, offer });
+          socket.emit("webrtc:offer", { targetId: peerId, offer, callId, chatId });
         } catch (err: any) {
           console.error("[MediaRoom] createOffer/setLocalDescription failed:", err);
-          socket.emit("webrtc:error", { targetId: peerId, message: String(err?.message || err) });
+          socket.emit("webrtc:error", { targetId: peerId, message: String(err?.message || err), callId, chatId });
           endCallWithReason("dropped", "Something went wrong setting up the call. Please try again.");
         }
       };
@@ -898,10 +900,10 @@ export function MediaRoom({
           await flushPendingCandidates(peerId, pc);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          socket.emit("webrtc:answer", { targetId: peerId, answer });
+          socket.emit("webrtc:answer", { targetId: peerId, answer, callId, chatId });
         } catch (err: any) {
           console.error("[MediaRoom] handle offer failed:", err);
-          socket.emit("webrtc:error", { targetId: peerId, message: String(err?.message || err) });
+          socket.emit("webrtc:error", { targetId: peerId, message: String(err?.message || err), callId, chatId });
           endCallWithReason("dropped", "Something went wrong setting up the call. Please try again.");
         }
       };
@@ -915,7 +917,7 @@ export function MediaRoom({
           await flushPendingCandidates(peerId, peer.pc);
         } catch (err: any) {
           console.error("[MediaRoom] setRemoteDescription(answer) failed:", err);
-          socket.emit("webrtc:error", { targetId: peerId, message: String(err?.message || err) });
+          socket.emit("webrtc:error", { targetId: peerId, message: String(err?.message || err), callId, chatId });
           endCallWithReason("dropped", "Something went wrong setting up the call. Please try again.");
         }
       };
@@ -966,7 +968,7 @@ export function MediaRoom({
       socket.on("webrtc:peer-left", handlers["webrtc:peer-left"]);
 
       // Join the signaling room
-      socket.emit("webrtc:join", { roomId: chatId, callId });
+      socket.emit("webrtc:join", { roomId: chatId, callId, isInitiator });
       setIsJoined(true);
 
       // If we are starting this call, notify the other peer
