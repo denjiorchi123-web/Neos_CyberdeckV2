@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "fs/promises";
-import { join, extname, basename } from "path";
+import { createReadStream } from "fs";
+import { stat } from "fs/promises";
+import { extname, basename } from "path";
+import { Readable } from "stream";
 import { currentProfile } from "@/lib/current-profile";
+import { ensureDirs, resolveStoredFilePath } from "@/lib/media-dirs";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +42,11 @@ export async function GET(
     return new NextResponse("Bad Request", { status: 400 });
   }
 
-  const filePath = join(process.cwd(), "private", "uploads", filename);
+  ensureDirs();
+  const filePath = resolveStoredFilePath(filename);
 
   try {
-    const data = await readFile(filePath);
-    const fileSize = data.byteLength;
+    const fileSize = (await stat(filePath)).size;
     const ext  = extname(filename).toLowerCase();
     const mime = MIME[ext] ?? "application/octet-stream";
 
@@ -52,14 +55,20 @@ export async function GET(
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunksize = (end - start) + 1;
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= fileSize) {
+        return new NextResponse("Range Not Satisfiable", {
+          status: 416,
+          headers: { "Content-Range": `bytes */${fileSize}` },
+        });
+      }
+      const safeEnd = Math.min(end, fileSize - 1);
+      const chunksize = (safeEnd - start) + 1;
+      const stream = Readable.toWeb(createReadStream(filePath, { start, end: safeEnd })) as ReadableStream;
       
-      const chunk = data.subarray(start, end + 1);
-      
-      return new NextResponse(chunk, {
+      return new NextResponse(stream, {
         status: 206,
         headers: {
-          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+          "Content-Range": `bytes ${start}-${safeEnd}/${fileSize}`,
           "Accept-Ranges": "bytes",
           "Content-Length": String(chunksize),
           "Content-Type": mime,
@@ -68,13 +77,14 @@ export async function GET(
       });
     }
 
-    return new NextResponse(data, {
+    const stream = Readable.toWeb(createReadStream(filePath)) as ReadableStream;
+    return new NextResponse(stream, {
       status: 200,
       headers: {
         "Content-Type":        mime,
         "Content-Length":      String(fileSize),
         "Accept-Ranges":       "bytes",
-        "Content-Disposition": `inline; filename="${filename}"`,
+        "Content-Disposition": `${req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline"}; filename="${filename}"`,
         "Cache-Control":       "private, max-age=86400",
       }
     });

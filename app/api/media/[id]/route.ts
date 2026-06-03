@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unlink } from "fs/promises";
 import { existsSync } from "fs";
-import { join } from "path";
 import { db } from "@/lib/db";
 import { currentProfile } from "@/lib/current-profile";
-import { DIRS } from "@/lib/media-dirs";
+import { ensureDirs, resolveStoredFilePath } from "@/lib/media-dirs";
 import { log } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -20,10 +19,11 @@ export async function DELETE(
   const file = await db.fileIndex.findUnique({ where: { id: params.id } });
   if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  ensureDirs();
   // Delete physical file + thumbnail
   const paths = [
-    join(DIRS.uploads, file.path),
-    join(DIRS.uploads, `thumb_${file.path}`),
+    resolveStoredFilePath(file.path),
+    resolveStoredFilePath(`thumb_${file.path}`),
   ];
   for (const p of paths) {
     if (existsSync(p)) await unlink(p).catch(() => undefined);

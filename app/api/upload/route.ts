@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createWriteStream, mkdirSync } from "fs";
+import { createWriteStream, mkdirSync, renameSync } from "fs";
 import { unlink, stat } from "fs/promises";
 import { join } from "path";
 import { Readable } from "stream";
@@ -10,7 +10,7 @@ import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { MESSAGE_FILE_MAX_SIZE, formatMaxSize } from "@/lib/upload-limits";
 import { log } from "@/lib/logger";
-import { ensureDirs } from "@/lib/media-dirs";
+import { ensureDirs, storageDirForMime } from "@/lib/media-dirs";
 
 // Streaming uploads need the Node.js runtime + a non-cached, non-static response.
 export const runtime = "nodejs";
@@ -169,6 +169,10 @@ export async function POST(req: NextRequest) {
 
     const fileSize = (await stat(savedPath)).size;
     const fileType = resolveType(mimeType);
+    const storageDir = storageDirForMime(mimeType);
+    mkdirSync(storageDir, { recursive: true });
+    const finalPath = join(storageDir, savedName);
+    if (finalPath !== savedPath) renameSync(savedPath, finalPath);
 
     // Thumbnail generation for images — sharp reads from disk via streaming,
     // so even multi-hundred-MB images don't blow up RAM.
@@ -177,10 +181,10 @@ export async function POST(req: NextRequest) {
       try {
         const sharp = (await import("sharp")).default;
         const thumbName = `thumb_${savedName}`;
-        await sharp(savedPath)
+        await sharp(finalPath)
           .resize(320, 320, { fit: "inside", withoutEnlargement: true })
           .jpeg({ quality: 75 })
-          .toFile(join(uploadDir, thumbName));
+          .toFile(join(storageDir, thumbName));
         thumbnailUrl = `/api/files/${thumbName}`;
       } catch {
         // sharp optional / unsupported format — skip thumbnail

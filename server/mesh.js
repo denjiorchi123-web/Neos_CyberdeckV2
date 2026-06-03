@@ -33,6 +33,15 @@ const AUTH_RATE_LIMIT_MS = 10 * 60 * 1000;
 const TRUSTED_STATUSES = new Set(["TRUSTED", "ACCEPTED"]);
 const authFailures = new Map();
 const VERIFIED_LAN_STATUS = "VERIFIED LAN";
+const PRIVATE_ROOT = path.join(process.cwd(), "private");
+const CYBERDECK_MEDIA_ROOT = path.join(PRIVATE_ROOT, "CyberDeck", "Media");
+const MEDIA_DIRS = {
+  uploads: path.join(PRIVATE_ROOT, "uploads"),
+  photos: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Images"),
+  videos: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Video"),
+  audio: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Audio"),
+  documents: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Documents"),
+};
 
 let sqliteRuntimeReady = null;
 
@@ -462,8 +471,30 @@ function uploadInfoForUrl(fileUrl) {
   if (!filename || filename.includes("..")) return null;
   return {
     filename,
-    path: path.join(process.cwd(), "private", "uploads", filename),
+    path: resolveStoredFilePath(filename),
   };
+}
+
+function categoryFromMime(mimeType = "") {
+  if (mimeType.startsWith("image/")) return "photos";
+  if (mimeType.startsWith("video/")) return "videos";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "documents";
+}
+
+function resolveStoredFilePath(filename) {
+  const candidates = [
+    path.join(MEDIA_DIRS.photos, filename),
+    path.join(MEDIA_DIRS.videos, filename),
+    path.join(MEDIA_DIRS.audio, filename),
+    path.join(MEDIA_DIRS.documents, filename),
+    path.join(MEDIA_DIRS.uploads, filename),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+function storageDirForMime(mimeType = "") {
+  return MEDIA_DIRS[categoryFromMime(mimeType)] || MEDIA_DIRS.documents;
 }
 
 async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
@@ -571,7 +602,7 @@ async function receiveDirectMediaChunk(data, peerIp) {
   if (!Number.isInteger(chunkIndex) || !Number.isInteger(totalChunks) || chunkIndex < 0 || totalChunks <= 0) return;
   if (typeof data.dataBase64 !== "string") return;
 
-  const uploadDir = path.join(process.cwd(), "private", "uploads");
+  const uploadDir = storageDirForMime(data.mimeType || "");
   fs.mkdirSync(uploadDir, { recursive: true });
   const finalPath = path.join(uploadDir, storageName);
   const tempPath = path.join(uploadDir, `.mesh-${data.messageId || "media"}-${storageName}.part`);

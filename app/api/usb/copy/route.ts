@@ -6,12 +6,12 @@ import { v4 as uuidv4 } from "uuid";
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { log } from "@/lib/logger";
+import { ensureDirs, storageDirForMime } from "@/lib/media-dirs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MEDIA_ROOT  = "/media";
-const UPLOAD_DIR  = join(process.cwd(), "private", "uploads");
 
 function safeSrc(raw: string | null): string | null {
   if (!raw) return null;
@@ -55,13 +55,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Source file not found" }, { status: 404 });
   }
 
-  mkdirSync(UPLOAD_DIR, { recursive: true });
+  ensureDirs();
 
   const originalName = basename(src);
   const ext          = extname(originalName).slice(1) || "bin";
   const savedName    = `${uuidv4()}.${ext}`;
-  const destPath     = join(UPLOAD_DIR, savedName);
   const mimeType     = mimeFromExt(ext);
+  const storageDir   = storageDirForMime(mimeType);
+  mkdirSync(storageDir, { recursive: true });
+  const destPath     = join(storageDir, savedName);
 
   await pipeline(createReadStream(src), createWriteStream(destPath));
 

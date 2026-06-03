@@ -2,7 +2,7 @@ import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
 import { createReadStream, existsSync } from "fs";
 import { stat } from "fs/promises";
-import { basename, join } from "path";
+import { basename } from "path";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
@@ -11,6 +11,7 @@ import { redis } from "@/lib/redis";
 import { publicProfileSelect } from "@/lib/public-profile-select";
 import { getLocalNodeId } from "@/lib/mesh-identity";
 import { sendMeshControl } from "@/lib/mesh-control";
+import { resolveStoredFilePath } from "@/lib/media-dirs";
 
 const MEDIA_CHUNK_BYTES = 96 * 1024;
 
@@ -20,7 +21,7 @@ function localUploadForUrl(fileUrl?: string | null) {
   if (!filename || filename.includes("..")) return null;
   return {
     filename,
-    path: join(process.cwd(), "private", "uploads", filename),
+    path: resolveStoredFilePath(filename),
   };
 }
 

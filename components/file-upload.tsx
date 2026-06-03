@@ -34,7 +34,8 @@ export function FileUpload({
   endpoint
 }: FileUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
-  const fileType = value?.split(".").pop();
+  const fileType = value?.split(".").pop()?.split("?")[0]?.toLowerCase();
+  const isImageValue = !!fileType && ["png", "jpg", "jpeg", "gif", "webp"].includes(fileType);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -90,7 +91,7 @@ export function FileUpload({
     maxSize,
   });
 
-  if (value && fileType !== "pdf") {
+  if (value && isImageValue) {
     return (
       <div className="relative h-20 w-20">
         <Image fill src={value} alt="Upload" className="rounded-full" />
@@ -105,7 +106,7 @@ export function FileUpload({
     );
   }
 
-  if (value && fileType === "pdf") {
+  if (value) {
     return (
       <div className="relative flex items-center p-2 mt-2 rounded-md bg-background/10">
         <FileIcon className="h-10 w-10 fill-indigo-200 stroke-indigo-400" />
