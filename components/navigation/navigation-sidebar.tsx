@@ -22,8 +22,8 @@ export async function NavigationSidebar() {
   // Servers are no longer displayed in the far-left sidebar
 
   return (
-    <div className="flex flex-col h-full items-center text-primary w-full dark:bg-[#1e1f22] bg-[#e3e5e8] overflow-hidden">
-      <div className="touch-scroll touch-scroll-rail flex flex-1 min-h-0 w-full flex-col items-center justify-center gap-y-1 py-1 overflow-y-auto">
+    <div className="flex h-full w-full flex-col items-center justify-between overflow-hidden py-2 text-primary dark:bg-[#1e1f22] bg-[#e3e5e8]">
+      <div className="flex w-full flex-col items-center gap-y-1">
         <NavigationLauncher />
         <Separator className="h-[2px] bg-zinc-300 dark:bg-zinc-700 rounded-md w-10 mx-auto" />
         <NavigationHome />
