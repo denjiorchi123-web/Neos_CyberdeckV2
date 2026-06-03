@@ -23,7 +23,7 @@ import {
   FormItem
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
-import { FileUpload } from "@/components/file-upload";
+import { FileUpload, UploadResult } from "@/components/file-upload";
 import { useModal } from "@/hooks/use-modal-store";
 
 const formSchema = z.object({
@@ -39,6 +39,7 @@ export function MessageFileModal() {
   } = useModal();
   const { apiUrl, query, replyToId } = data;
   const router = useRouter();
+  const [uploadMeta, setUploadMeta] = React.useState<UploadResult | null>(null);
 
   const isModalOpen = isOpen && type === "messageFile";
 
@@ -51,6 +52,7 @@ export function MessageFileModal() {
 
   const handleClose = () => {
     form.reset();
+    setUploadMeta(null);
     onClose();
   };
 
@@ -62,7 +64,18 @@ export function MessageFileModal() {
         url: apiUrl || "",
         query
       });
-      await axios.post(url, { ...values, content: values.fileUrl, replyToId });
+      const attachment = uploadMeta?.url === values.fileUrl ? uploadMeta : { url: values.fileUrl };
+      await axios.post(url, {
+        content: attachment.fileName || values.fileUrl,
+        fileUrl: attachment.url,
+        fileName: attachment.fileName,
+        fileSize: attachment.fileSize,
+        mimeType: attachment.mimeType,
+        thumbnailUrl: attachment.thumbnailUrl,
+        mediaKey: attachment.mediaKey,
+        type: attachment.type || "DOCUMENT",
+        replyToId,
+      });
 
       form.reset();
       router.refresh();
@@ -99,7 +112,11 @@ export function MessageFileModal() {
                         <FileUpload
                           endpoint="messageFile"
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(url) => {
+                            if (!url) setUploadMeta(null);
+                            field.onChange(url);
+                          }}
+                          onUploadComplete={setUploadMeta}
                         />
                       </FormControl>
                     </FormItem>

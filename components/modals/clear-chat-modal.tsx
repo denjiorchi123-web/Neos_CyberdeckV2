@@ -3,6 +3,7 @@
 import axios from "axios";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   Dialog,
@@ -18,6 +19,7 @@ import { Button } from "@/components/ui/button";
 export function ClearChatModal() {
   const { isOpen, onClose, type, data } = useModal();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const isModalOpen = isOpen && type === "clearChat";
   const { chatId } = data;
@@ -29,10 +31,13 @@ export function ClearChatModal() {
       setIsLoading(true);
       await axios.post("/api/clear-chat", { chatId });
 
+      queryClient.setQueryData([`chat:${chatId}`], {
+        pages: [{ items: [], nextCursor: null }],
+        pageParams: [undefined],
+      });
+      await queryClient.invalidateQueries({ queryKey: [`chat:${chatId}`] });
       onClose();
       router.refresh();
-      // Optionally reload the page to completely clear the local chat cache/store
-      window.location.reload();
     } catch (error) {
       console.error(error);
     } finally {

@@ -134,7 +134,11 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
           new URLSearchParams(window.location.search).has("audio"));
 
       if (chatIdRef.current !== null || isInCallViaUrl) {
-        socket.emit("call:busy", { chatId: data.chatId, targetUserId: data.callerUserId });
+        socket.emit("call:busy", {
+          chatId: data.chatId,
+          callId: data.callId ?? undefined,
+          targetUserId: data.callerUserId,
+        });
         return;
       }
 

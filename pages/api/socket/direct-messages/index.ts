@@ -1,5 +1,8 @@
 import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
+import { createReadStream, existsSync } from "fs";
+import { stat } from "fs/promises";
+import { basename, join } from "path";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
@@ -8,6 +11,86 @@ import { redis } from "@/lib/redis";
 import { publicProfileSelect } from "@/lib/public-profile-select";
 import { getLocalNodeId } from "@/lib/mesh-identity";
 import { sendMeshControl } from "@/lib/mesh-control";
+
+const MEDIA_CHUNK_BYTES = 96 * 1024;
+
+function localUploadForUrl(fileUrl?: string | null) {
+  if (!fileUrl || !fileUrl.startsWith("/api/files/")) return null;
+  const filename = basename(fileUrl);
+  if (!filename || filename.includes("..")) return null;
+  return {
+    filename,
+    path: join(process.cwd(), "private", "uploads", filename),
+  };
+}
+
+async function sendMeshMediaFile(
+  ipAddress: string,
+  context: {
+    fromNodeId: string;
+    fromUserId: string;
+    fromUsername: string;
+    toUsername: string;
+    messageId: string;
+  },
+  fileUrl?: string | null,
+  options: {
+    fileName?: string | null;
+    mimeType?: string | null;
+    isThumbnail?: boolean;
+  } = {},
+) {
+  const local = localUploadForUrl(fileUrl);
+  if (!local || !existsSync(local.path)) return;
+
+  const info = await stat(local.path);
+  const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
+  let chunkIndex = 0;
+
+  for await (const chunk of createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
+    await sendMeshControl(ipAddress, {
+      type: "direct_media_chunk",
+      ...context,
+      fileUrl,
+      storageName: local.filename,
+      fileName: options.fileName || local.filename,
+      mimeType: options.mimeType || "application/octet-stream",
+      isThumbnail: Boolean(options.isThumbnail),
+      chunkIndex,
+      totalChunks,
+      totalSize: info.size,
+      dataBase64: Buffer.from(chunk as Buffer).toString("base64"),
+    });
+    chunkIndex += 1;
+  }
+}
+
+async function sendMeshMediaForMessage(
+  ipAddress: string,
+  context: {
+    fromNodeId: string;
+    fromUserId: string;
+    fromUsername: string;
+    toUsername: string;
+    messageId: string;
+  },
+  message: {
+    fileUrl?: string | null;
+    thumbnailUrl?: string | null;
+    fileName?: string | null;
+    mimeType?: string | null;
+  },
+) {
+  await sendMeshMediaFile(ipAddress, context, message.fileUrl, {
+    fileName: message.fileName,
+    mimeType: message.mimeType,
+  });
+  await sendMeshMediaFile(ipAddress, context, message.thumbnailUrl, {
+    fileName: message.fileName ? `Thumbnail for ${message.fileName}` : undefined,
+    mimeType: "image/jpeg",
+    isThumbnail: true,
+  });
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -138,28 +221,45 @@ export default async function handler(
     });
 
     if (meshPeer?.ipAddress) {
-      sendMeshControl(meshPeer.ipAddress, {
-        type: "direct_message_sync",
+      const meshContext = {
         fromNodeId: getLocalNodeId(),
         fromUserId: profile.id,
         fromUsername: profile.name,
-        toUserId: otherMember.profile.id,
         toUsername: otherMember.profile.name,
-        message: {
-          id: message.id,
-          content: message.content,
-          type: message.type,
+        messageId: message.id,
+      };
+
+      (async () => {
+        await sendMeshMediaForMessage(meshPeer.ipAddress!, meshContext, {
           fileUrl: message.fileUrl,
-          fileName: (message as any).fileName,
-          fileSize: (message as any).fileSize,
-          mimeType: (message as any).mimeType,
           thumbnailUrl: (message as any).thumbnailUrl,
-          mediaKey: (message as any).mediaKey,
-          createdAt: message.createdAt.toISOString(),
-          fromUsername: profile.name,
-          toUsername: otherMember.profile.name,
-        },
-      }).catch((error) => {
+          fileName: (message as any).fileName,
+          mimeType: (message as any).mimeType,
+        });
+
+        await sendMeshControl(meshPeer.ipAddress!, {
+          type: "direct_message_sync",
+          fromNodeId: meshContext.fromNodeId,
+          fromUserId: meshContext.fromUserId,
+          fromUsername: meshContext.fromUsername,
+          toUserId: otherMember.profile.id,
+          toUsername: meshContext.toUsername,
+          message: {
+            id: message.id,
+            content: message.content,
+            type: message.type,
+            fileUrl: message.fileUrl,
+            fileName: (message as any).fileName,
+            fileSize: (message as any).fileSize,
+            mimeType: (message as any).mimeType,
+            thumbnailUrl: (message as any).thumbnailUrl,
+            mediaKey: (message as any).mediaKey,
+            createdAt: message.createdAt.toISOString(),
+            fromUsername: profile.name,
+            toUsername: otherMember.profile.name,
+          },
+        });
+      })().catch((error) => {
         console.error("[DIRECT_MESSAGES_MESH_SYNC]", error);
       });
     }

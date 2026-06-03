@@ -50,6 +50,16 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const { onlineUsers } = usePresence();
   const { searchTerm, setSearchTerm, activeTab, setActiveTab } = useChatFilterStore();
 
+  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      event.currentTarget.classList.add("touch-scroll-active");
+    }
+  };
+
+  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.classList.remove("touch-scroll-active");
+  };
+
   const onArchive = async (chat: ChatItem) => {
     try {
       if (chat.isArchived) {
@@ -191,7 +201,14 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
           <TabButton label="Archived" />
         </div>
       </div>
-      <div className="touch-scroll flex-1 min-h-0 w-full overflow-y-auto scrollbar-hide">
+      <div
+        tabIndex={0}
+        onPointerDown={activateTouchScroll}
+        onPointerUp={deactivateTouchScroll}
+        onPointerCancel={deactivateTouchScroll}
+        onPointerLeave={deactivateTouchScroll}
+        className="touch-scroll flex-1 min-h-0 w-full overflow-y-auto scrollbar-hide"
+      >
       <div className="flex flex-col gap-y-[2px] p-2 pb-4">
         {filteredChats.map((chat) => (
           <ContextMenu key={chat.id + chat.type}>

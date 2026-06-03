@@ -47,14 +47,16 @@ export default function RootLayout({
           storageKey="discord-clone-theme"
         >
           <SocketProvider>
-            <ModalProvider />
-            <CallProvider>
+            <QueryProvider>
+              <ModalProvider />
+              <CallProvider>
               {/* Global incoming/outgoing call UI — must live inside CallProvider so it
                   shares the call state regardless of which page the user is on. */}
-              <IncomingCallOverlay />
-              <OutgoingCallOverlay />
-              <QueryProvider>{children}</QueryProvider>
-            </CallProvider>
+                <IncomingCallOverlay />
+                <OutgoingCallOverlay />
+                {children}
+              </CallProvider>
+            </QueryProvider>
           </SocketProvider>
         </ThemeProvider>
       </body>

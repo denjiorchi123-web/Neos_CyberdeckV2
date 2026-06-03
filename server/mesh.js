@@ -25,7 +25,8 @@ const PEER_FALLBACK_IPS = (process.env.MESH_PEER_FALLBACK_IPS || "192.168.10.1,1
   .filter(Boolean);
 const MESH_SESSION_FILE = process.env.MESH_SESSION_FILE || path.join(process.cwd(), "private", "mesh-session.json");
 const MAX_CLOCK_SKEW_MS = Number(process.env.MESH_MAX_CLOCK_SKEW_MS || 24 * 60 * 60 * 1000);
-const MAX_PACKET_BYTES = 64 * 1024;
+const MAX_PACKET_BYTES = Number(process.env.MESH_MAX_PACKET_BYTES || 1024 * 1024);
+const MEDIA_CHUNK_BYTES = Number(process.env.MESH_MEDIA_CHUNK_BYTES || 96 * 1024);
 const AUTH_FAIL_WINDOW_MS = 60 * 1000;
 const AUTH_FAIL_LIMIT = 5;
 const AUTH_RATE_LIMIT_MS = 10 * 60 * 1000;
@@ -350,6 +351,149 @@ function directMessagePayload(message, fromUsername, toUsername) {
   };
 }
 
+function uploadInfoForUrl(fileUrl) {
+  if (typeof fileUrl !== "string" || !fileUrl.startsWith("/api/files/")) return null;
+  const filename = path.basename(fileUrl);
+  if (!filename || filename.includes("..")) return null;
+  return {
+    filename,
+    path: path.join(process.cwd(), "private", "uploads", filename),
+  };
+}
+
+async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
+  const local = uploadInfoForUrl(fileUrl);
+  if (!local || !fs.existsSync(local.path)) return;
+
+  const info = await fs.promises.stat(local.path);
+  const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
+  let chunkIndex = 0;
+
+  for await (const chunk of fs.createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
+    await sendControl(ipAddress, {
+      type: "direct_media_chunk",
+      ...context,
+      fileUrl,
+      storageName: local.filename,
+      fileName: options.fileName || local.filename,
+      mimeType: options.mimeType || "application/octet-stream",
+      isThumbnail: Boolean(options.isThumbnail),
+      chunkIndex,
+      totalChunks,
+      totalSize: info.size,
+      dataBase64: Buffer.from(chunk).toString("base64"),
+    });
+    chunkIndex += 1;
+  }
+}
+
+async function sendMediaForMessage(peerIp, context, message) {
+  await sendMediaFile(peerIp, context, message.fileUrl, {
+    fileName: message.fileName,
+    mimeType: message.mimeType,
+  });
+  await sendMediaFile(peerIp, context, message.thumbnailUrl, {
+    fileName: message.fileName ? `Thumbnail for ${message.fileName}` : undefined,
+    mimeType: "image/jpeg",
+    isThumbnail: true,
+  });
+}
+
+async function upsertReceivedFileIndex({ storageName, fileName, mimeType, totalSize, fromUsername }) {
+  const session = getMeshSession();
+  let uploaderId = session?.profileId || "mesh";
+  let serverId = "mesh";
+
+  if (session && fromUsername) {
+    const found = await findDirectConversationByNames(fromUsername, session.username);
+    if (found) {
+      uploaderId = found.firstMember.profileId;
+      serverId = found.firstMember.serverId;
+    }
+  }
+
+  const existing = await db.fileIndex.findFirst({ where: { path: storageName } });
+  const data = {
+    name: fileName || storageName,
+    path: storageName,
+    size: Number(totalSize) || 0,
+    mimeType: mimeType || "application/octet-stream",
+    uploaderId,
+    serverId,
+  };
+
+  if (existing) {
+    await db.fileIndex.update({ where: { id: existing.id }, data }).catch(() => {});
+  } else {
+    await db.fileIndex.create({ data }).catch(() => {});
+  }
+}
+
+async function receiveDirectMediaChunk(data, peerIp) {
+  const session = getMeshSession();
+  if (!session) {
+    console.error("> [NodeMesh][MEDIA] Rejected direct_media_chunk: no local session");
+    return;
+  }
+
+  const fromNodeId = typeof data.fromNodeId === "string" ? data.fromNodeId.trim() : "";
+  const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
+  const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
+  const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
+  if (!fromUsername || toUsername !== session.username) {
+    console.error("> [NodeMesh][MEDIA] Rejected direct_media_chunk: identity mismatch");
+    return;
+  }
+
+  const trustedPeer = fromNodeId
+    ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
+    : null;
+  if (
+    !trustedPeer ||
+    !TRUSTED_STATUSES.has(trustedPeer.status) ||
+    trustedPeer.publicName !== fromUsername ||
+    (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
+  ) {
+    console.error(`> [NodeMesh][MEDIA] Rejected direct_media_chunk from unaccepted peer ${fromUsername}`);
+    return;
+  }
+
+  const storageName = path.basename(String(data.storageName || uploadInfoForUrl(data.fileUrl)?.filename || ""));
+  if (!storageName || storageName.includes("..")) return;
+
+  const chunkIndex = Number(data.chunkIndex);
+  const totalChunks = Number(data.totalChunks);
+  if (!Number.isInteger(chunkIndex) || !Number.isInteger(totalChunks) || chunkIndex < 0 || totalChunks <= 0) return;
+  if (typeof data.dataBase64 !== "string") return;
+
+  const uploadDir = path.join(process.cwd(), "private", "uploads");
+  fs.mkdirSync(uploadDir, { recursive: true });
+  const finalPath = path.join(uploadDir, storageName);
+  const tempPath = path.join(uploadDir, `.mesh-${data.messageId || "media"}-${storageName}.part`);
+  const chunk = Buffer.from(data.dataBase64, "base64");
+
+  if (chunkIndex === 0) {
+    await fs.promises.writeFile(tempPath, chunk);
+  } else {
+    await fs.promises.appendFile(tempPath, chunk);
+  }
+
+  if (chunkIndex + 1 >= totalChunks) {
+    await fs.promises.rename(tempPath, finalPath).catch(async () => {
+      await fs.promises.copyFile(tempPath, finalPath);
+      await fs.promises.unlink(tempPath).catch(() => {});
+    });
+    await upsertReceivedFileIndex({
+      storageName,
+      fileName: data.fileName,
+      mimeType: data.mimeType,
+      totalSize: data.totalSize,
+      fromUsername,
+    });
+    console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername}`);
+  }
+}
+
 async function receiveDirectMessageSync(data, peerIp) {
   const session = getMeshSession();
   if (!session) {
@@ -458,11 +602,23 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
   });
 
   for (const message of pending) {
-    await sendControl(peerIp, {
-      type: "direct_message_sync",
+    const context = {
       fromNodeId: getMac(),
       fromUserId: session.profileId,
       fromUsername: session.username,
+      toUsername: peerUsername,
+      messageId: message.id,
+    };
+
+    await sendMediaForMessage(peerIp, context, message).catch((error) => {
+      console.error(`> [NodeMesh][MEDIA] Failed to send media for ${message.id}: ${error.message}`);
+    });
+
+    await sendControl(peerIp, {
+      type: "direct_message_sync",
+      fromNodeId: context.fromNodeId,
+      fromUserId: context.fromUserId,
+      fromUsername: context.fromUsername,
       toUsername: peerUsername,
       message: directMessagePayload(message, session.username, peerUsername),
     }).catch((error) => {
@@ -828,6 +984,7 @@ function startControlServer() {
         if (data.type === "connection_request") await receiveConnectionRequest(data, socket.remoteAddress);
         if (data.type === "connection_response") await receiveConnectionResponse(data, socket.remoteAddress);
         if (data.type === "direct_message_sync") await receiveDirectMessageSync(data, socket.remoteAddress);
+        if (data.type === "direct_media_chunk") await receiveDirectMediaChunk(data, socket.remoteAddress);
         if (data.type === "direct_message_ack") await receiveDirectMessageAck(data);
         if (data.type === "call_signal") await receiveCallSignal(data, socket.remoteAddress);
       } catch (error) {

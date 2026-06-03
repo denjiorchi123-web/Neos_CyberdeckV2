@@ -796,6 +796,15 @@ export function MediaRoom({
       };
       socket.on("call:decline", handlers["call:decline"]);
 
+      handlers["call:accept"] = (data: { chatId: string; callId?: string }) => {
+        if (data?.chatId !== chatId) return;
+        if (data?.callId && callId && data.callId !== callId) return;
+        console.log("[CyberDeck:Call] #2 call:accept received");
+        stopRingback();
+        setCountdown(null);
+      };
+      socket.on("call:accept", handlers["call:accept"]);
+
       // Scenario #1 — server told us the recipient is offline. Gray overlay 3s then return.
       handlers["call:offline"] = (data: any) => {
         if (data?.chatId !== chatId) return;

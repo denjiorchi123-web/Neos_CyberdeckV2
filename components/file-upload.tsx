@@ -12,12 +12,24 @@ import {
 
 interface FileUploadProps {
   onChange: (url?: string) => void;
+  onUploadComplete?: (result: UploadResult) => void;
   value: string;
   endpoint: "messageFile" | "serverImage" | "communityImage" | "channelImage";
 }
 
+export interface UploadResult {
+  url: string;
+  thumbnailUrl?: string | null;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  type?: string;
+  mediaKey?: string | null;
+}
+
 export function FileUpload({
   onChange,
+  onUploadComplete,
   value,
   endpoint
 }: FileUploadProps) {
@@ -40,13 +52,14 @@ export function FileUpload({
       const data = await response.json();
       if (data.url) {
         onChange(data.url);
+        onUploadComplete?.(data);
       }
     } catch (error) {
       console.error("Upload failed:", error);
     } finally {
       setIsUploading(false);
     }
-  }, [onChange]);
+  }, [onChange, onUploadComplete]);
 
   const imageTypes = { "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"] };
   const videoTypes = { "video/*": [".mp4", ".webm", ".ogg", ".mkv", ".mov"] };

@@ -52,6 +52,16 @@ export function ChatMessages({
   const chatRef = useRef<ElementRef<"div">>(null);
   const bottomRef = useRef<ElementRef<"div">>(null);
 
+  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      event.currentTarget.classList.add("touch-scroll-active");
+    }
+  };
+
+  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.classList.remove("touch-scroll-active");
+  };
+
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } =
     useChatQuery({
       queryKey,
@@ -122,6 +132,11 @@ export function ChatMessages({
   return (
     <div
       ref={chatRef}
+      tabIndex={0}
+      onPointerDown={activateTouchScroll}
+      onPointerUp={deactivateTouchScroll}
+      onPointerCancel={deactivateTouchScroll}
+      onPointerLeave={deactivateTouchScroll}
       className="touch-scroll flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
     >
       {hasNextPage && (
