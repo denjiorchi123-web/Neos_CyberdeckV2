@@ -418,6 +418,11 @@ export function MediaRoom({
       const state = pc.iceConnectionState;
       console.log(`[CyberDeck:Call] #8 iceConnectionState → ${state}`);
 
+      if (isEndingRef.current || state === "closed") {
+        setIsReconnecting(false);
+        return;
+      }
+
       if (state === "connected" || state === "completed") {
         if (reconnectTimerRef.current) {
           clearTimeout(reconnectTimerRef.current);
@@ -433,6 +438,10 @@ export function MediaRoom({
       }
 
       if (state === "disconnected") {
+        if (isEndingRef.current) {
+          setIsReconnecting(false);
+          return;
+        }
         console.log("[CyberDeck:Call] #8 entering reconnect window");
         setIsReconnecting(true);
         if (isInitiator) {
@@ -613,6 +622,9 @@ export function MediaRoom({
 
     // Stop ringback immediately on any teardown path.
     stopRingback();
+    setIsReconnecting(false);
+    setWeakConnection(false);
+    setCountdown(null);
 
     // Play call-ended chime (only when the call was actually connected).
     if (isPeerConnectedRef.current) {
@@ -695,17 +707,21 @@ export function MediaRoom({
       { skipNull: true }
     );
 
-    setTimeout(() => {
-      router.push(chatUrl);
+    const returnTimer = setTimeout(() => {
+      router.replace(chatUrl);
       router.refresh();
 
       // Fallback in case router fails (Next.js client-side navigation quirk)
       setTimeout(() => {
-        if (isEndingRef.current) {
+        const stillOnCallUrl =
+          window.location.search.includes("video=") ||
+          window.location.search.includes("audio=");
+        if (isEndingRef.current && stillOnCallUrl) {
           window.location.assign(chatUrl);
         }
       }, 1000);
-    }, 2000);
+    }, 900);
+    timersRef.current.add(returnTimer);
   }, [chatId, pathName, router, socket, video, callId, targetUserId, currentProfileName]);
 
   // Late binding: expose leaveCall to createPeerConnection's ICE-state callback via a ref
@@ -956,6 +972,7 @@ export function MediaRoom({
 
       handlers["webrtc:peer-left"] = ({ peerId }: { peerId: string }) => {
         console.log(`[MediaRoom] Peer left: ${peerId}`);
+        if (isEndingRef.current) return;
         const peer = peersRef.current.get(peerId);
         if (!peer) return;
         try {
@@ -971,8 +988,9 @@ export function MediaRoom({
           const next = new Map(prev);
           next.delete(peerId);
           if (next.size === 0) {
-            console.log("[MediaRoom] No peers left. Hanging up in 1.5s...");
-            trackTimer(setTimeout(() => leaveCall(false, "peer-left"), 1500));
+            console.log("[MediaRoom] No peers left. Returning to chat.");
+            setIsReconnecting(false);
+            leaveCall(false, "peer-left");
           }
           return next;
         });
@@ -1012,6 +1030,7 @@ export function MediaRoom({
 
     return () => {
       stopRingback();
+      setIsReconnecting(false);
 
       if (socket && chatId) {
         socket.emit("webrtc:leave", chatId);
