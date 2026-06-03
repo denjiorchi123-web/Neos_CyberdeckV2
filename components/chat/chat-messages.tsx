@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Fragment, useRef, ElementRef, useEffect } from "react";
+import React, { useRef, ElementRef, useEffect } from "react";
 import { Member, Message, Profile } from "@prisma/client";
 import { Loader2, ServerCrash } from "lucide-react";
 import { format } from "date-fns";
@@ -115,43 +115,15 @@ export function ChatMessages({
       </div>
     );
 
+  const messages = data?.pages
+    .flatMap((group) => group?.items ?? [])
+    .reverse() as MessagesWithMemberWithProfile[] | undefined;
+
   return (
     <div
       ref={chatRef}
-      className="touch-scroll flex-1 min-h-0 flex flex-col-reverse py-4 overflow-y-auto"
+      className="touch-scroll flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
     >
-      <div ref={bottomRef} />
-      {data?.pages.map((group, index) => (
-        <Fragment key={index}>
-          {group?.items.map((message: MessagesWithMemberWithProfile) => (
-            <ChatItem
-              key={message.id}
-              currentMember={member}
-              member={message.member}
-              id={message.id}
-              content={message.content}
-              fileUrl={message.fileUrl}
-              fileName={(message as any).fileName}
-              fileSize={(message as any).fileSize}
-              mimeType={(message as any).mimeType}
-              thumbnailUrl={(message as any).thumbnailUrl}
-              mediaKey={(message as any).mediaKey}
-              type={message.type}
-              deleted={message.deleted}
-              timestamp={format(
-                new Date(message.createdAt),
-                DATE_FORMAT
-              )}
-              isUpdated={message.updatedAt !== message.createdAt}
-              socketQuery={socketQuery}
-              socketUrl={socketUrl}
-              status={(message as any).status}
-              replyTo={(message as any).replyTo}
-              isPinned={(message as any).isPinned}
-            />
-          ))}
-        </Fragment>
-      ))}
       {hasNextPage && (
         <div className="flex justify-center">
           {isFetchingNextPage ? (
@@ -167,6 +139,34 @@ export function ChatMessages({
         </div>
       )}
       {!hasNextPage && <ChatWelcome name={name} type={type} />}
+      {messages?.map((message: MessagesWithMemberWithProfile) => (
+        <ChatItem
+          key={message.id}
+          currentMember={member}
+          member={message.member}
+          id={message.id}
+          content={message.content}
+          fileUrl={message.fileUrl}
+          fileName={(message as any).fileName}
+          fileSize={(message as any).fileSize}
+          mimeType={(message as any).mimeType}
+          thumbnailUrl={(message as any).thumbnailUrl}
+          mediaKey={(message as any).mediaKey}
+          type={message.type}
+          deleted={message.deleted}
+          timestamp={format(
+            new Date(message.createdAt),
+            DATE_FORMAT
+          )}
+          isUpdated={message.updatedAt !== message.createdAt}
+          socketQuery={socketQuery}
+          socketUrl={socketUrl}
+          status={(message as any).status}
+          replyTo={(message as any).replyTo}
+          isPinned={(message as any).isPinned}
+        />
+      ))}
+      <div ref={bottomRef} />
     </div>
   );
 }

@@ -30,8 +30,8 @@ export default async function ServerIdLayout({
   if (!server) return redirect("/");
 
   return (
-    <div className="h-full flex flex-col">
-      <main className="h-full flex-1">{children}</main>
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <main className="h-full min-h-0 flex-1 overflow-hidden">{children}</main>
     </div>
   );
 }

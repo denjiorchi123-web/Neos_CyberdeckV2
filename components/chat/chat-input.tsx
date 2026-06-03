@@ -166,7 +166,7 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full shrink-0">
       {isBlocked ? (
         <div className="p-4 pb-6 flex justify-center">
           <button 

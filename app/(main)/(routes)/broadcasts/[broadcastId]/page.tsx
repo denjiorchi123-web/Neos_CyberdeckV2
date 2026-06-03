@@ -38,7 +38,7 @@ export default async function BroadcastIdPage({ params }: BroadcastIdPageProps) 
   const isAdmin = role === "ADMIN";
 
   return (
-    <div className="bg-white dark:bg-[#313338] flex flex-col h-full">
+    <div className="bg-white dark:bg-[#313338] flex flex-col h-full min-h-0 overflow-hidden">
       <div className="h-12 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between px-4 font-semibold">
         <div className="flex items-center gap-x-2">
           <Rss className="h-5 w-5 text-green-500" />
@@ -46,7 +46,7 @@ export default async function BroadcastIdPage({ params }: BroadcastIdPageProps) 
         </div>
         {isAdmin && <BroadcastHeaderAction broadcastChannel={broadcast} />}
       </div>
-      <div className="flex-1 flex flex-col pt-0">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-0">
         <ChatMessages
           member={{ id: profile.id, role } as any} // spoofed member to satisfy prop requirements
           name={broadcast.name}

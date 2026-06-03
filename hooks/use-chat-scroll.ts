@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ChatScrollProps = {
   chatRef: React.RefObject<HTMLDivElement>;
@@ -16,6 +16,7 @@ export const useChatScroll = ({
   count
 }: ChatScrollProps) => {
   const [hasInitialized, setHasInitialized] = useState(false);
+  const previousScrollHeight = useRef(0);
 
   useEffect(() => {
     const topDiv = chatRef?.current;
@@ -24,14 +25,11 @@ export const useChatScroll = ({
       const topDiv = chatRef?.current;
       if (!topDiv) return;
 
-      const { scrollTop, scrollHeight, clientHeight } = topDiv;
-
-      // In flex-col-reverse, scrollTop 0 is the bottom (newest).
-      // We want to load more when we reach the top (older messages).
-      // The "top" is where scrollTop + clientHeight is near scrollHeight.
-      const isAtTop = Math.abs(scrollTop) + clientHeight >= scrollHeight - 100;
+      const { scrollTop, scrollHeight } = topDiv;
+      const isAtTop = scrollTop <= 100;
 
       if (isAtTop && shouldLoadMore) {
+        previousScrollHeight.current = scrollHeight;
         loadMore();
       }
     };
@@ -44,6 +42,14 @@ export const useChatScroll = ({
   useEffect(() => {
     const bottomDiv = bottomRef?.current;
     const topDiv = chatRef?.current;
+
+    if (topDiv && previousScrollHeight.current > 0) {
+      const heightDelta = topDiv.scrollHeight - previousScrollHeight.current;
+      topDiv.scrollTop = heightDelta;
+      previousScrollHeight.current = 0;
+      return;
+    }
+
     const shouldAutoScroll = () => {
       if (!hasInitialized && bottomDiv) {
         setHasInitialized(true);
@@ -52,8 +58,8 @@ export const useChatScroll = ({
 
       if (!topDiv) return false;
 
-      // In flex-col-reverse, the bottom is where scrollTop is near 0.
-      const distanceFromBottom = Math.abs(topDiv.scrollTop);
+      const distanceFromBottom =
+        topDiv.scrollHeight - topDiv.scrollTop - topDiv.clientHeight;
       return distanceFromBottom <= 150; // Allow a 150px "snap" zone
     };
 

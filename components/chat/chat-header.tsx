@@ -38,7 +38,7 @@ export function ChatHeader({
   role
 }: ChatHeaderProps) {
   return (
-    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2">
+    <div className="text-md font-semibold px-3 flex shrink-0 items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2">
       <MobileToggle />
       <div className="flex items-center gap-x-2">
         <ChatHeaderProfile 

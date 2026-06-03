@@ -58,7 +58,7 @@ export default async function MemberIdPage({
   const isInCall = !!(video || audio);
 
   return (
-    <div className="bg-white dark:bg-[#313338] flex flex-col h-full">
+    <div className="bg-white dark:bg-[#313338] flex flex-col h-full min-h-0 overflow-hidden">
       <ChatHeader
         imageUrl={otherMember.profile.imageUrl}
         name={otherMember.profile.name}
