@@ -42,14 +42,14 @@ export default async function MainLayout({
   }
 
   return (
-    <div className="h-full">
+    <div className="h-full min-h-0 overflow-hidden">
       <div className="hidden md:flex h-full w-[72px] z-30 flex-col fixed inset-y-0">
         <NavigationSidebar />
       </div>
       <div className="hidden md:flex h-full w-[320px] z-20 flex-col fixed inset-y-0 left-[72px]">
         <UnifiedChatSidebar />
       </div>
-      <main className="md:pl-[392px] h-full">{children}</main>
+      <main className="md:pl-[392px] h-full min-h-0 overflow-hidden">{children}</main>
     </div>
   );
 }

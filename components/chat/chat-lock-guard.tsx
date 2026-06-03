@@ -72,11 +72,15 @@ export function ChatLockGuard({ chatId, children }: ChatLockGuardProps) {
   };
 
   if (!isLocked) {
-    return <>{children}</>;
+    return (
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        {children}
+      </div>
+    );
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-white dark:bg-[#313338]">
+    <div className="flex-1 min-h-0 flex flex-col items-center justify-center overflow-hidden bg-white dark:bg-[#313338]">
       <div className="max-w-sm w-full p-8 flex flex-col items-center">
         <div className="h-16 w-16 bg-zinc-200 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
           <Lock className="h-8 w-8 text-indigo-500" />
