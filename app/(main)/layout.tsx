@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { currentProfile } from "@/lib/current-profile";
 import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
 import { UnifiedChatSidebar } from "@/components/navigation/unified-chat-sidebar";
+import { ChatResizableLayout } from "@/components/navigation/chat-resizable-layout";
 
 import { db } from "@/lib/db";
 
@@ -42,14 +43,11 @@ export default async function MainLayout({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-hidden">
-      <div className="hidden md:flex h-full w-[72px] z-30 flex-col fixed inset-y-0">
-        <NavigationSidebar />
-      </div>
-      <div className="hidden md:flex h-full w-[320px] z-20 flex-col fixed inset-y-0 left-[72px]">
-        <UnifiedChatSidebar />
-      </div>
-      <main className="md:pl-[392px] h-full min-h-0 overflow-hidden">{children}</main>
-    </div>
+    <ChatResizableLayout
+      navigation={<NavigationSidebar />}
+      sidebar={<UnifiedChatSidebar />}
+    >
+      {children}
+    </ChatResizableLayout>
   );
 }

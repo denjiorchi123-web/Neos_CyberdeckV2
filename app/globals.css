@@ -17,6 +17,27 @@ body {
   overscroll-behavior: none;
 }
 
+.cyberdeck-main {
+  padding-left: 0;
+}
+
+@media (min-width: 768px) {
+  .cyberdeck-main {
+    padding-left: calc(72px + var(--chat-sidebar-width, 320px));
+  }
+}
+
+.chat-split-resizer {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.chat-split-resizer:hover span,
+.chat-split-resizer:focus-visible span,
+.chat-split-resizer:active span {
+  background: rgb(129 140 248 / 0.9);
+}
+
 .touch-scroll,
 .overflow-y-auto {
   -webkit-overflow-scrolling: touch;

@@ -24,12 +24,29 @@ function getMacAddress() {
 const myMac = getMacAddress();
 let localClockCache: Record<string, number> | null = null;
 
+const JOURNAL_BYPASS_MODELS = new Set([
+  "ConnectionRequest",
+  "MeshBlocklist",
+  "MeshDevice",
+  "MeshEvent",
+  "MeshPeer",
+  "PeerSession",
+  "SyncState",
+  "TrustedPeer",
+  "RejectedPeer",
+]);
+
 const withJournalExtension = (prisma: PrismaClient) => {
   return prisma.$extends({
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
-          if (model === "Journal" || model === "VectorClockState") {
+          if (
+            !model ||
+            model === "Journal" ||
+            model === "VectorClockState" ||
+            JOURNAL_BYPASS_MODELS.has(model)
+          ) {
             return query(args);
           }
 

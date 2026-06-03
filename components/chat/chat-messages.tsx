@@ -33,6 +33,15 @@ type MessagesWithMemberWithProfile = Message & {
 
 const DATE_FORMAT = "d MMM yyyy, HH:mm";
 
+function wasMessageEdited(message: any) {
+  if (!message?.edited) return false;
+  if (!message?.editedAt) return true;
+
+  const editedAt = new Date(message.editedAt).getTime();
+  const createdAt = new Date(message.createdAt).getTime();
+  return Number.isFinite(editedAt) && Number.isFinite(createdAt) && editedAt > createdAt + 1000;
+}
+
 export function ChatMessages({
   name,
   member,
@@ -173,7 +182,7 @@ export function ChatMessages({
             new Date(message.createdAt),
             DATE_FORMAT
           )}
-          isUpdated={Boolean((message as any).edited)}
+          isUpdated={wasMessageEdited(message)}
           socketQuery={socketQuery}
           socketUrl={socketUrl}
           status={(message as any).status}

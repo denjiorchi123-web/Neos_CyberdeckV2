@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
@@ -15,7 +15,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useModal } from "@/hooks/use-modal-store";
-import { usePresence } from "@/components/providers/socket-provider";
+import { usePresence, useSocket } from "@/components/providers/socket-provider";
 import axios from "axios";
 
 interface ChatItem {
@@ -48,7 +48,9 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const params = useParams();
   const { onOpen } = useModal();
   const { onlineUsers } = usePresence();
+  const { socket } = useSocket();
   const { searchTerm, setSearchTerm, activeTab, setActiveTab } = useChatFilterStore();
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "touch") {
@@ -113,13 +115,28 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   };
 
   const onCall = (chat: ChatItem, video = false) => {
-    const url = new URL(window.location.href);
     if (chat.type === "DM") {
       router.push(`/servers/${chat.serverId}/conversations/${chat.id}?${video ? 'video=true' : 'audio=true'}`);
     } else if (chat.type === "GROUP") {
       router.push(`/servers/${chat.serverId}/channels/${chat.id}?${video ? 'video=true' : 'audio=true'}`);
     }
   };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const onAny = (eventName: string) => {
+      if (!eventName.match(/^chat:.+:messages$/)) return;
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => router.refresh(), 250);
+    };
+
+    socket.onAny(onAny);
+    return () => {
+      socket.offAny(onAny);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, [router, socket]);
 
   const onClick = (chat: ChatItem) => {
     if (chat.type === "DM") {
@@ -168,13 +185,13 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
       <button 
         onClick={() => setActiveTab(label)}
         className={cn(
-          "px-3 py-1 rounded-full text-xs font-medium transition",
+          "min-h-8 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition touch-manipulation",
           isActiveTab 
             ? "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
             : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
         )}
       >
-        {label}
+        {label === "Communities" ? "Community" : label}
       </button>
     );
   };
@@ -192,7 +209,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
             className="w-full bg-zinc-200 dark:bg-[#1e1f22] text-sm text-black dark:text-zinc-200 rounded-md pl-8 pr-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-zinc-500 transition-all"
           />
         </div>
-        <div className="touch-scroll-x flex items-center gap-x-2 overflow-x-auto pb-1 scrollbar-none">
+        <div className="touch-scroll-x flex items-center gap-x-1.5 overflow-x-auto pb-1 pr-1 scrollbar-none">
           <TabButton label="All" />
           <TabButton label="Unread" />
           <TabButton label="Groups" />
