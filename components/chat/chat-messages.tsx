@@ -173,7 +173,7 @@ export function ChatMessages({
             new Date(message.createdAt),
             DATE_FORMAT
           )}
-          isUpdated={message.updatedAt !== message.createdAt}
+          isUpdated={Boolean((message as any).edited)}
           socketQuery={socketQuery}
           socketUrl={socketUrl}
           status={(message as any).status}

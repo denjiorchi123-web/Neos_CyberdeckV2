@@ -55,6 +55,16 @@ export function ChatInfoModal() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [recentMedia, setRecentMedia] = useState<any[]>([]);
 
+  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      event.currentTarget.classList.add("touch-scroll-active");
+    }
+  };
+
+  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.classList.remove("touch-scroll-active");
+  };
+
   useEffect(() => {
     if (isModalOpen) {
       axios.get("/api/auth/me").then(res => setCurrentUser(res.data)).catch(() => {});
@@ -120,7 +130,14 @@ export function ChatInfoModal() {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-[425px]">
+      <DialogContent
+        tabIndex={0}
+        onPointerDown={activateTouchScroll}
+        onPointerUp={deactivateTouchScroll}
+        onPointerCancel={deactivateTouchScroll}
+        onPointerLeave={deactivateTouchScroll}
+        className="touch-scroll bg-white dark:bg-[#313338] text-black dark:text-white p-0 max-h-[92dvh] overflow-y-auto sm:max-w-[425px]"
+      >
         <div className="flex flex-col items-center pt-8 pb-4 px-6 bg-zinc-100 dark:bg-[#2b2d31]">
           {chatType === "group" && !chatImage ? (
             <div className="h-24 w-24 rounded-full bg-indigo-500 flex items-center justify-center shadow-md mb-4">
@@ -205,7 +222,7 @@ export function ChatInfoModal() {
               )}
             </div>
             
-            <ScrollArea className="flex-1">
+            <ScrollArea className="touch-scroll flex-1">
               <div className="space-y-3 pr-4">
                 {members.map(member => (
                   <div 

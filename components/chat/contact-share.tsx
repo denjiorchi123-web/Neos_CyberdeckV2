@@ -29,6 +29,16 @@ export function ContactShare({ onClose, onSend }: ContactShareProps) {
   const [sending,   setSending]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
 
+  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      event.currentTarget.classList.add("touch-scroll-active");
+    }
+  };
+
+  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.classList.remove("touch-scroll-active");
+  };
+
   useEffect(() => {
     axios.get("/api/profiles")
       .then(res => {
@@ -87,7 +97,14 @@ export function ContactShare({ onClose, onSend }: ContactShareProps) {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
+      <div
+        tabIndex={0}
+        onPointerDown={activateTouchScroll}
+        onPointerUp={deactivateTouchScroll}
+        onPointerCancel={deactivateTouchScroll}
+        onPointerLeave={deactivateTouchScroll}
+        className="touch-scroll flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-1"
+      >
         {loading && (
           <div className="flex justify-center py-8">
             <Loader2 className="h-6 w-6 text-zinc-500 animate-spin" />

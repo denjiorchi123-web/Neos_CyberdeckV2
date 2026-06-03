@@ -772,6 +772,10 @@ export function MediaRoom({
     // A blanket socket.off("event") would clobber listeners registered elsewhere — that was
     // the original "zombie ringtone" bug, and we don't want to reintroduce it.
     const handlers: Record<string, (...args: any[]) => void> = {};
+    const isCurrentCallSignal = (data: any) => {
+      if (data?.callId && callId) return data.callId === callId;
+      return data?.chatId === chatId;
+    };
 
     const joinRoom = async () => {
       // Clear any old connections before joining to prevent duplicate boxes
@@ -787,18 +791,17 @@ export function MediaRoom({
       // === Call-signaling handlers (caller side mostly) ===
 
       // Scenario #2 — peer declined our call. Rose-colored overlay for 2s then return.
-      handlers["call:decline"] = (data: { chatId: string }) => {
-        if (data?.chatId !== chatId) return;
+      handlers["call:decline"] = (data: { chatId?: string; callId?: string }) => {
+        if (!isCurrentCallSignal(data)) return;
         console.log("[CyberDeck:Call] #2 call:decline received");
         stopRingback();
         showError("declined", "Call Declined");
-        autoDismissAndLeave(2000, "declined");
+        autoDismissAndLeave(1200, "declined");
       };
       socket.on("call:decline", handlers["call:decline"]);
 
-      handlers["call:accept"] = (data: { chatId: string; callId?: string }) => {
-        if (data?.chatId !== chatId) return;
-        if (data?.callId && callId && data.callId !== callId) return;
+      handlers["call:accept"] = (data: { chatId?: string; callId?: string }) => {
+        if (!isCurrentCallSignal(data)) return;
         console.log("[CyberDeck:Call] #2 call:accept received");
         stopRingback();
         setCountdown(null);
@@ -807,7 +810,7 @@ export function MediaRoom({
 
       // Scenario #1 — server told us the recipient is offline. Gray overlay 3s then return.
       handlers["call:offline"] = (data: any) => {
-        if (data?.chatId !== chatId) return;
+        if (!isCurrentCallSignal(data)) return;
         console.log("[CyberDeck:Call] #1 call:offline received");
         stopRingback();
         showError("offline", "User is Offline");
@@ -817,7 +820,7 @@ export function MediaRoom({
 
       // Scenario #4 — server (or callee's CallProvider) told us the recipient is busy.
       handlers["call:busy"] = (data: any) => {
-        if (data?.chatId !== chatId) return;
+        if (!isCurrentCallSignal(data)) return;
         console.log("[CyberDeck:Call] #4 call:busy received");
         stopRingback();
         showError("busy", "Line Busy");

@@ -70,6 +70,16 @@ export default function ProfilePage() {
 
   const notify = (ok: boolean, text: string) => setToast({ ok, text });
 
+  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      event.currentTarget.classList.add("touch-scroll-active");
+    }
+  };
+
+  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.classList.remove("touch-scroll-active");
+  };
+
   useEffect(() => {
     fetch("/api/profile/stats")
       .then(r => r.json())
@@ -185,7 +195,14 @@ export default function ProfilePage() {
   const initials  = (profile?.name ?? "?").charAt(0).toUpperCase();
 
   return (
-    <div className="touch-scroll flex flex-col h-full bg-white dark:bg-[#313338] overflow-y-auto">
+    <div
+      tabIndex={0}
+      onPointerDown={activateTouchScroll}
+      onPointerUp={deactivateTouchScroll}
+      onPointerCancel={deactivateTouchScroll}
+      onPointerLeave={deactivateTouchScroll}
+      className="touch-scroll flex flex-col h-full bg-white dark:bg-[#313338] overflow-y-auto"
+    >
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
 
       {lightboxOpen && avatarSrc && !imgError && (
