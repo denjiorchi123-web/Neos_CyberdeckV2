@@ -45,7 +45,7 @@ export const CyberDashboard = () => {
         const peers = await fetch("/api/network/peers", { cache: "no-store" }).then(res => res.json());
         const nodes = Object.entries(peers).map(([mac, peer]: [string, any], index) => ({
           id: index + 1,
-          name: peer.hostname || mac.slice(0, 8),
+          name: peer.username || peer.hostname || "Unknown peer",
           status: "online",
           ip: peer.ip || "",
         }));

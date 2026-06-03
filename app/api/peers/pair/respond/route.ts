@@ -16,7 +16,9 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid response" }, { status: 400 });
 
   try {
-    return NextResponse.json(await respondToConnectionRequest(parsed.data.requestId, parsed.data.action));
+    return NextResponse.json(
+      await respondToConnectionRequest(profile, parsed.data.requestId, parsed.data.action),
+    );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Handshake failed" }, { status: 400 });
   }

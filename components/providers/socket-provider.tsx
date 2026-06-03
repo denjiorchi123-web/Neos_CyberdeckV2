@@ -147,14 +147,18 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    s.on("mesh:pair-request", (data: { mac: string; hostname: string; ip: string }) => {
+    s.on("mesh:pair-request", (data: { mac: string; hostname: string; publicName?: string; ip: string }) => {
       console.log("[SocketProvider] Received mesh:pair-request global event:", data);
       onOpen("pairingRequest", { query: data });
     });
 
     setSocket(s);
     fetchPresence();
-    return () => s.disconnect();
+    const presenceTimer = setInterval(fetchPresence, 5000);
+    return () => {
+      clearInterval(presenceTimer);
+      s.disconnect();
+    };
   }, [fetchPresence, onOpen]);
 
   useEffect(() => {

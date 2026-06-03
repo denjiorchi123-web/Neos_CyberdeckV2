@@ -32,7 +32,7 @@ export function ChatHeaderProfile({
     blockedBy.some(u => u.blockerId === otherProfileId)
   );
 
-  const isOnline = otherMemberId ? onlineUsers.some((u: any) => u.userId === otherMemberId) : false;
+  const isOnline = otherProfileId ? onlineUsers.some((u: any) => u.userId === otherProfileId) : false;
 
   const displayImageUrl = isBlocked ? undefined : imageUrl;
 
@@ -65,6 +65,11 @@ export function ChatHeaderProfile({
         <p className="font-semibold text-md text-black dark:text-white leading-tight">
           {name}
         </p>
+        {type === "conversation" && (
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
+            {isOnline && !isBlocked ? "● online" : "○ offline"}
+          </p>
+        )}
       </div>
     </div>
   );

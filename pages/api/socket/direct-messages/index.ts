@@ -6,6 +6,8 @@ import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
 import { publicProfileSelect } from "@/lib/public-profile-select";
+import { getLocalNodeId } from "@/lib/mesh-identity";
+import { sendMeshControl } from "@/lib/mesh-control";
 
 export default async function handler(
   req: NextApiRequest,
@@ -121,6 +123,41 @@ export default async function handler(
     const channelKey = `chat:${conversationId}:messages`;
     if (!res.socket.server.io) { ioHandler(req, res); }
     res?.socket?.server?.io?.to(conversationId as string).emit(channelKey, message);
+
+    const activeThreshold = new Date(Date.now() - 15 * 1000);
+    const meshPeer = await db.meshPeer.findFirst({
+      where: {
+        status: { in: ["TRUSTED", "ACCEPTED"] },
+        publicName: otherMember.profile.name,
+        ipAddress: { not: null },
+        lastSeen: { gte: activeThreshold },
+      },
+    });
+
+    if (meshPeer?.ipAddress) {
+      sendMeshControl(meshPeer.ipAddress, {
+        type: "direct_message_sync",
+        fromNodeId: getLocalNodeId(),
+        fromUsername: profile.name,
+        toUsername: otherMember.profile.name,
+        message: {
+          id: message.id,
+          content: message.content,
+          type: message.type,
+          fileUrl: message.fileUrl,
+          fileName: (message as any).fileName,
+          fileSize: (message as any).fileSize,
+          mimeType: (message as any).mimeType,
+          thumbnailUrl: (message as any).thumbnailUrl,
+          mediaKey: (message as any).mediaKey,
+          createdAt: message.createdAt.toISOString(),
+          fromUsername: profile.name,
+          toUsername: otherMember.profile.name,
+        },
+      }).catch((error) => {
+        console.error("[DIRECT_MESSAGES_MESH_SYNC]", error);
+      });
+    }
 
     return res.status(200).json(message);
   } catch (error) {

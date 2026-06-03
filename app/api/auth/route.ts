@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import * as crypto from "crypto";
 import { db } from "@/lib/db";
+import { clearMeshSession, persistMeshSession } from "@/lib/mesh-session";
 
 /**
  * Basic PBKDF2 hashing to avoid external dependencies like bcryptjs
@@ -48,6 +49,11 @@ export async function POST(req: Request) {
       httpOnly: true,
       sameSite: "lax",
     });
+    persistMeshSession({
+      id: profile.id,
+      userId: profile.userId,
+      name: profile.name,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -63,5 +69,6 @@ export async function POST(req: Request) {
 export async function DELETE() {
   const cookieStore = cookies();
   cookieStore.delete("cyberdeck-user-id");
+  clearMeshSession();
   return NextResponse.json({ success: true });
 }

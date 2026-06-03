@@ -23,8 +23,10 @@ export async function GET() {
        if (p.macAddress.startsWith("mock_")) continue;
        result[p.macAddress] = {
           ip: p.ipAddress,
+          username: p.publicName,
           hostname: p.hostname,
           trust_status: p.status,
+          online: true,
           last_seen: Math.floor(p.lastSeen.getTime() / 1000),
           joined_at: Math.floor(p.createdAt.getTime() / 1000)
        };

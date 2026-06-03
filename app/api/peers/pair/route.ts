@@ -18,7 +18,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    return NextResponse.json(await sendConnectionRequest(parsed.data.macAddress, parsed.data.message));
+    return NextResponse.json(
+      await sendConnectionRequest(profile, parsed.data.macAddress, parsed.data.message),
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Handshake request failed" },

@@ -11,7 +11,9 @@ import { EditNetworkConfigModal } from "@/components/modals/edit-network-config-
 
 interface Peer {
   ip: string;
+  username?: string;
   hostname: string;
+  online?: boolean;
   last_seen: number;
   joined_at: number;
 }
@@ -25,8 +27,11 @@ interface ServiceEndpoint {
 
 interface NodeHealth {
   ip: string;
+  ips?: string[];
   mac: string;
   hostname: string;
+  ethernetReady?: boolean;
+  ethernetMessage?: string;
   timestamp: number;
 }
 
@@ -148,6 +153,13 @@ export default function NetworkDiagnosticsPage() {
         </div>
       )}
 
+      {health && !health.ethernetReady && (
+        <div className="bg-amber-500/10 border border-amber-500/50 text-amber-300 p-4 rounded-md mb-6 flex items-center gap-3">
+          <Activity className="h-5 w-5" />
+          <p>{health.ethernetMessage}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-20">
         
         {/* Left Column: Local Health & Node Info */}
@@ -170,6 +182,9 @@ export default function NetworkDiagnosticsPage() {
               <div>
                 <p className="text-xs text-zinc-500 uppercase">Assigned IP Address</p>
                 <p className="text-lg text-white font-bold tracking-wider">{health?.ip || "---.---.---.---"}</p>
+                {health?.ips?.length ? (
+                  <p className="text-[10px] text-zinc-500 font-mono mt-1">All IPv4: {health.ips.join(", ")}</p>
+                ) : null}
               </div>
               <div>
                 <p className="text-xs text-zinc-500 uppercase">Hardware MAC</p>
@@ -229,9 +244,11 @@ export default function NetworkDiagnosticsPage() {
                       <div className={`h-2 w-2 rounded-full ${statusColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]`} />
                       <div>
                         <p className="text-sm font-bold text-white flex items-center gap-2">
-                          {peer.hostname}
+                          {peer.username || peer.hostname || "Unknown peer"}
                         </p>
-                        <p className="text-xs text-zinc-500 font-mono mt-0.5">{mac}</p>
+                        <p className="text-xs text-zinc-500 font-mono mt-0.5">
+                          {peer.hostname || "device"} / {mac}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">

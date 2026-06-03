@@ -8,10 +8,20 @@ import { sendMeshControl } from "@/lib/mesh-control";
 
 const REQUEST_TTL_MS = 5 * 60 * 1000;
 
-export async function sendConnectionRequest(peerNodeId: string, message?: string) {
+type MeshProfileIdentity = {
+  id: string;
+  name: string;
+};
+
+export async function sendConnectionRequest(
+  profile: MeshProfileIdentity,
+  peerNodeId: string,
+  message?: string,
+) {
   const peer = await db.meshPeer.findUnique({ where: { macAddress: peerNodeId } });
   if (!peer?.ipAddress) throw new Error("Peer must be discovered before requesting a connection");
   if (peer.status === "BLOCKED") throw new Error("Blocked peers cannot receive requests");
+  if (!profile.name?.trim()) throw new Error("Cannot send mesh identity without a logged-in username");
 
   const requestId = randomUUID();
   const localNodeId = getLocalNodeId();
@@ -39,10 +49,13 @@ export async function sendConnectionRequest(peerNodeId: string, message?: string
     type: "connection_request",
     requestId,
     fromNodeId: localNodeId,
+    fromUserId: profile.id,
+    fromUsername: profile.name,
     fromHostname: os.hostname(),
-    fromPublicName: os.hostname(),
+    fromPublicName: profile.name,
+    fromDeviceName: os.hostname(),
     fromIp: getLocalIp(),
-    message: message || `${os.hostname()} wants to connect`,
+    message: message || `${profile.name} wants to connect`,
     expiresAt: expiresAt.getTime(),
   });
 
@@ -50,9 +63,12 @@ export async function sendConnectionRequest(peerNodeId: string, message?: string
 }
 
 export async function respondToConnectionRequest(
+  profile: MeshProfileIdentity,
   requestId: string,
   action: "ACCEPTED" | "DECLINED" | "IGNORED" | "BLOCKED",
 ) {
+  if (!profile.name?.trim()) throw new Error("Cannot answer mesh identity without a logged-in username");
+
   const request = await db.connectionRequest.findUnique({ where: { requestId } });
   if (!request || request.direction !== "INCOMING") throw new Error("Incoming request not found");
   if (request.status !== "PENDING") throw new Error("Request has already been answered");
@@ -123,6 +139,10 @@ export async function respondToConnectionRequest(
     type: "connection_response",
     requestId,
     fromNodeId: getLocalNodeId(),
+    fromUserId: profile.id,
+    fromUsername: profile.name,
+    fromPublicName: profile.name,
+    fromDeviceName: os.hostname(),
     status: action,
   });
 

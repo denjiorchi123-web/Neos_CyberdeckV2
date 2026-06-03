@@ -25,7 +25,8 @@ export async function GET() {
        // Two Pis may intentionally share a hostname. The hardware node ID is the identity.
        if (peer.macAddress !== localNodeId && !peer.macAddress.startsWith("mock_")) {
           peers.push({
-             name: (peer.hostname || `Node-${peer.macAddress.slice(0, 6)}`).toUpperCase(),
+             name: peer.publicName || peer.hostname || "Unknown peer",
+             deviceName: peer.hostname,
              host: peer.ipAddress,
              address: peer.ipAddress,
              macAddress: peer.macAddress,
