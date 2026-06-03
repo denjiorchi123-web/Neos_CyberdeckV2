@@ -249,7 +249,7 @@ export async function UnifiedChatSidebar() {
   });
 
   return (
-    <div className="flex flex-col h-full text-primary w-full dark:bg-[#2b2d31] bg-[#f2f3f5] border-r border-neutral-200 dark:border-neutral-800">
+    <div className="flex flex-col h-full min-h-0 text-primary w-full dark:bg-[#2b2d31] bg-[#f2f3f5] border-r border-neutral-200 dark:border-neutral-800">
       <div className="px-4 h-14 flex items-center justify-between border-b-2 border-neutral-200 dark:border-neutral-800 shadow-sm">
         <h1 className="text-lg font-semibold text-black dark:text-white flex items-center gap-x-2">
           Chats
