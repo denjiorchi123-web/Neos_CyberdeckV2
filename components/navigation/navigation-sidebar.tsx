@@ -23,7 +23,7 @@ export async function NavigationSidebar() {
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-between overflow-hidden py-2 text-primary dark:bg-[#1e1f22] bg-[#e3e5e8]">
-      <div className="flex w-full flex-col items-center gap-y-1">
+      <div className="flex flex-1 min-h-0 w-full flex-col items-center justify-evenly py-1">
         <NavigationLauncher />
         <Separator className="h-[2px] bg-zinc-300 dark:bg-zinc-700 rounded-md w-10 mx-auto" />
         <NavigationHome />
