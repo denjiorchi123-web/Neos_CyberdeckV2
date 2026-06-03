@@ -530,10 +530,12 @@ model VectorClockState {
 // Tracks the handshake connection status between mesh nodes
 model MeshPeer {
   macAddress    String    @id
+  userId        String?
   status        String    @default("UNKNOWN") // UNKNOWN, PENDING_OUTGOING, PENDING_INCOMING, TRUSTED, DECLINED, BLOCKED
   hostname      String?
   ipAddress     String?
   publicName    String?
+  displayName   String?
   firstSeen     DateTime  @default(now())
   lastSeen      DateTime  @default(now())
   lastHandshake DateTime?
@@ -542,6 +544,31 @@ model MeshPeer {
 
   sessions  PeerSession[]
   syncState SyncState?
+
+  @@index([userId])
+  @@index([publicName])
+}
+
+model MeshDevice {
+  id          String   @id @default(uuid())
+  ownerId     String
+  macAddress  String
+  deviceName  String?
+  approvedAt  DateTime?
+  approvedBy  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ownerId, macAddress])
+  @@index([ownerId])
+  @@index([macAddress])
+}
+
+model MeshBlocklist {
+  macAddress String   @id
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model ConnectionRequest {

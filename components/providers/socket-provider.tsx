@@ -147,7 +147,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    s.on("mesh:pair-request", (data: { mac: string; hostname: string; publicName?: string; ip: string }) => {
+    s.on("mesh:pair-request", (data: { mac: string; hostname: string; userId?: string; displayName?: string; publicName?: string; ip: string }) => {
       console.log("[SocketProvider] Received mesh:pair-request global event:", data);
       onOpen("pairingRequest", { query: data });
     });

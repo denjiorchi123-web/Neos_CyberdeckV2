@@ -107,6 +107,26 @@ export async function respondToConnectionRequest(
 
   if (action === "ACCEPTED") {
     operations.push(
+      db.meshDevice.upsert({
+        where: {
+          ownerId_macAddress: {
+            ownerId: peer.userId || request.fromNodeId,
+            macAddress: request.fromNodeId,
+          },
+        },
+        update: {
+          deviceName: peer.hostname || undefined,
+          approvedAt: new Date(),
+          approvedBy: getLocalNodeId(),
+        },
+        create: {
+          ownerId: peer.userId || request.fromNodeId,
+          macAddress: request.fromNodeId,
+          deviceName: peer.hostname || undefined,
+          approvedAt: new Date(),
+          approvedBy: getLocalNodeId(),
+        },
+      }),
       existingSession
         ? db.peerSession.update({
             where: { sessionId: existingSession.sessionId },
@@ -130,6 +150,14 @@ export async function respondToConnectionRequest(
         where: { peerNodeId: request.fromNodeId },
         update: {},
         create: { peerNodeId: request.fromNodeId },
+      }),
+    );
+  } else if (action === "BLOCKED") {
+    operations.push(
+      db.meshBlocklist.upsert({
+        where: { macAddress: request.fromNodeId },
+        update: { reason: "blocked_by_local_user" },
+        create: { macAddress: request.fromNodeId, reason: "blocked_by_local_user" },
       }),
     );
   }

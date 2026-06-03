@@ -11,6 +11,7 @@ export async function GET() {
     const peers = await db.meshPeer.findMany({
       where: {
         lastSeen: { gte: activeThreshold },
+        status: { notIn: ["BLOCKED", "DECLINED"] },
         macAddress: {
           not: localNodeId,
         },
@@ -23,7 +24,8 @@ export async function GET() {
        if (p.macAddress.startsWith("mock_")) continue;
        result[p.macAddress] = {
           ip: p.ipAddress,
-          username: p.publicName,
+          userId: p.userId,
+          username: p.displayName || p.publicName,
           hostname: p.hostname,
           trust_status: p.status,
           online: true,

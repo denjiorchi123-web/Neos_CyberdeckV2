@@ -53,6 +53,7 @@ export async function POST(req: Request) {
       id: profile.id,
       userId: profile.userId,
       name: profile.name,
+      imageUrl: profile.imageUrl,
     });
 
     return NextResponse.json({ success: true });

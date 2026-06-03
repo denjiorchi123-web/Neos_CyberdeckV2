@@ -16,7 +16,7 @@ export function PairingRequestModal() {
 
   const requestId = query?.requestId || "";
   const peerMac = query?.fromNodeId || "";
-  const peerHostname = query?.publicName || query?.hostname || peerMac || "Unknown Peer";
+  const peerHostname = query?.displayName || query?.publicName || peerMac || "Unknown Peer";
   const peerIp = query?.ipAddress || "";
 
   const [isLoading, setIsLoading] = useState(false);

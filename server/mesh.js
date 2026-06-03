@@ -24,6 +24,11 @@ const PEER_FALLBACK_IPS = (process.env.MESH_PEER_FALLBACK_IPS || "192.168.10.1,1
 const MESH_SESSION_FILE = process.env.MESH_SESSION_FILE || path.join(process.cwd(), "private", "mesh-session.json");
 const MAX_CLOCK_SKEW_MS = Number(process.env.MESH_MAX_CLOCK_SKEW_MS || 24 * 60 * 60 * 1000);
 const MAX_PACKET_BYTES = 64 * 1024;
+const AUTH_FAIL_WINDOW_MS = 60 * 1000;
+const AUTH_FAIL_LIMIT = 5;
+const AUTH_RATE_LIMIT_MS = 10 * 60 * 1000;
+const TRUSTED_STATUSES = new Set(["TRUSTED", "ACCEPTED"]);
+const authFailures = new Map();
 
 function getMac() {
   for (const interfaces of Object.values(os.networkInterfaces())) {
@@ -70,7 +75,15 @@ function getMeshSession() {
     const profileId = typeof session.profileId === "string" ? session.profileId.trim() : "";
     if (!username || !profileId) return null;
     if (/^node[-_]/i.test(username)) return null;
-    return { profileId, userId: session.userId || profileId, username };
+    return {
+      profileId,
+      userId: session.userId || profileId,
+      username,
+      displayName: session.displayName || username,
+      avatarSeed: session.avatarSeed || profileId,
+      deviceMac: session.deviceMac || "",
+      deviceName: session.deviceName || os.hostname(),
+    };
   } catch {
     return null;
   }
@@ -81,19 +94,75 @@ function sign(payload) {
   return { payload: body, sig: crypto.createHmac("sha256", SECRET).update(body).digest("hex") };
 }
 
-function verify(packet) {
-  if (!packet || typeof packet.payload !== "string" || typeof packet.sig !== "string") return null;
-  const expected = crypto.createHmac("sha256", SECRET).update(packet.payload).digest("hex");
-  if (packet.sig.length !== expected.length) return null;
-  if (!crypto.timingSafeEqual(Buffer.from(packet.sig), Buffer.from(expected))) return null;
+function logMeshEvent(operation, payload, receivedFrom) {
+  db.meshEvent.create({
+    data: {
+      originNodeId: receivedFrom || "unknown",
+      entityType: "mesh_auth",
+      entityId: crypto.randomUUID(),
+      operation,
+      payloadJson: JSON.stringify(payload),
+      receivedFrom,
+      signature: payload?.sig ? String(payload.sig).slice(0, 128) : undefined,
+    },
+  }).catch(() => {});
+}
 
-  const data = JSON.parse(packet.payload);
+function trackAuthFail(sourceIp, reason, packet, tsDelta) {
+  const key = normalizeIp(sourceIp || "unknown");
+  const now = Date.now();
+  const current = authFailures.get(key) || { count: 0, windowStart: now, blockedUntil: 0 };
+  if (current.blockedUntil > now) return true;
+
+  const next = now - current.windowStart > AUTH_FAIL_WINDOW_MS
+    ? { count: 1, windowStart: now, blockedUntil: 0 }
+    : { ...current, count: current.count + 1 };
+
+  if (next.count >= AUTH_FAIL_LIMIT) {
+    next.blockedUntil = now + AUTH_RATE_LIMIT_MS;
+    console.error(`> [NodeMesh][AUTH] Rate-limited ${key} for repeated auth failures`);
+  }
+  authFailures.set(key, next);
+  logMeshEvent("AUTH_FAIL", {
+    reason,
+    sourceIp: key,
+    badSig: packet?.sig ? String(packet.sig).slice(0, 128) : null,
+    tsDelta,
+  }, key);
+  return next.blockedUntil > now;
+}
+
+function isAuthRateLimited(sourceIp) {
+  const current = authFailures.get(normalizeIp(sourceIp || "unknown"));
+  return current?.blockedUntil && current.blockedUntil > Date.now();
+}
+
+function verify(packet, sourceIp) {
+  if (isAuthRateLimited(sourceIp)) return null;
+  if (!packet || typeof packet.payload !== "string" || typeof packet.sig !== "string") {
+    trackAuthFail(sourceIp, "malformed_packet", packet, null);
+    return null;
+  }
+  const expected = crypto.createHmac("sha256", SECRET).update(packet.payload).digest("hex");
+  if (packet.sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(packet.sig), Buffer.from(expected))) {
+    trackAuthFail(sourceIp, "bad_hmac", packet, null);
+    return null;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(packet.payload);
+  } catch {
+    trackAuthFail(sourceIp, "bad_payload_json", packet, null);
+    return null;
+  }
   const skewMs = Number.isFinite(data.timestamp) ? Math.abs(Date.now() - data.timestamp) : Number.POSITIVE_INFINITY;
   if (!Number.isFinite(data.timestamp) || skewMs > MAX_CLOCK_SKEW_MS) {
     const skewSeconds = Number.isFinite(skewMs) ? Math.round(skewMs / 1000) : "missing";
     console.error(
       `> [NodeMesh][AUTH] Rejected signed packet: clock skew ${skewSeconds}s exceeds ${Math.round(MAX_CLOCK_SKEW_MS / 1000)}s`,
     );
+    trackAuthFail(sourceIp, "clock_skew", packet, skewSeconds);
     return null;
   }
   return data;
@@ -128,6 +197,93 @@ async function recordEvent(originNodeId, entityId, operation, payload, receivedF
       operation,
       payloadJson: JSON.stringify(payload),
       receivedFrom,
+    },
+  });
+}
+
+function contactRequestId(userId, macAddress) {
+  return `contact-${crypto.createHash("sha1").update(`${userId}:${macAddress}`).digest("hex")}`;
+}
+
+function displayNameFor(username, deviceName, macAddress, hasCollision) {
+  if (!hasCollision) return username;
+  return `${username} (${deviceName || String(macAddress).slice(-6)})`;
+}
+
+async function isBlockedMac(macAddress) {
+  if (!macAddress) return false;
+  const blocked = await db.meshBlocklist.findUnique({ where: { macAddress } });
+  return Boolean(blocked);
+}
+
+async function logBlockedPeer(macAddress, username, ipAddress) {
+  logMeshEvent("BLOCKED", { macAddress, username, ipAddress }, ipAddress || macAddress);
+}
+
+async function logImpersonationAttempt({ userId, username, macAddress, ipAddress, trustedPeer }) {
+  logMeshEvent("IMPERSONATION_ATTEMPT", {
+    claimedUserId: userId,
+    claimedUsername: username,
+    claimedMac: macAddress,
+    claimedIp: ipAddress,
+    trustedUserId: trustedPeer?.userId,
+    trustedMac: trustedPeer?.macAddress,
+  }, ipAddress || macAddress);
+  console.error(`> [NodeMesh][AUTH] Rejected impersonation attempt for ${username} from ${ipAddress}`);
+}
+
+async function ensurePendingContactRequest({ userId, username, macAddress, deviceName, ipAddress, message }) {
+  const requestId = contactRequestId(userId, macAddress);
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+  const existing = await db.connectionRequest.findUnique({ where: { requestId } });
+  if (existing && ["ACCEPTED", "BLOCKED"].includes(existing.status)) return existing;
+
+  if (existing) {
+    return db.connectionRequest.update({
+      where: { requestId },
+      data: {
+        status: existing.status === "REJECTED" || existing.status === "DECLINED" ? existing.status : "PENDING",
+        message,
+        expiresAt,
+      },
+    });
+  }
+
+  return db.connectionRequest.create({
+    data: {
+      requestId,
+      fromNodeId: macAddress,
+      toNodeId: getMac(),
+      direction: "INCOMING",
+      status: "PENDING",
+      message: message || `${username} wants to connect`,
+      expiresAt,
+    },
+  });
+}
+
+async function upsertPeerIdentity({ userId, username, macAddress, deviceName, ipAddress, status, displayName }) {
+  return db.meshPeer.upsert({
+    where: { macAddress },
+    create: {
+      macAddress,
+      userId,
+      hostname: deviceName || null,
+      publicName: username,
+      displayName: displayName || username,
+      ipAddress,
+      status,
+      lastHandshake: status === "PENDING_INCOMING" ? new Date() : undefined,
+    },
+    update: {
+      userId,
+      hostname: deviceName || undefined,
+      publicName: username,
+      displayName: displayName || username,
+      ipAddress,
+      lastSeen: new Date(),
+      status,
+      lastHandshake: status === "PENDING_INCOMING" ? new Date() : undefined,
     },
   });
 }
@@ -200,6 +356,8 @@ async function receiveDirectMessageSync(data, peerIp) {
   }
 
   const message = data.message || {};
+  const fromNodeId = typeof data.fromNodeId === "string" ? data.fromNodeId.trim() : "";
+  const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
   const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
   const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
   if (!fromUsername || !toUsername || toUsername !== session.username) {
@@ -207,6 +365,19 @@ async function receiveDirectMessageSync(data, peerIp) {
     return;
   }
   if (typeof message.id !== "string" || typeof message.content !== "string") return;
+
+  const trustedPeer = fromNodeId
+    ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
+    : null;
+  if (
+    !trustedPeer ||
+    !TRUSTED_STATUSES.has(trustedPeer.status) ||
+    trustedPeer.publicName !== fromUsername ||
+    (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
+  ) {
+    console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync from unaccepted peer ${fromUsername}`);
+    return;
+  }
 
   const found = await findDirectConversationByNames(fromUsername, toUsername);
   if (!found) {
@@ -288,6 +459,7 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
     await sendControl(peerIp, {
       type: "direct_message_sync",
       fromNodeId: getMac(),
+      fromUserId: session.profileId,
       fromUsername: session.username,
       toUsername: peerUsername,
       message: directMessagePayload(message, session.username, peerUsername),
@@ -313,8 +485,30 @@ async function receiveConnectionRequest(data, peerIp) {
     data.expiresAt < Date.now()
   ) return;
 
+  if (await isBlockedMac(data.fromNodeId)) {
+    await logBlockedPeer(data.fromNodeId, fromUsername, peerIp);
+    return;
+  }
   const existingPeer = await db.meshPeer.findUnique({ where: { macAddress: data.fromNodeId } });
   if (existingPeer?.status === "BLOCKED") return;
+  const trustedNameCollision = await db.meshPeer.findFirst({
+    where: {
+      publicName: fromUsername,
+      macAddress: { not: data.fromNodeId },
+      userId: { not: fromUserId },
+      status: { in: ["TRUSTED", "ACCEPTED"] },
+    },
+  });
+  if (trustedNameCollision) {
+    await logImpersonationAttempt({
+      userId: fromUserId,
+      username: fromUsername,
+      macAddress: data.fromNodeId,
+      ipAddress: peerIp,
+      trustedPeer: trustedNameCollision,
+    });
+    return;
+  }
 
   const replay = await db.connectionRequest.findUnique({ where: { requestId: data.requestId } });
   if (replay) return;
@@ -324,15 +518,19 @@ async function receiveConnectionRequest(data, peerIp) {
       where: { macAddress: data.fromNodeId },
       create: {
         macAddress: data.fromNodeId,
+        userId: fromUserId,
         hostname: data.fromDeviceName || data.fromHostname || null,
         publicName: fromUsername,
+        displayName: fromUsername,
         ipAddress: peerIp,
         status: "PENDING_INCOMING",
         lastHandshake: new Date(),
       },
       update: {
+        userId: fromUserId,
         hostname: data.fromDeviceName || data.fromHostname || undefined,
         publicName: fromUsername,
+        displayName: fromUsername,
         ipAddress: peerIp,
         status: "PENDING_INCOMING",
         lastHandshake: new Date(),
@@ -357,6 +555,7 @@ async function receiveConnectionRequest(data, peerIp) {
 async function receiveConnectionResponse(data, peerIp) {
   peerIp = normalizeIp(peerIp);
   const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
+  const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
   if (!fromUsername) {
     console.error("> [NodeMesh][AUTH] Rejected connection_response: missing_username");
     return;
@@ -387,9 +586,11 @@ async function receiveConnectionResponse(data, peerIp) {
     db.meshPeer.update({
       where: { macAddress: data.fromNodeId },
       data: {
+        userId: fromUserId || undefined,
         status: peerStatus,
         ipAddress: peerIp,
         publicName: fromUsername,
+        displayName: fromUsername,
         hostname: data.fromDeviceName || undefined,
         lastHandshake: new Date(),
       },
@@ -408,6 +609,21 @@ async function receiveConnectionResponse(data, peerIp) {
 
   if (data.status === "ACCEPTED") {
     operations.push(
+      db.meshDevice.upsert({
+        where: { ownerId_macAddress: { ownerId: fromUserId || data.fromNodeId, macAddress: data.fromNodeId } },
+        update: {
+          deviceName: data.fromDeviceName || undefined,
+          approvedAt: new Date(),
+          approvedBy: getMac(),
+        },
+        create: {
+          ownerId: fromUserId || data.fromNodeId,
+          macAddress: data.fromNodeId,
+          deviceName: data.fromDeviceName || undefined,
+          approvedAt: new Date(),
+          approvedBy: getMac(),
+        },
+      }),
       existingSession
         ? db.peerSession.update({
             where: { sessionId: existingSession.sessionId },
@@ -433,6 +649,14 @@ async function receiveConnectionResponse(data, peerIp) {
         create: { peerNodeId: data.fromNodeId },
       }),
     );
+  } else if (data.status === "BLOCKED") {
+    operations.push(
+      db.meshBlocklist.upsert({
+        where: { macAddress: data.fromNodeId },
+        update: { reason: "blocked_by_peer_response" },
+        create: { macAddress: data.fromNodeId, reason: "blocked_by_peer_response" },
+      }),
+    );
   }
 
   await db.$transaction(operations);
@@ -449,7 +673,8 @@ function startControlServer() {
     });
     socket.on("end", async () => {
       try {
-        const data = verify(JSON.parse(raw.trim()));
+        const sourceIp = normalizeIp(socket.remoteAddress);
+        const data = verify(JSON.parse(raw.trim()), sourceIp);
         if (!data) return;
         if (data.type === "connection_request") await receiveConnectionRequest(data, socket.remoteAddress);
         if (data.type === "connection_response") await receiveConnectionResponse(data, socket.remoteAddress);
@@ -485,41 +710,83 @@ function startMeshDiscovery() {
   let beaconTick = 0;
 
   udp.on("message", async (message, rinfo) => {
+    const sourceIp = normalizeIp(rinfo.address);
     try {
-      const data = verify(JSON.parse(message.toString("utf8")));
+      const data = verify(JSON.parse(message.toString("utf8")), sourceIp);
       if (!data || data.type !== "HELLO" || typeof data.nodeId !== "string" || data.nodeId === myMac) return;
-      if (getLocalIps().includes(rinfo.address)) return;
+      if (getLocalIps().includes(sourceIp)) return;
 
       const username = typeof data.username === "string" ? data.username.trim() : "";
       const userId = typeof data.userId === "string" ? data.userId.trim() : "";
+      const macAddress = data.nodeId;
+      const deviceName = data.deviceName || data.hostname || null;
       if (!username || !userId) {
-        console.error(`> [NodeMesh][AUTH] Rejected HELLO from ${rinfo.address}: missing_username`);
+        console.error(`> [NodeMesh][AUTH] Rejected HELLO from ${sourceIp}: missing_username`);
+        logMeshEvent("AUTH_FAIL", { reason: "missing_username", sourceIp }, sourceIp);
+        return;
+      }
+      if (await isBlockedMac(macAddress)) {
+        await logBlockedPeer(macAddress, username, sourceIp);
         return;
       }
 
-      const peer = await db.meshPeer.upsert({
-        where: { macAddress: data.nodeId },
-        create: {
-          macAddress: data.nodeId,
-          hostname: data.deviceName || data.hostname || null,
+      const sameUserPeer = await db.meshPeer.findFirst({ where: { userId } });
+      const sameMacPeer = await db.meshPeer.findUnique({ where: { macAddress } });
+      const trustedNameCollision = await db.meshPeer.findFirst({
+        where: {
           publicName: username,
-          ipAddress: rinfo.address,
-          status: "UNKNOWN",
-        },
-        update: {
-          hostname: data.deviceName || data.hostname || undefined,
-          publicName: username,
-          ipAddress: rinfo.address,
-          lastSeen: new Date(),
+          macAddress: { not: macAddress },
+          userId: { not: userId },
+          status: { in: ["TRUSTED", "ACCEPTED"] },
         },
       });
+      if (!sameUserPeer && trustedNameCollision) {
+        await logImpersonationAttempt({ userId, username, macAddress, ipAddress: sourceIp, trustedPeer: trustedNameCollision });
+        return;
+      }
 
-      if (peer.status === "TRUSTED" || peer.status === "ACCEPTED") {
-        syncPendingDirectMessages(username, rinfo.address).catch((error) => {
+      if (sameMacPeer?.status === "BLOCKED") {
+        await logBlockedPeer(macAddress, username, sourceIp);
+        return;
+      }
+
+      let status = sameMacPeer?.status || "UNKNOWN";
+      const sameUserSameDevice = sameUserPeer?.macAddress === macAddress;
+      const sameUserNewDevice = sameUserPeer && sameUserPeer.macAddress !== macAddress;
+      if (sameUserNewDevice) {
+        const approvedDevice = await db.meshDevice.findUnique({
+          where: { ownerId_macAddress: { ownerId: userId, macAddress } },
+        });
+        status = approvedDevice?.approvedAt ? "TRUSTED" : "PENDING_INCOMING";
+      } else if (!sameUserSameDevice && !sameMacPeer) {
+        status = "PENDING_INCOMING";
+      }
+
+      const peer = await upsertPeerIdentity({
+        userId,
+        username,
+        macAddress,
+        deviceName,
+        ipAddress: sourceIp,
+        status,
+        displayName: displayNameFor(username, deviceName, macAddress, Boolean(!sameUserPeer && sameMacPeer && sameMacPeer.userId !== userId)),
+      });
+
+      if (status === "PENDING_INCOMING") {
+        const message = sameUserNewDevice
+          ? `${username}'s account is connecting from a new device`
+          : `${username} wants to connect`;
+        await ensurePendingContactRequest({ userId, username, macAddress, deviceName, ipAddress: sourceIp, message });
+      }
+
+      if (TRUSTED_STATUSES.has(peer.status)) {
+        syncPendingDirectMessages(username, sourceIp).catch((error) => {
           console.error(`> [NodeMesh][SYNC] Pending sync failed for ${username}: ${error.message}`);
         });
       }
-    } catch {}
+    } catch (error) {
+      trackAuthFail(sourceIp, "bad_udp_packet", {}, null);
+    }
   });
 
   udp.bind(BEACON_PORT, () => {
@@ -539,9 +806,10 @@ function startMeshDiscovery() {
       nodeId: myMac,
       userId: session.profileId,
       username: session.username,
+      displayName: session.displayName,
       deviceMac: myMac,
-      deviceName: os.hostname(),
-      hostname: os.hostname(),
+      deviceName: session.deviceName,
+      hostname: session.deviceName,
       publicName: session.username,
       dbVersion: "2.0.0",
       vectorClock: { [myMac]: 0 },

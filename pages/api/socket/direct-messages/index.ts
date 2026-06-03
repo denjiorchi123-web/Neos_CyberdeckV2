@@ -128,7 +128,10 @@ export default async function handler(
     const meshPeer = await db.meshPeer.findFirst({
       where: {
         status: { in: ["TRUSTED", "ACCEPTED"] },
-        publicName: otherMember.profile.name,
+        OR: [
+          { userId: otherMember.profile.id },
+          { publicName: otherMember.profile.name },
+        ],
         ipAddress: { not: null },
         lastSeen: { gte: activeThreshold },
       },
@@ -138,7 +141,9 @@ export default async function handler(
       sendMeshControl(meshPeer.ipAddress, {
         type: "direct_message_sync",
         fromNodeId: getLocalNodeId(),
+        fromUserId: profile.id,
         fromUsername: profile.name,
+        toUserId: otherMember.profile.id,
         toUsername: otherMember.profile.name,
         message: {
           id: message.id,

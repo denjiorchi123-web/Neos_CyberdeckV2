@@ -30,7 +30,7 @@ export const NodeMap = ({ onNodeSelect }: { onNodeSelect?: (node: any) => void }
         const angle = (Math.PI * 2 * index) / Math.max(peerEntries.length, 1) - Math.PI / 2;
         return {
           id: mac,
-          name: peer.username || peer.hostname || "Unknown peer",
+          name: peer.username || "Unknown peer",
           ip: peer.ip || "",
           status: Date.now() / 1000 - peer.last_seen < 30 ? "online" : "offline",
           trustStatus: peer.trust_status,

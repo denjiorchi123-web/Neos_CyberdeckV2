@@ -41,18 +41,21 @@ export async function GET() {
 
     const meshProfiles = await db.profile.findMany({
       where: {
-        name: {
-          in: meshPeers.map((peer) => peer.publicName!).filter(Boolean),
-        },
+        OR: [
+          { id: { in: meshPeers.map((peer) => peer.userId).filter(Boolean) as string[] } },
+          { name: { in: meshPeers.map((peer) => peer.publicName!).filter(Boolean) } },
+        ],
       },
       select: { id: true, name: true },
     });
 
     const profileByName = new Map(meshProfiles.map((profile) => [profile.name, profile]));
+    const profileById = new Map(meshProfiles.map((profile) => [profile.id, profile]));
     const mergedById = new Map(users.map((user) => [user.userId, user]));
 
     for (const peer of meshPeers) {
-      const profile = peer.publicName ? profileByName.get(peer.publicName) : null;
+      const profile = (peer.userId ? profileById.get(peer.userId) : null) ||
+        (peer.publicName ? profileByName.get(peer.publicName) : null);
       if (!profile) continue;
       mergedById.set(profile.id, {
         userId: profile.id,

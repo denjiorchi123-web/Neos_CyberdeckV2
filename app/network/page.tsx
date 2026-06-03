@@ -244,7 +244,7 @@ export default function NetworkDiagnosticsPage() {
                       <div className={`h-2 w-2 rounded-full ${statusColor} shadow-[0_0_8px_rgba(0,0,0,0.5)]`} />
                       <div>
                         <p className="text-sm font-bold text-white flex items-center gap-2">
-                          {peer.username || peer.hostname || "Unknown peer"}
+                          {peer.username || "Unknown peer"}
                         </p>
                         <p className="text-xs text-zinc-500 font-mono mt-0.5">
                           {peer.hostname || "device"} / {mac}

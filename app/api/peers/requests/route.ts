@@ -33,6 +33,8 @@ export async function GET(req: Request) {
       createdAt: request.createdAt,
       expiresAt: request.expiresAt,
       hostname: peer?.hostname,
+      userId: peer?.userId,
+      displayName: peer?.displayName,
       publicName: peer?.publicName,
       ipAddress: peer?.ipAddress,
       trustStatus: peer?.status,
