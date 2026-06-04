@@ -208,6 +208,8 @@ export async function POST(req: NextRequest) {
     }
 
     log.event("FILE_UPLOAD", `${originalName} (${(fileSize/1024).toFixed(0)} KB, ${mimeType}) by ${profile.name}`);
+    console.log(`[UPLOAD] Stored ${originalName} at ${finalPath}`);
+    console.log(`[UPLOAD] Manual copy: cp ${JSON.stringify(finalPath)} ~/`);
 
     return NextResponse.json({
       url:          `/api/files/${savedName}`,

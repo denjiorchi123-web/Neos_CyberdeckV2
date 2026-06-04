@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getLocalIp, getLocalNodeId, MESH_CONTROL_PORT } from "@/lib/mesh-identity";
 import { sendMeshControl } from "@/lib/mesh-control";
+import { ensureAcceptedMeshContact, ensureDirectConversationForAcceptedPeer } from "@/lib/mesh-contacts";
 import {
   ensureTrustedPeerTables,
   logRejectedPeer,
@@ -146,6 +147,17 @@ export async function respondToConnectionRequest(
   });
 
   if (action === "ACCEPTED") {
+    const contact = await ensureAcceptedMeshContact({
+      userId: peer.userId,
+      username: peer.publicName || peer.displayName,
+      macAddress: request.fromNodeId,
+      deviceName: peer.hostname,
+    });
+    const conversation = await ensureDirectConversationForAcceptedPeer(
+      profile.id,
+      contact.member.id,
+      contact.defaultServer.id,
+    );
     await db.meshDevice.upsert({
       where: {
         ownerId_macAddress: {
@@ -196,6 +208,19 @@ export async function respondToConnectionRequest(
       macId: request.fromNodeId,
       hostAddress: peer.ipAddress,
       securityStatus,
+    });
+    await db.meshEvent.create({
+      data: {
+        originNodeId: getLocalNodeId(),
+        entityType: "conversation",
+        entityId: conversation.id,
+        operation: "trusted_contact_conversation_ready",
+        payloadJson: JSON.stringify({
+          peerNodeId: request.fromNodeId,
+          peerUserId: contact.profile.userId,
+          peerUsername: contact.profile.name,
+        }),
+      },
     });
   } else {
     await logRejectedPeer(db as any, {

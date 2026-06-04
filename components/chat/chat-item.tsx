@@ -78,7 +78,7 @@ function fmtTime(sec: number) {
 
 // ── Lightbox Video Player ──────────────────────────────────────────────────────
 
-function LightboxVideoPlayer({ src }: { src: string }) {
+function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,6 +103,11 @@ function LightboxVideoPlayer({ src }: { src: string }) {
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+      if (v) {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
     };
   }, []);
 
@@ -253,22 +258,34 @@ function LightboxVideoPlayer({ src }: { src: string }) {
 // ── Image Lightbox ────────────────────────────────────────────────────────────
 
 function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt: string; type?: "image" | "video"; onClose: () => void }) {
+  const close = React.useCallback(() => {
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [close]);
 
   return (
     <div
-      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-      onClick={onClose}
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/95 backdrop-blur-sm"
+      onClick={close}
+      role="dialog"
+      aria-modal="true"
+      aria-label={type === "video" ? "Video player" : "Media preview"}
+      style={{ touchAction: "manipulation" }}
     >
       <button
-        onClick={onClose}
-        className="absolute top-4 left-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition z-[1000]"
+        onClick={(event) => {
+          event.stopPropagation();
+          close();
+        }}
+        className="absolute top-4 right-4 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition z-[1000] flex items-center justify-center"
+        aria-label="Close media player"
       >
-        <X className="h-5 w-5" /> Back
+        <X className="h-7 w-7" />
       </button>
       <button
         onClick={async (e) => {
@@ -291,7 +308,7 @@ function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt
             console.error("Download failed:", error);
           }
         }}
-        className="absolute top-4 right-16 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-[1000]"
+        className="absolute top-4 right-20 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition z-[1000] flex items-center justify-center"
         title="Download"
       >
         <Download className="h-6 w-6" />
@@ -305,7 +322,7 @@ function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt
           onClick={e => e.stopPropagation()}
         />
       ) : (
-        <LightboxVideoPlayer src={src} />
+        <LightboxVideoPlayer src={src} onClose={close} />
       )}
     </div>
   );
@@ -396,32 +413,77 @@ function AudioPlayer({ src, fileName }: { src: string; fileName?: string | null 
 // ── Video Player ──────────────────────────────────────────────────────────────
 
 function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: string | null; onClick: () => void }) {
+  const touchStartRef = React.useRef<{ x: number; y: number; opened: boolean } | null>(null);
+
+  const open = () => {
+    if (touchStartRef.current?.opened) return;
+    if (touchStartRef.current) touchStartRef.current.opened = true;
+    onClick();
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    touchStartRef.current = { x: e.clientX, y: e.clientY, opened: false };
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const start = touchStartRef.current;
+    if (!start) {
+      open();
+      return;
+    }
+    const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+    if (moved <= 12) open();
+    window.setTimeout(() => {
+      touchStartRef.current = null;
+    }, 0);
+  };
+
   return (
-    <div 
-      className="relative rounded-xl overflow-hidden bg-black max-w-[300px] border border-black/30 cursor-pointer group"
-      onClick={onClick}
-      onPointerUp={(e) => {
-        if (e.pointerType === "touch") onClick();
+    <button
+      type="button"
+      className="relative block rounded-xl overflow-hidden bg-black w-[min(300px,calc(100vw-132px))] min-h-[168px] border border-black/30 cursor-pointer group touch-manipulation select-none text-left"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!touchStartRef.current?.opened) onClick();
       }}
-      role="button"
-      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        touchStartRef.current = null;
+      }}
+      onTouchEnd={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          onClick();
+        }
+      }}
       aria-label="Open video player"
       style={{ touchAction: "manipulation" }}
     >
       <video
         src={src}
         poster={thumbnail ?? undefined}
-        className="w-full"
+        className="w-full h-full min-h-[168px] object-cover pointer-events-none"
         preload="metadata"
         muted
         playsInline
       />
       <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/50 transition">
-        <div className="h-16 w-16 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
-          <Play className="h-8 w-8 text-white fill-white ml-1" />
+        <div className="h-20 w-20 rounded-full bg-white/20 active:bg-white/35 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
+          <Play className="h-10 w-10 text-white fill-white ml-1" />
         </div>
       </div>
-    </div>
+      <span className="sr-only">Open video player</span>
+    </button>
   );
 }
 
@@ -517,10 +579,10 @@ function ChatItemInner({
   };
 
   const effectiveMime = mimeType || "";
-  const fileExt       = fileUrl?.split(".").pop()?.toLowerCase() ?? "";
-  const isImage    = (effectiveMime.startsWith("image/")  || ["png","jpg","jpeg","gif","webp"].includes(fileExt)) && !!fileUrl;
-  const isVideo    = (effectiveMime.startsWith("video/")  || ["mp4","webm","ogg","mov"].includes(fileExt)) && !!fileUrl;
-  const isAudio    = (effectiveMime.startsWith("audio/")  || ["mp3","wav","m4a","ogg","opus"].includes(fileExt)) && !!fileUrl;
+  const fileExt       = (fileName || fileUrl || "").split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  const isImage    = (effectiveMime.startsWith("image/")  || ["png","jpg","jpeg","gif","webp","heic","heif"].includes(fileExt)) && !!fileUrl;
+  const isVideo    = (effectiveMime.startsWith("video/")  || ["mp4","m4v","webm","ogv","ogg","mov","avi","mkv"].includes(fileExt)) && !!fileUrl;
+  const isAudio    = (effectiveMime.startsWith("audio/")  || ["mp3","wav","m4a","aac","ogg","opus"].includes(fileExt)) && !!fileUrl;
   const isDocument = !isImage && !isVideo && !isAudio && !!fileUrl;
 
   const isCallMessage  = content.includes("📞");
@@ -549,6 +611,15 @@ function ChatItemInner({
 
   const resolvedUrl = mediaKey ? (mediaBlobUrl ?? null) : fileUrl;
   const isDecrypting = !!fileUrl && !!mediaKey && !mediaBlobUrl;
+
+  const openMediaLightbox = (src: string, alt: string, mediaType: "image" | "video") => {
+    window.requestAnimationFrame(() => {
+      setLightboxSrc(src);
+      setLightboxAlt(alt);
+      setLightboxType(mediaType);
+      setLightboxOpen(true);
+    });
+  };
 
   useEffect(() => {
     setImgError(false);
@@ -831,7 +902,7 @@ function ChatItemInner({
                           : "w-full max-w-[280px] rounded-lg"
                       )}
                       loading="lazy"
-                      onClick={() => { setLightboxSrc(resolvedUrl); setLightboxAlt(fileName ?? content); setLightboxType("image"); setLightboxOpen(true); }}
+                      onClick={() => openMediaLightbox(resolvedUrl, fileName ?? content, "image")}
                       onError={() => {
                         setImgError(true);
                         window.setTimeout(() => setImgError(false), 1800);
@@ -867,12 +938,7 @@ function ChatItemInner({
                     <VideoPlayer
                       src={resolvedUrl}
                       thumbnail={thumbnailUrl}
-                      onClick={() => {
-                        setLightboxSrc(resolvedUrl);
-                        setLightboxAlt(fileName ?? (content || "Video"));
-                        setLightboxType("video");
-                        setLightboxOpen(true);
-                      }}
+                      onClick={() => openMediaLightbox(resolvedUrl, fileName ?? (content || "Video"), "video")}
                     />
                   </div>
                 )}

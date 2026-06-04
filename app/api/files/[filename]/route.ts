@@ -4,6 +4,7 @@ import { stat } from "fs/promises";
 import { extname, basename } from "path";
 import { Readable } from "stream";
 import { currentProfile } from "@/lib/current-profile";
+import { db } from "@/lib/db";
 import { ensureDirs, resolveStoredFilePath } from "@/lib/media-dirs";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +16,13 @@ const MIME: Record<string, string> = {
   ".gif":  "image/gif",
   ".webp": "image/webp",
   ".mp4":  "video/mp4",
+  ".m4v":  "video/mp4",
+  ".mov":  "video/quicktime",
   ".webm": "video/webm",
+  ".mkv":  "video/x-matroska",
+  ".avi":  "video/x-msvideo",
   ".ogg":  "audio/ogg",
+  ".ogv":  "video/ogg",
   ".mp3":  "audio/mpeg",
   ".wav":  "audio/wav",
   ".m4a":  "audio/mp4",
@@ -48,7 +54,11 @@ export async function GET(
   try {
     const fileSize = (await stat(filePath)).size;
     const ext  = extname(filename).toLowerCase();
-    const mime = MIME[ext] ?? "application/octet-stream";
+    const indexed = await db.fileIndex.findFirst({
+      where: { path: filename },
+      select: { mimeType: true },
+    }).catch(() => null);
+    const mime = indexed?.mimeType || MIME[ext] || "application/octet-stream";
 
     const range = req.headers.get("range");
     if (range) {
@@ -72,6 +82,7 @@ export async function GET(
           "Accept-Ranges": "bytes",
           "Content-Length": String(chunksize),
           "Content-Type": mime,
+          "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, max-age=86400",
         }
       });
@@ -82,6 +93,7 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type":        mime,
+        "X-Content-Type-Options": "nosniff",
         "Content-Length":      String(fileSize),
         "Accept-Ranges":       "bytes",
         "Content-Disposition": `${req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline"}; filename="${filename}"`,

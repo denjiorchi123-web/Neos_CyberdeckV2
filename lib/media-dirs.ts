@@ -1,20 +1,29 @@
 import { existsSync, mkdirSync, readdirSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 
 const ROOT = join(process.cwd(), "private");
-const CYBERDECK_ROOT = join(ROOT, "CyberDeck");
-const MEDIA_ROOT = join(CYBERDECK_ROOT, "Media");
+const LEGACY_CYBERDECK_ROOT = join(ROOT, "CyberDeck");
+const LEGACY_MEDIA_ROOT = join(LEGACY_CYBERDECK_ROOT, "Media");
+const MEDIA_ROOT = process.env.CYBERDECK_MEDIA_ROOT || join(homedir(), "LAN_Chat_Media");
 
 export const DIRS = {
   uploads:   join(ROOT, "uploads"), // Legacy location; kept readable for old messages.
-  root:      CYBERDECK_ROOT,
-  databases: join(CYBERDECK_ROOT, "Databases"),
+  root:      MEDIA_ROOT,
+  databases: join(ROOT, "CyberDeck", "Databases"),
   media:     MEDIA_ROOT,
-  photos:    join(MEDIA_ROOT, "CyberDeck Images"),
-  videos:    join(MEDIA_ROOT, "CyberDeck Video"),
-  audio:     join(MEDIA_ROOT, "CyberDeck Audio"),
-  documents: join(MEDIA_ROOT, "CyberDeck Documents"),
+  photos:    join(MEDIA_ROOT, "Images"),
+  videos:    join(MEDIA_ROOT, "Videos"),
+  audio:     join(MEDIA_ROOT, "Audio"),
+  documents: join(MEDIA_ROOT, "Documents"),
   logs:      join(ROOT, "logs"),
+} as const;
+
+const LEGACY_DIRS = {
+  photos:    join(LEGACY_MEDIA_ROOT, "CyberDeck Images"),
+  videos:    join(LEGACY_MEDIA_ROOT, "CyberDeck Video"),
+  audio:     join(LEGACY_MEDIA_ROOT, "CyberDeck Audio"),
+  documents: join(LEGACY_MEDIA_ROOT, "CyberDeck Documents"),
 } as const;
 
 export function ensureDirs() {
@@ -55,12 +64,25 @@ export function resolveStoredFilePath(filename: string) {
     join(DIRS.videos, filename),
     join(DIRS.audio, filename),
     join(DIRS.documents, filename),
+    join(LEGACY_DIRS.photos, filename),
+    join(LEGACY_DIRS.videos, filename),
+    join(LEGACY_DIRS.audio, filename),
+    join(LEGACY_DIRS.documents, filename),
     join(DIRS.uploads, filename),
   ];
   const direct = candidates.find((candidate) => existsSync(candidate));
   if (direct) return direct;
 
-  for (const dir of [DIRS.photos, DIRS.videos, DIRS.audio, DIRS.documents]) {
+  for (const dir of [
+    DIRS.photos,
+    DIRS.videos,
+    DIRS.audio,
+    DIRS.documents,
+    LEGACY_DIRS.photos,
+    LEGACY_DIRS.videos,
+    LEGACY_DIRS.audio,
+    LEGACY_DIRS.documents,
+  ]) {
     const nested = findNestedFile(dir, filename);
     if (nested) return nested;
   }

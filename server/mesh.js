@@ -55,13 +55,20 @@ const authFailures = new Map();
 const learnedPeerIps = new Map();
 const VERIFIED_LAN_STATUS = "VERIFIED LAN";
 const PRIVATE_ROOT = path.join(process.cwd(), "private");
-const CYBERDECK_MEDIA_ROOT = path.join(PRIVATE_ROOT, "CyberDeck", "Media");
+const CYBERDECK_MEDIA_ROOT = process.env.CYBERDECK_MEDIA_ROOT || path.join(os.homedir(), "LAN_Chat_Media");
+const LEGACY_CYBERDECK_MEDIA_ROOT = path.join(PRIVATE_ROOT, "CyberDeck", "Media");
 const MEDIA_DIRS = {
   uploads: path.join(PRIVATE_ROOT, "uploads"),
-  photos: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Images"),
-  videos: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Video"),
-  audio: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Audio"),
-  documents: path.join(CYBERDECK_MEDIA_ROOT, "CyberDeck Documents"),
+  photos: path.join(CYBERDECK_MEDIA_ROOT, "Images"),
+  videos: path.join(CYBERDECK_MEDIA_ROOT, "Videos"),
+  audio: path.join(CYBERDECK_MEDIA_ROOT, "Audio"),
+  documents: path.join(CYBERDECK_MEDIA_ROOT, "Documents"),
+};
+const LEGACY_MEDIA_DIRS = {
+  photos: path.join(LEGACY_CYBERDECK_MEDIA_ROOT, "CyberDeck Images"),
+  videos: path.join(LEGACY_CYBERDECK_MEDIA_ROOT, "CyberDeck Video"),
+  audio: path.join(LEGACY_CYBERDECK_MEDIA_ROOT, "CyberDeck Audio"),
+  documents: path.join(LEGACY_CYBERDECK_MEDIA_ROOT, "CyberDeck Documents"),
 };
 
 let sqliteRuntimeReady = null;
@@ -447,6 +454,106 @@ async function upsertPeerIdentity({ userId, username, macAddress, deviceName, ip
   });
 }
 
+function cleanContactName(username) {
+  const name = typeof username === "string" ? username.trim() : "";
+  if (!name) throw new Error("Cannot create a contact without a verified username");
+  return name.slice(0, 80);
+}
+
+function contactUserId(userId, macAddress) {
+  const trimmed = typeof userId === "string" ? userId.trim() : "";
+  return trimmed || `mesh_${String(macAddress || "unknown").replace(/[^A-Za-z0-9_-]/g, "_")}`;
+}
+
+function contactEmail(userId) {
+  return `${String(userId).replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
+}
+
+async function ensureAcceptedMeshContact({ userId, username, macAddress, deviceName }) {
+  const name = cleanContactName(username);
+  const resolvedUserId = contactUserId(userId, macAddress);
+  const defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
+  if (!defaultServer) throw new Error("Default chat server is missing");
+
+  let profile = await db.profile.findUnique({ where: { userId: resolvedUserId } });
+  if (!profile) {
+    profile = await db.profile.create({
+      data: {
+        userId: resolvedUserId,
+        name,
+        imageUrl: "",
+        email: contactEmail(resolvedUserId),
+        password: "",
+        isOnline: new Date(),
+      },
+    });
+  } else {
+    profile = await db.profile.update({
+      where: { id: profile.id },
+      data: {
+        name,
+        isOnline: new Date(),
+        lastSeen: new Date(),
+      },
+    });
+  }
+
+  let member = await db.member.findFirst({
+    where: {
+      profileId: profile.id,
+      serverId: defaultServer.id,
+    },
+  });
+  if (!member) {
+    member = await db.member.create({
+      data: {
+        profileId: profile.id,
+        serverId: defaultServer.id,
+        role: "GUEST",
+      },
+    });
+  }
+
+  await db.meshPeer.update({
+    where: { macAddress },
+    data: {
+      userId: resolvedUserId,
+      publicName: name,
+      displayName: name,
+      hostname: deviceName || undefined,
+      status: "TRUSTED",
+      lastHandshake: new Date(),
+    },
+  }).catch(() => null);
+
+  return { profile, member, defaultServer };
+}
+
+async function ensureDirectConversationForAcceptedPeer(localProfileId, remoteMemberId, serverId) {
+  const localMember = await db.member.findFirst({
+    where: { profileId: localProfileId, serverId },
+  });
+  if (!localMember) throw new Error("Local profile is not joined to the default chat server");
+
+  let conversation = await db.conversation.findFirst({
+    where: {
+      OR: [
+        { memberOneId: localMember.id, memberTwoId: remoteMemberId },
+        { memberOneId: remoteMemberId, memberTwoId: localMember.id },
+      ],
+    },
+  });
+  if (!conversation) {
+    conversation = await db.conversation.create({
+      data: {
+        memberOneId: localMember.id,
+        memberTwoId: remoteMemberId,
+      },
+    });
+  }
+  return conversation;
+}
+
 async function findDirectConversationByNames(firstName, secondName) {
   const server = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
   if (!server) return null;
@@ -556,12 +663,25 @@ function resolveStoredFilePath(filename) {
     path.join(MEDIA_DIRS.videos, filename),
     path.join(MEDIA_DIRS.audio, filename),
     path.join(MEDIA_DIRS.documents, filename),
+    path.join(LEGACY_MEDIA_DIRS.photos, filename),
+    path.join(LEGACY_MEDIA_DIRS.videos, filename),
+    path.join(LEGACY_MEDIA_DIRS.audio, filename),
+    path.join(LEGACY_MEDIA_DIRS.documents, filename),
     path.join(MEDIA_DIRS.uploads, filename),
   ];
   const direct = candidates.find((candidate) => fs.existsSync(candidate));
   if (direct) return direct;
 
-  for (const dir of [MEDIA_DIRS.photos, MEDIA_DIRS.videos, MEDIA_DIRS.audio, MEDIA_DIRS.documents]) {
+  for (const dir of [
+    MEDIA_DIRS.photos,
+    MEDIA_DIRS.videos,
+    MEDIA_DIRS.audio,
+    MEDIA_DIRS.documents,
+    LEGACY_MEDIA_DIRS.photos,
+    LEGACY_MEDIA_DIRS.videos,
+    LEGACY_MEDIA_DIRS.audio,
+    LEGACY_MEDIA_DIRS.documents,
+  ]) {
     const nested = findNestedFile(dir, filename);
     if (nested) return nested;
   }
@@ -823,7 +943,8 @@ async function receiveDirectMediaChunk(data, peerIp) {
       totalSize: data.totalSize,
       fromUsername,
     });
-    console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername}`);
+    console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername} at ${finalPath}`);
+    console.log(`> [NodeMesh][MEDIA] Manual copy: cp ${JSON.stringify(finalPath)} ~/`);
   }
 }
 
@@ -1283,6 +1404,22 @@ async function receiveConnectionResponse(data, peerIp) {
   });
 
   if (data.status === "ACCEPTED") {
+    const session = getMeshSession();
+    if (!session?.profileId) {
+      console.error("> [NodeMesh][AUTH] Accepted peer, but no saved local session exists; contact conversation not created");
+      return;
+    }
+    const contact = await ensureAcceptedMeshContact({
+      userId: fromUserId,
+      username: fromUsername,
+      macAddress: data.fromNodeId,
+      deviceName: data.fromDeviceName,
+    });
+    const conversation = await ensureDirectConversationForAcceptedPeer(
+      session.profileId,
+      contact.member.id,
+      contact.defaultServer.id,
+    );
     await db.meshDevice.upsert({
       where: { ownerId_macAddress: { ownerId: fromUserId || data.fromNodeId, macAddress: data.fromNodeId } },
       update: {
@@ -1328,6 +1465,19 @@ async function receiveConnectionResponse(data, peerIp) {
       macId: data.fromNodeId,
       hostAddress: peerIp,
       securityStatus,
+    });
+    await db.meshEvent.create({
+      data: {
+        originNodeId: getMac(),
+        entityType: "conversation",
+        entityId: conversation.id,
+        operation: "trusted_contact_conversation_ready",
+        payloadJson: JSON.stringify({
+          peerNodeId: data.fromNodeId,
+          peerUserId: contact.profile.userId,
+          peerUsername: contact.profile.name,
+        }),
+      },
     });
   } else {
     await logRejectedPeer(db, {
