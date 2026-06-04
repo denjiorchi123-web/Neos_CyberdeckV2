@@ -5,6 +5,16 @@ const net = require("net");
 const os = require("os");
 const path = require("path");
 const { PrismaClient } = require("@prisma/client");
+const {
+  getBroadcastAddresses,
+  getConfiguredFallbackIps,
+  getLanInterfaces,
+  getLocalIps: getAllLocalIps,
+  getPreferredLanIp,
+  getPreferredLanMac,
+  isLocalIp,
+  normalizeIp,
+} = require("../lib/mesh-network");
 
 const db = new PrismaClient();
 let redisClient = null;
@@ -32,15 +42,7 @@ if (SECRET === "GHOSTWIRE_ALPHA_7") {
   console.error("> [NodeMesh][AUTH] WARNING: using built-in default MESH_SECRET; set private/mesh-secret.key on both devices");
 }
 const CONTROL_ENCRYPTION = process.env.MESH_CONTROL_ENCRYPTION !== "0";
-const DIRECT_CABLE_PREFIXES = (process.env.MESH_DIRECT_PREFIXES || "10.0.0.,192.168.10.")
-  .split(",")
-  .map((prefix) => prefix.trim())
-  .filter(Boolean);
-const DIRECTED_BROADCAST_ADDR = process.env.MESH_BROADCAST_ADDR || "";
-const PEER_FALLBACK_IPS = (process.env.MESH_PEER_FALLBACK_IPS || "10.0.0.1,10.0.0.100,192.168.10.1,192.168.10.2")
-  .split(",")
-  .map((ip) => ip.trim())
-  .filter(Boolean);
+const MESH_MULTICAST_ADDR = process.env.MESH_MULTICAST_ADDR || "239.255.77.77";
 const MESH_SESSION_FILE = process.env.MESH_SESSION_FILE || path.join(process.cwd(), "private", "mesh-session.json");
 const MAX_CLOCK_SKEW_MS = Number(process.env.MESH_MAX_CLOCK_SKEW_MS || 24 * 60 * 60 * 1000);
 const MAX_PACKET_BYTES = Number(process.env.MESH_MAX_PACKET_BYTES || 1024 * 1024);
@@ -50,6 +52,7 @@ const AUTH_FAIL_LIMIT = 5;
 const AUTH_RATE_LIMIT_MS = 10 * 60 * 1000;
 const TRUSTED_STATUSES = new Set(["TRUSTED", "ACCEPTED"]);
 const authFailures = new Map();
+const learnedPeerIps = new Map();
 const VERIFIED_LAN_STATUS = "VERIFIED LAN";
 const PRIVATE_ROOT = path.join(process.cwd(), "private");
 const CYBERDECK_MEDIA_ROOT = path.join(PRIVATE_ROOT, "CyberDeck", "Media");
@@ -66,10 +69,6 @@ let sqliteRuntimeReady = null;
 function normalizeSecurityStatus(value) {
   const status = typeof value === "string" ? value.trim() : "";
   return status ? status.slice(0, 64) : VERIFIED_LAN_STATUS;
-}
-
-function isDirectCableIp(ip) {
-  return DIRECT_CABLE_PREFIXES.some((prefix) => ip.startsWith(prefix));
 }
 
 function ensureSqliteRuntime() {
@@ -142,41 +141,15 @@ ensureSqliteRuntime().catch((error) => {
 });
 
 function getMac() {
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    const hasCableIp = (interfaces || []).some(
-      (iface) => !iface.internal && iface.family === "IPv4" && isDirectCableIp(iface.address),
-    );
-    if (!hasCableIp) continue;
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
-        return iface.mac.replace(/:/g, "").toLowerCase();
-      }
-    }
-  }
-
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
-        return iface.mac.replace(/:/g, "").toLowerCase();
-      }
-    }
-  }
-  return `node-${os.hostname().toLowerCase()}`;
+  return getPreferredLanMac() || `node-${getIp().replace(/\W/g, "").toLowerCase()}`;
 }
 
 function getIp() {
-  const ips = getLocalIps();
-  return ips.find(isDirectCableIp) || ips[0] || "127.0.0.1";
+  return getPreferredLanIp();
 }
 
 function getLocalIps() {
-  const ips = [];
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.family === "IPv4") ips.push(iface.address);
-    }
-  }
-  return ips;
+  return getAllLocalIps();
 }
 
 function getMeshSession() {
@@ -264,8 +237,11 @@ function isAuthRateLimited(sourceIp) {
   return current?.blockedUntil && current.blockedUntil > Date.now();
 }
 
+function clearAuthFail(sourceIp) {
+  authFailures.delete(normalizeIp(sourceIp || "unknown"));
+}
+
 function verify(packet, sourceIp) {
-  if (isAuthRateLimited(sourceIp)) return null;
   if (!packet || typeof packet.sig !== "string") {
     trackAuthFail(sourceIp, "malformed_packet", packet, null);
     return null;
@@ -292,7 +268,7 @@ function verify(packet, sourceIp) {
         decipher.final(),
       ]).toString("utf8");
     } catch {
-      trackAuthFail(sourceIp, "decrypt_failed", packet, null);
+      logMeshEvent("AUTH_FAIL", { reason: "decrypt_failed", sourceIp: normalizeIp(sourceIp || "unknown") }, sourceIp);
       return null;
     }
   } else if (typeof packet.payload === "string") {
@@ -311,7 +287,7 @@ function verify(packet, sourceIp) {
   try {
     data = JSON.parse(body);
   } catch {
-    trackAuthFail(sourceIp, "bad_payload_json", packet, null);
+    logMeshEvent("AUTH_FAIL", { reason: "bad_payload_json_authenticated", sourceIp: normalizeIp(sourceIp || "unknown") }, sourceIp);
     return null;
   }
   const skewMs = Number.isFinite(data.timestamp) ? Math.abs(Date.now() - data.timestamp) : Number.POSITIVE_INFINITY;
@@ -320,14 +296,11 @@ function verify(packet, sourceIp) {
     console.error(
       `> [NodeMesh][AUTH] Rejected signed packet: clock skew ${skewSeconds}s exceeds ${Math.round(MAX_CLOCK_SKEW_MS / 1000)}s`,
     );
-    trackAuthFail(sourceIp, "clock_skew", packet, skewSeconds);
+    logMeshEvent("AUTH_CLOCK_SKEW", { sourceIp: normalizeIp(sourceIp || "unknown"), skewSeconds }, sourceIp);
     return null;
   }
+  clearAuthFail(sourceIp);
   return data;
-}
-
-function normalizeIp(ip) {
-  return typeof ip === "string" && ip.startsWith("::ffff:") ? ip.slice(7) : ip;
 }
 
 async function sendControl(ip, payload) {
@@ -1396,24 +1369,60 @@ function startControlServer() {
   });
 }
 
-function broadcastAddresses() {
-  const addresses = new Set();
-  if (DIRECTED_BROADCAST_ADDR) addresses.add(DIRECTED_BROADCAST_ADDR);
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.family === "IPv4") {
-        const ip = iface.address.split(".");
-        const mask = iface.netmask.split(".");
-        addresses.add(ip.map((part, index) => (Number(part) | (~Number(mask[index]) & 255)).toString()).join("."));
-      }
+function rememberPeerIp(ip) {
+  const normalized = normalizeIp(ip);
+  if (!normalized || isLocalIp(normalized)) return;
+  learnedPeerIps.set(normalized, Date.now());
+}
+
+function rememberedPeerIps() {
+  const now = Date.now();
+  const maxAgeMs = 24 * 60 * 60 * 1000;
+  for (const [ip, lastSeen] of learnedPeerIps.entries()) {
+    if (now - lastSeen > maxAgeMs) learnedPeerIps.delete(ip);
+  }
+  return [...learnedPeerIps.keys()];
+}
+
+async function knownPeerIps() {
+  const peers = await db.meshPeer.findMany({
+    where: {
+      ipAddress: { not: null },
+      status: { notIn: ["BLOCKED", "DECLINED"] },
+    },
+    select: { ipAddress: true },
+  });
+  return peers.map((peer) => peer.ipAddress).filter(Boolean);
+}
+
+async function discoveryTargets({ includeUnicast = false } = {}) {
+  const targets = new Set([
+    ...getBroadcastAddresses(),
+    MESH_MULTICAST_ADDR,
+  ]);
+  if (includeUnicast) {
+    for (const ip of [...getConfiguredFallbackIps(), ...rememberedPeerIps(), ...(await knownPeerIps())]) targets.add(ip);
+  }
+  return [...targets].filter((target) => target && !isLocalIp(target));
+}
+
+function joinMulticastGroups(udp) {
+  const interfaces = getLanInterfaces();
+  for (const iface of interfaces) {
+    try {
+      udp.addMembership(MESH_MULTICAST_ADDR, iface.address);
+    } catch (error) {
+      console.warn(`> [NodeMesh] Multicast join skipped on ${iface.name} (${iface.address}): ${error.message}`);
     }
   }
-  return addresses;
+  try {
+    udp.setMulticastTTL(1);
+  } catch {}
 }
 
 function startMeshDiscovery() {
   const myMac = getMac();
-  const udp = dgram.createSocket("udp4");
+  const udp = dgram.createSocket({ type: "udp4", reuseAddr: true });
   let beaconTick = 0;
 
   udp.on("message", async (message, rinfo) => {
@@ -1421,7 +1430,8 @@ function startMeshDiscovery() {
     try {
       const data = verify(JSON.parse(message.toString("utf8")), sourceIp);
       if (!data || data.type !== "HELLO" || typeof data.nodeId !== "string" || data.nodeId === myMac) return;
-      if (getLocalIps().includes(sourceIp)) return;
+      if (isLocalIp(sourceIp)) return;
+      rememberPeerIp(sourceIp);
 
       const username = typeof data.username === "string" ? data.username.trim() : "";
       const userId = typeof data.userId === "string" ? data.userId.trim() : "";
@@ -1499,10 +1509,17 @@ function startMeshDiscovery() {
 
   udp.bind(BEACON_PORT, () => {
     udp.setBroadcast(true);
+    joinMulticastGroups(udp);
     console.log(`> [NodeMesh] Signed UDP discovery listening on port ${BEACON_PORT}`);
   });
 
   setInterval(() => {
+    sendBeacon().catch((error) => {
+      console.error(`> [NodeMesh] Discovery beacon failed: ${error.message}`);
+    });
+  }, 5000);
+
+  async function sendBeacon() {
     const session = getMeshSession();
     if (!session) {
       console.error("> [NodeMesh][AUTH] Mesh beacon paused: no logged-in user session");
@@ -1525,15 +1542,12 @@ function startMeshDiscovery() {
       ip: getIp(),
     })));
     beaconTick += 1;
-    for (const address of broadcastAddresses()) udp.send(packet, BEACON_PORT, address);
+    for (const address of await discoveryTargets()) udp.send(packet, BEACON_PORT, address);
     if (beaconTick >= 3) {
       beaconTick = 0;
-      const localIps = new Set(getLocalIps());
-      for (const address of PEER_FALLBACK_IPS) {
-        if (!localIps.has(address)) udp.send(packet, BEACON_PORT, address);
-      }
+      for (const address of await discoveryTargets({ includeUnicast: true })) udp.send(packet, BEACON_PORT, address);
     }
-  }, 5000);
+  }
 
   startControlServer();
 }

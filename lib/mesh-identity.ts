@@ -1,7 +1,13 @@
 import crypto from "crypto";
 import fs from "fs";
-import os from "os";
 import path from "path";
+import {
+  getLanIps,
+  getLocalIps as getAllLocalIps,
+  getPreferredLanIp,
+  getPreferredLanMac,
+  isLanReady,
+} from "@/lib/mesh-network";
 
 export const MESH_CONTROL_PORT = Number(process.env.MESH_CONTROL_PORT || 5006);
 function loadMeshSecret() {
@@ -16,55 +22,21 @@ function loadMeshSecret() {
 
 export const MESH_SECRET = loadMeshSecret();
 const CONTROL_ENCRYPTION = process.env.MESH_CONTROL_ENCRYPTION !== "0";
-const DIRECT_CABLE_PREFIXES = (process.env.MESH_DIRECT_PREFIXES || "10.0.0.,192.168.10.")
-  .split(",")
-  .map((prefix) => prefix.trim())
-  .filter(Boolean);
-
-function isDirectCableIp(ip: string) {
-  return DIRECT_CABLE_PREFIXES.some((prefix) => ip.startsWith(prefix));
-}
 
 export function getLocalNodeId(): string {
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    const hasCableIp = (interfaces || []).some(
-      (iface) => !iface.internal && iface.family === "IPv4" && isDirectCableIp(iface.address),
-    );
-    if (!hasCableIp) continue;
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
-        return iface.mac.replace(/:/g, "").toLowerCase();
-      }
-    }
-  }
-
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") {
-        return iface.mac.replace(/:/g, "").toLowerCase();
-      }
-    }
-  }
-  return `node-${os.hostname().toLowerCase()}`;
+  return getPreferredLanMac() || `node-${getLocalIp().replace(/\W/g, "").toLowerCase()}`;
 }
 
 export function getLocalIps(): string[] {
-  const ips: string[] = [];
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.family === "IPv4") ips.push(iface.address);
-    }
-  }
-  return ips;
+  return getAllLocalIps();
 }
 
 export function getLocalIp(): string {
-  const ips = getLocalIps();
-  return ips.find(isDirectCableIp) || ips[0] || "127.0.0.1";
+  return getPreferredLanIp();
 }
 
 export function isDirectEthernetReady(): boolean {
-  return getLocalIps().some(isDirectCableIp);
+  return isLanReady() || getLanIps().length > 0;
 }
 
 export function signedControlMessage(payload: Record<string, unknown>) {

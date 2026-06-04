@@ -3,6 +3,7 @@ import "server-only";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { getPreferredLanMac } from "@/lib/mesh-network";
 
 type MeshSessionProfile = {
   id: string;
@@ -14,15 +15,6 @@ type MeshSessionProfile = {
 export const MESH_SESSION_FILE =
   process.env.MESH_SESSION_FILE ||
   path.join(process.cwd(), "private", "mesh-session.json");
-
-const DIRECT_CABLE_PREFIXES = (process.env.MESH_DIRECT_PREFIXES || "10.0.0.,192.168.10.")
-  .split(",")
-  .map((prefix) => prefix.trim())
-  .filter(Boolean);
-
-function isDirectCableIp(ip: string) {
-  return DIRECT_CABLE_PREFIXES.some((prefix) => ip.startsWith(prefix));
-}
 
 export function persistMeshSession(profile: MeshSessionProfile) {
   fs.mkdirSync(path.dirname(MESH_SESSION_FILE), { recursive: true });
@@ -47,22 +39,7 @@ export function persistMeshSession(profile: MeshSessionProfile) {
 }
 
 function getLocalMac() {
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    const hasCableIp = (interfaces || []).some(
-      (iface) => !iface.internal && iface.family === "IPv4" && isDirectCableIp(iface.address),
-    );
-    if (!hasCableIp) continue;
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") return iface.mac;
-    }
-  }
-
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const iface of interfaces || []) {
-      if (!iface.internal && iface.mac && iface.mac !== "00:00:00:00:00:00") return iface.mac;
-    }
-  }
-  return "";
+  return getPreferredLanMac();
 }
 
 export function clearMeshSession() {
