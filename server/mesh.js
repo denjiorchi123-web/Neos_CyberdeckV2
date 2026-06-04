@@ -17,7 +17,21 @@ try {
 } catch {}
 const BEACON_PORT = Number(process.env.MESH_BEACON_PORT || 5005);
 const CONTROL_PORT = Number(process.env.MESH_CONTROL_PORT || 5006);
-const SECRET = process.env.MESH_SECRET || "GHOSTWIRE_ALPHA_7";
+function loadMeshSecret() {
+  if (process.env.MESH_SECRET?.trim()) return process.env.MESH_SECRET.trim();
+  const secretFile = process.env.MESH_SECRET_FILE || path.join(process.cwd(), "private", "mesh-secret.key");
+  try {
+    const secret = fs.readFileSync(secretFile, "utf8").trim();
+    if (secret.length >= 32) return secret;
+  } catch {}
+  return "GHOSTWIRE_ALPHA_7";
+}
+
+const SECRET = loadMeshSecret();
+if (SECRET === "GHOSTWIRE_ALPHA_7") {
+  console.error("> [NodeMesh][AUTH] WARNING: using built-in default MESH_SECRET; set private/mesh-secret.key on both devices");
+}
+const CONTROL_ENCRYPTION = process.env.MESH_CONTROL_ENCRYPTION !== "0";
 const DIRECTED_BROADCAST_ADDR = process.env.MESH_BROADCAST_ADDR || "192.168.10.255";
 const PEER_FALLBACK_IPS = (process.env.MESH_PEER_FALLBACK_IPS || "192.168.10.1,192.168.10.2")
   .split(",")
@@ -180,6 +194,22 @@ function getMeshSession() {
 
 function sign(payload) {
   const body = JSON.stringify({ ...payload, timestamp: Date.now() });
+  if (CONTROL_ENCRYPTION && payload?.type !== "HELLO") {
+    const iv = crypto.randomBytes(12);
+    const key = crypto.createHash("sha256").update(`cyberdeck-control:${SECRET}`).digest();
+    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+    const ciphertext = Buffer.concat([cipher.update(body, "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const signed = `${iv.toString("base64")}:${ciphertext.toString("base64")}:${tag.toString("base64")}`;
+    return {
+      enc: "aes-256-gcm",
+      iv: iv.toString("base64"),
+      ciphertext: ciphertext.toString("base64"),
+      tag: tag.toString("base64"),
+      sig: crypto.createHmac("sha256", SECRET).update(signed).digest("hex"),
+    };
+  }
+
   return { payload: body, sig: crypto.createHmac("sha256", SECRET).update(body).digest("hex") };
 }
 
@@ -228,19 +258,50 @@ function isAuthRateLimited(sourceIp) {
 
 function verify(packet, sourceIp) {
   if (isAuthRateLimited(sourceIp)) return null;
-  if (!packet || typeof packet.payload !== "string" || typeof packet.sig !== "string") {
+  if (!packet || typeof packet.sig !== "string") {
     trackAuthFail(sourceIp, "malformed_packet", packet, null);
     return null;
   }
-  const expected = crypto.createHmac("sha256", SECRET).update(packet.payload).digest("hex");
-  if (packet.sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(packet.sig), Buffer.from(expected))) {
-    trackAuthFail(sourceIp, "bad_hmac", packet, null);
+
+  let body;
+  if (packet.enc === "aes-256-gcm") {
+    if (typeof packet.iv !== "string" || typeof packet.ciphertext !== "string" || typeof packet.tag !== "string") {
+      trackAuthFail(sourceIp, "malformed_encrypted_packet", packet, null);
+      return null;
+    }
+    const signed = `${packet.iv}:${packet.ciphertext}:${packet.tag}`;
+    const expected = crypto.createHmac("sha256", SECRET).update(signed).digest("hex");
+    if (packet.sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(packet.sig), Buffer.from(expected))) {
+      trackAuthFail(sourceIp, "bad_hmac", packet, null);
+      return null;
+    }
+    try {
+      const key = crypto.createHash("sha256").update(`cyberdeck-control:${SECRET}`).digest();
+      const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(packet.iv, "base64"));
+      decipher.setAuthTag(Buffer.from(packet.tag, "base64"));
+      body = Buffer.concat([
+        decipher.update(Buffer.from(packet.ciphertext, "base64")),
+        decipher.final(),
+      ]).toString("utf8");
+    } catch {
+      trackAuthFail(sourceIp, "decrypt_failed", packet, null);
+      return null;
+    }
+  } else if (typeof packet.payload === "string") {
+    body = packet.payload;
+    const expected = crypto.createHmac("sha256", SECRET).update(body).digest("hex");
+    if (packet.sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(packet.sig), Buffer.from(expected))) {
+      trackAuthFail(sourceIp, "bad_hmac", packet, null);
+      return null;
+    }
+  } else {
+    trackAuthFail(sourceIp, "malformed_packet", packet, null);
     return null;
   }
 
   let data;
   try {
-    data = JSON.parse(packet.payload);
+    data = JSON.parse(body);
   } catch {
     trackAuthFail(sourceIp, "bad_payload_json", packet, null);
     return null;
@@ -475,6 +536,32 @@ function uploadInfoForUrl(fileUrl) {
   };
 }
 
+async function sha256File(filePath) {
+  const hash = crypto.createHash("sha256");
+  await new Promise((resolve, reject) => {
+    fs.createReadStream(filePath)
+      .on("data", (chunk) => hash.update(chunk))
+      .once("error", reject)
+      .once("end", resolve);
+  });
+  return hash.digest("hex");
+}
+
+function sha256Buffer(buffer) {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+async function readFileSlice(filePath, start, length) {
+  const handle = await fs.promises.open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, start);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
 function categoryFromMime(mimeType = "") {
   if (mimeType.startsWith("image/")) return "photos";
   if (mimeType.startsWith("video/")) return "videos";
@@ -534,6 +621,7 @@ async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
 
   const info = await fs.promises.stat(local.path);
   const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
+  const fileSha256 = await sha256File(local.path);
   if (info.size === 0) {
     await sendControl(ipAddress, {
       type: "direct_media_chunk",
@@ -546,6 +634,8 @@ async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
       chunkIndex: 0,
       totalChunks,
       totalSize: 0,
+      fileSha256,
+      chunkSha256: sha256Buffer(Buffer.alloc(0)),
       dataBase64: "",
     });
     return;
@@ -554,6 +644,7 @@ async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
   let chunkIndex = 0;
 
   for await (const chunk of fs.createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
+    const buffer = Buffer.from(chunk);
     await sendControl(ipAddress, {
       type: "direct_media_chunk",
       ...context,
@@ -565,7 +656,9 @@ async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
       chunkIndex,
       totalChunks,
       totalSize: info.size,
-      dataBase64: Buffer.from(chunk).toString("base64"),
+      fileSha256,
+      chunkSha256: sha256Buffer(buffer),
+      dataBase64: buffer.toString("base64"),
     });
     chunkIndex += 1;
   }
@@ -649,15 +742,49 @@ async function receiveDirectMediaChunk(data, peerIp) {
   const totalChunks = Number(data.totalChunks);
   if (!Number.isInteger(chunkIndex) || !Number.isInteger(totalChunks) || chunkIndex < 0 || totalChunks <= 0) return;
   if (typeof data.dataBase64 !== "string") return;
+  const advertisedChunkHash = typeof data.chunkSha256 === "string" ? data.chunkSha256 : "";
+  const advertisedFileHash = typeof data.fileSha256 === "string" ? data.fileSha256 : "";
 
   const uploadDir = storageDirForMime(data.mimeType || "", fromUsername);
   fs.mkdirSync(uploadDir, { recursive: true });
   const finalPath = path.join(uploadDir, storageName);
   const tempPath = path.join(uploadDir, `.mesh-${data.messageId || "media"}-${storageName}.part`);
   const chunk = Buffer.from(data.dataBase64, "base64");
+  const chunkHash = sha256Buffer(chunk);
+  if (advertisedChunkHash && advertisedChunkHash !== chunkHash) {
+    console.error(`> [NodeMesh][MEDIA] Rejected corrupt chunk ${chunkIndex} for ${storageName}`);
+    return;
+  }
+
+  if (fs.existsSync(finalPath)) {
+    if (advertisedFileHash) {
+      const existingHash = await sha256File(finalPath).catch(() => "");
+      if (existingHash !== advertisedFileHash) {
+        await fs.promises.unlink(finalPath).catch(() => {});
+      } else {
+        return;
+      }
+    } else {
+      return;
+    }
+  }
 
   if (chunkIndex === 0) {
-    await fs.promises.writeFile(tempPath, chunk);
+    if (fs.existsSync(tempPath)) {
+      const currentSize = (await fs.promises.stat(tempPath)).size;
+      if (currentSize >= chunk.length && chunk.length > 0) {
+        const existingChunk = await readFileSlice(tempPath, 0, chunk.length);
+        if (sha256Buffer(existingChunk) === chunkHash) {
+          // Retry from the sender started at chunk 0, but we already have it.
+        } else {
+          await fs.promises.writeFile(tempPath, chunk);
+        }
+      } else {
+        await fs.promises.writeFile(tempPath, chunk);
+      }
+    } else {
+      await fs.promises.writeFile(tempPath, chunk);
+    }
   } else {
     if (!fs.existsSync(tempPath)) {
       console.error(`> [NodeMesh][MEDIA] Missing chunk 0 for ${storageName}; waiting for full retry`);
@@ -665,13 +792,23 @@ async function receiveDirectMediaChunk(data, peerIp) {
     }
     const expectedSize = chunkIndex * MEDIA_CHUNK_BYTES;
     const currentSize = (await fs.promises.stat(tempPath)).size;
-    if (currentSize !== expectedSize) {
+    if (currentSize > expectedSize) {
+      const existingChunk = await readFileSlice(tempPath, expectedSize, chunk.length);
+      if (existingChunk.length === chunk.length && sha256Buffer(existingChunk) === chunkHash) {
+        // Already have this chunk from an earlier interrupted transfer.
+      } else {
+        await fs.promises.unlink(tempPath).catch(() => {});
+        console.error(`> [NodeMesh][MEDIA] Existing partial ${storageName} failed chunk hash; restarting on next retry`);
+        return;
+      }
+    } else if (currentSize !== expectedSize) {
       console.error(
         `> [NodeMesh][MEDIA] Out-of-order chunk for ${storageName}: expected ${expectedSize} bytes, found ${currentSize}`,
       );
       return;
+    } else {
+      await fs.promises.appendFile(tempPath, chunk);
     }
-    await fs.promises.appendFile(tempPath, chunk);
   }
 
   if (chunkIndex + 1 >= totalChunks) {
@@ -683,6 +820,14 @@ async function receiveDirectMediaChunk(data, peerIp) {
         console.error(
           `> [NodeMesh][MEDIA] Rejected incomplete ${storageName}: expected ${expectedTotal} bytes, received ${receivedSize}`,
         );
+        return;
+      }
+    }
+    if (advertisedFileHash) {
+      const actualHash = await sha256File(tempPath);
+      if (actualHash !== advertisedFileHash) {
+        await fs.promises.unlink(tempPath).catch(() => {});
+        console.error(`> [NodeMesh][MEDIA] Rejected corrupt ${storageName}: SHA-256 mismatch`);
         return;
       }
     }

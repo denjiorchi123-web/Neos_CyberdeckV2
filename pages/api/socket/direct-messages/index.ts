@@ -3,6 +3,7 @@ import { NextApiRequest } from "next";
 import { createReadStream, existsSync } from "fs";
 import { stat } from "fs/promises";
 import { basename } from "path";
+import { createHash } from "crypto";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
@@ -14,6 +15,21 @@ import { sendMeshControl } from "@/lib/mesh-control";
 import { resolveStoredFilePath } from "@/lib/media-dirs";
 
 const MEDIA_CHUNK_BYTES = 96 * 1024;
+
+async function sha256File(filePath: string) {
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    createReadStream(filePath)
+      .on("data", (chunk) => hash.update(chunk))
+      .once("error", reject)
+      .once("end", resolve);
+  });
+  return hash.digest("hex");
+}
+
+function sha256Buffer(buffer: Buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
 
 function localUploadForUrl(fileUrl?: string | null) {
   if (!fileUrl || !fileUrl.startsWith("/api/files/")) return null;
@@ -46,6 +62,7 @@ async function sendMeshMediaFile(
 
   const info = await stat(local.path);
   const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
+  const fileSha256 = await sha256File(local.path);
   if (info.size === 0) {
     await sendMeshControl(ipAddress, {
       type: "direct_media_chunk",
@@ -58,6 +75,8 @@ async function sendMeshMediaFile(
       chunkIndex: 0,
       totalChunks,
       totalSize: 0,
+      fileSha256,
+      chunkSha256: sha256Buffer(Buffer.alloc(0)),
       dataBase64: "",
     });
     return;
@@ -66,6 +85,7 @@ async function sendMeshMediaFile(
   let chunkIndex = 0;
 
   for await (const chunk of createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
+    const buffer = Buffer.from(chunk as Buffer);
     await sendMeshControl(ipAddress, {
       type: "direct_media_chunk",
       ...context,
@@ -77,7 +97,9 @@ async function sendMeshMediaFile(
       chunkIndex,
       totalChunks,
       totalSize: info.size,
-      dataBase64: Buffer.from(chunk as Buffer).toString("base64"),
+      fileSha256,
+      chunkSha256: sha256Buffer(buffer),
+      dataBase64: buffer.toString("base64"),
     });
     chunkIndex += 1;
   }

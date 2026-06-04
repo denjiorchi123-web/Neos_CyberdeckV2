@@ -45,6 +45,7 @@ private/uploads/
 private/CyberDeck/
 public/uploads/
 private/mesh-session.json
+private/mesh-secret.key
 mesh_config.json
 
 # Claude Code memory (local tooling only)
