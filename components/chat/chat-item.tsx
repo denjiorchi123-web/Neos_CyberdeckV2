@@ -415,55 +415,54 @@ function AudioPlayer({ src, fileName }: { src: string; fileName?: string | null 
 function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: string | null; onClick: () => void }) {
   const touchStartRef = React.useRef<{ x: number; y: number; opened: boolean } | null>(null);
 
-  const open = () => {
+  const open = (event?: React.SyntheticEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
     if (touchStartRef.current?.opened) return;
     if (touchStartRef.current) touchStartRef.current.opened = true;
     onClick();
   };
 
-  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLAnchorElement>) => {
     e.stopPropagation();
     touchStartRef.current = { x: e.clientX, y: e.clientY, opened: false };
   };
 
-  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const onPointerUp = (e: React.PointerEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     e.stopPropagation();
     const start = touchStartRef.current;
     if (!start) {
-      open();
+      open(e);
       return;
     }
     const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-    if (moved <= 12) open();
+    if (moved <= 12) open(e);
     window.setTimeout(() => {
       touchStartRef.current = null;
     }, 0);
   };
 
   return (
-    <button
-      type="button"
+    <a
+      href={src}
       className="relative block rounded-xl overflow-hidden bg-black w-[min(300px,calc(100vw-132px))] min-h-[168px] border border-black/30 cursor-pointer group touch-manipulation select-none text-left"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!touchStartRef.current?.opened) onClick();
-      }}
+      onClickCapture={open}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onPointerUpCapture={(e) => {
+        const start = touchStartRef.current;
+        if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= 12) open(e);
+      }}
       onPointerCancel={() => {
         touchStartRef.current = null;
       }}
       onTouchEnd={(e) => {
-        e.preventDefault();
         e.stopPropagation();
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          e.stopPropagation();
-          onClick();
+          open(e);
         }
       }}
       aria-label="Open video player"
@@ -482,8 +481,11 @@ function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: str
           <Play className="h-10 w-10 text-white fill-white ml-1" />
         </div>
       </div>
+      <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-black/70 px-3 py-2 text-center text-xs font-bold text-white">
+        Open video
+      </div>
       <span className="sr-only">Open video player</span>
-    </button>
+    </a>
   );
 }
 
@@ -687,6 +689,7 @@ function ChatItemInner({
   };
 
   const hasOnlyMedia = !!fileUrl && (!content || content === fileName || content === fileUrl);
+  const hasOpenableMedia = isImage || isVideo || isAudio || isDocument;
 
   return (
     <>
@@ -698,7 +701,7 @@ function ChatItemInner({
         <ContextMenuTrigger asChild>
           <motion.div 
             id={`message-${id}`} 
-            drag="x"
+            drag={hasOpenableMedia ? false : "x"}
             dragConstraints={{ left: 0, right: 80 }}
             dragElastic={0.2}
             dragDirectionLock
@@ -1074,6 +1077,11 @@ export const ChatItem = React.memo(ChatItemInner, (prev, next) =>
   prev.deleted     === next.deleted     &&
   prev.isUpdated   === next.isUpdated   &&
   prev.fileUrl     === next.fileUrl     &&
+  prev.fileName    === next.fileName    &&
+  prev.fileSize    === next.fileSize    &&
+  prev.mimeType    === next.mimeType    &&
+  prev.thumbnailUrl === next.thumbnailUrl &&
+  prev.type        === next.type        &&
   prev.mediaKey    === next.mediaKey    &&
   prev.isPinned    === next.isPinned
 );

@@ -18,10 +18,19 @@ export async function GET() {
       },
     });
 
-    // Convert to dictionary format expected by frontend
-    const result: Record<string, any> = {};
+    const latestByIdentity = new Map<string, (typeof peers)[number]>();
     for (const p of peers) {
        if (p.macAddress.startsWith("mock_")) continue;
+       const identityKey = p.userId || p.publicName || p.displayName || p.macAddress;
+       const current = latestByIdentity.get(identityKey);
+       if (!current || p.lastSeen > current.lastSeen) {
+          latestByIdentity.set(identityKey, p);
+       }
+    }
+
+    // Convert to dictionary format expected by frontend
+    const result: Record<string, any> = {};
+    for (const p of latestByIdentity.values()) {
        result[p.macAddress] = {
           ip: p.ipAddress,
           userId: p.userId,

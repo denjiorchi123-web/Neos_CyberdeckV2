@@ -469,13 +469,26 @@ function contactEmail(userId) {
   return `${String(userId).replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
 }
 
+async function findReusableContactProfile(userId, username) {
+  const exact = await db.profile.findUnique({ where: { userId } });
+  if (exact) return exact;
+
+  const sameName = await db.profile.findMany({
+    where: { name: username },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!sameName.length) return null;
+
+  return sameName.find((profile) => !String(profile.email || "").endsWith("@mesh.local")) || sameName[0];
+}
+
 async function ensureAcceptedMeshContact({ userId, username, macAddress, deviceName }) {
   const name = cleanContactName(username);
   const resolvedUserId = contactUserId(userId, macAddress);
   const defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
   if (!defaultServer) throw new Error("Default chat server is missing");
 
-  let profile = await db.profile.findUnique({ where: { userId: resolvedUserId } });
+  let profile = await findReusableContactProfile(resolvedUserId, name);
   if (!profile) {
     profile = await db.profile.create({
       data: {

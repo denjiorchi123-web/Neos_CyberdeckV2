@@ -20,23 +20,31 @@ export async function GET() {
       }
     });
 
+    const latestByIdentity = new Map<string, (typeof dbPeers)[number]>();
+    for (const peer of dbPeers) {
+      if (peer.macAddress === localNodeId || peer.macAddress.startsWith("mock_")) continue;
+      const identityKey = peer.userId || peer.publicName || peer.displayName || peer.macAddress;
+      const current = latestByIdentity.get(identityKey);
+      if (!current || peer.lastSeen > current.lastSeen) {
+        latestByIdentity.set(identityKey, peer);
+      }
+    }
+
     const peers = [];
 
-    for (const peer of dbPeers) {
+    for (const peer of latestByIdentity.values()) {
        // Two Pis may intentionally share a hostname. The hardware node ID is the identity.
-       if (peer.macAddress !== localNodeId && !peer.macAddress.startsWith("mock_")) {
-          peers.push({
-             name: peer.displayName || peer.publicName || "Unknown peer",
-             deviceName: peer.hostname,
-             host: peer.ipAddress,
-             address: peer.ipAddress,
-             macAddress: peer.macAddress,
-             userId: peer.userId,
-             trustStatus: peer.status,
-             source: "mdns", // Kept as mdns for UI styling
-             online: true
-          });
-       }
+       peers.push({
+          name: peer.displayName || peer.publicName || "Unknown peer",
+          deviceName: peer.hostname,
+          host: peer.ipAddress,
+          address: peer.ipAddress,
+          macAddress: peer.macAddress,
+          userId: peer.userId,
+          trustStatus: peer.status,
+          source: "mdns", // Kept as mdns for UI styling
+          online: true
+       });
     }
 
     return NextResponse.json({

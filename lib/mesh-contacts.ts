@@ -24,6 +24,19 @@ function contactEmail(userId: string) {
   return `${userId.replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
 }
 
+async function findReusableContactProfile(userId: string, username: string) {
+  const exact = await db.profile.findUnique({ where: { userId } });
+  if (exact) return exact;
+
+  const sameName = await db.profile.findMany({
+    where: { name: username },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!sameName.length) return null;
+
+  return sameName.find((profile) => !profile.email.endsWith("@mesh.local")) || sameName[0];
+}
+
 export async function ensureAcceptedMeshContact(input: MeshContactInput) {
   const username = cleanName(input.username);
   const userId = contactUserId(input.userId, input.macAddress);
@@ -33,7 +46,7 @@ export async function ensureAcceptedMeshContact(input: MeshContactInput) {
   });
   if (!defaultServer) throw new Error("Default chat server is missing");
 
-  let profile = await db.profile.findUnique({ where: { userId } });
+  let profile = await findReusableContactProfile(userId, username);
   if (!profile) {
     profile = await db.profile.create({
       data: {
@@ -65,10 +78,10 @@ export async function ensureAcceptedMeshContact(input: MeshContactInput) {
   if (!member) {
     member = await db.member.create({
       data: {
-      profileId: profile.id,
-      serverId: defaultServer.id,
-      role: "GUEST",
-    },
+        profileId: profile.id,
+        serverId: defaultServer.id,
+        role: "GUEST",
+      },
     });
   }
 
