@@ -534,6 +534,23 @@ async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
 
   const info = await fs.promises.stat(local.path);
   const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
+  if (info.size === 0) {
+    await sendControl(ipAddress, {
+      type: "direct_media_chunk",
+      ...context,
+      fileUrl,
+      storageName: local.filename,
+      fileName: options.fileName || local.filename,
+      mimeType: options.mimeType || "application/octet-stream",
+      isThumbnail: Boolean(options.isThumbnail),
+      chunkIndex: 0,
+      totalChunks,
+      totalSize: 0,
+      dataBase64: "",
+    });
+    return;
+  }
+
   let chunkIndex = 0;
 
   for await (const chunk of fs.createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
@@ -642,10 +659,33 @@ async function receiveDirectMediaChunk(data, peerIp) {
   if (chunkIndex === 0) {
     await fs.promises.writeFile(tempPath, chunk);
   } else {
+    if (!fs.existsSync(tempPath)) {
+      console.error(`> [NodeMesh][MEDIA] Missing chunk 0 for ${storageName}; waiting for full retry`);
+      return;
+    }
+    const expectedSize = chunkIndex * MEDIA_CHUNK_BYTES;
+    const currentSize = (await fs.promises.stat(tempPath)).size;
+    if (currentSize !== expectedSize) {
+      console.error(
+        `> [NodeMesh][MEDIA] Out-of-order chunk for ${storageName}: expected ${expectedSize} bytes, found ${currentSize}`,
+      );
+      return;
+    }
     await fs.promises.appendFile(tempPath, chunk);
   }
 
   if (chunkIndex + 1 >= totalChunks) {
+    const expectedTotal = Number(data.totalSize);
+    if (Number.isFinite(expectedTotal)) {
+      const receivedSize = (await fs.promises.stat(tempPath)).size;
+      if (receivedSize !== expectedTotal) {
+        await fs.promises.unlink(tempPath).catch(() => {});
+        console.error(
+          `> [NodeMesh][MEDIA] Rejected incomplete ${storageName}: expected ${expectedTotal} bytes, received ${receivedSize}`,
+        );
+        return;
+      }
+    }
     await fs.promises.rename(tempPath, finalPath).catch(async () => {
       await fs.promises.copyFile(tempPath, finalPath);
       await fs.promises.unlink(tempPath).catch(() => {});
@@ -696,6 +736,14 @@ async function receiveDirectMessageSync(data, peerIp) {
   if (!found) {
     console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync: missing local profiles for ${fromUsername}/${toUsername}`);
     return;
+  }
+
+  if (message.fileUrl) {
+    const media = uploadInfoForUrl(message.fileUrl);
+    if (!media || !fs.existsSync(media.path)) {
+      console.error(`> [NodeMesh][SYNC] Holding ${message.id}: media file is not complete yet`);
+      return;
+    }
   }
 
   let stored = await db.directMessage.findUnique({
@@ -777,9 +825,14 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
       messageId: message.id,
     };
 
-    await sendMediaForMessage(peerIp, context, message).catch((error) => {
+    const mediaReady = await sendMediaForMessage(peerIp, context, message).then(
+      () => true,
+      (error) => {
       console.error(`> [NodeMesh][MEDIA] Failed to send media for ${message.id}: ${error.message}`);
-    });
+        return false;
+      },
+    );
+    if (!mediaReady) continue;
 
     await sendControl(peerIp, {
       type: "direct_message_sync",

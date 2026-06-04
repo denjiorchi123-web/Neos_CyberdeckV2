@@ -46,6 +46,23 @@ async function sendMeshMediaFile(
 
   const info = await stat(local.path);
   const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
+  if (info.size === 0) {
+    await sendMeshControl(ipAddress, {
+      type: "direct_media_chunk",
+      ...context,
+      fileUrl,
+      storageName: local.filename,
+      fileName: options.fileName || local.filename,
+      mimeType: options.mimeType || "application/octet-stream",
+      isThumbnail: Boolean(options.isThumbnail),
+      chunkIndex: 0,
+      totalChunks,
+      totalSize: 0,
+      dataBase64: "",
+    });
+    return;
+  }
+
   let chunkIndex = 0;
 
   for await (const chunk of createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
@@ -161,11 +178,26 @@ export default async function handler(
       return res.status(403).json({ error: "Message blocked by recipient preferences." });
     }
 
-    // Check if recipient is online to set "DELIVERED" status
+    const activeThreshold = new Date(Date.now() - 15 * 1000);
+    const meshPeer = await db.meshPeer.findFirst({
+      where: {
+        status: { in: ["TRUSTED", "ACCEPTED"] },
+        OR: [
+          { userId: otherMember.profile.id },
+          { publicName: otherMember.profile.name },
+        ],
+        ipAddress: { not: null },
+        lastSeen: { gte: activeThreshold },
+      },
+    });
+
+    // Check if recipient is online to set "DELIVERED" status.
+    // Mesh messages must stay SENT until the peer ACKs them; otherwise a
+    // mid-transfer cable cut can hide a failed media delivery from retry sync.
     let initialStatus = "SENT";
     try {
       const isOtherOnline = await redis.sismember("presence:online", otherMember.profileId);
-      if (isOtherOnline) initialStatus = "DELIVERED";
+      if (isOtherOnline && !meshPeer?.ipAddress) initialStatus = "DELIVERED";
     } catch (err) {
       // Gracefully fallback if Redis is not installed (e.g. Windows)
       console.warn("Redis unavailable, defaulting to SENT status");
@@ -207,19 +239,6 @@ export default async function handler(
     const channelKey = `chat:${conversationId}:messages`;
     if (!res.socket.server.io) { ioHandler(req, res); }
     res?.socket?.server?.io?.to(conversationId as string).emit(channelKey, message);
-
-    const activeThreshold = new Date(Date.now() - 15 * 1000);
-    const meshPeer = await db.meshPeer.findFirst({
-      where: {
-        status: { in: ["TRUSTED", "ACCEPTED"] },
-        OR: [
-          { userId: otherMember.profile.id },
-          { publicName: otherMember.profile.name },
-        ],
-        ipAddress: { not: null },
-        lastSeen: { gte: activeThreshold },
-      },
-    });
 
     if (meshPeer?.ipAddress) {
       const meshContext = {
