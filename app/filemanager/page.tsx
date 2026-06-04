@@ -79,6 +79,22 @@ export default function FileManagerPage() {
   const [editSaving,  setEditSaving]  = useState(false);
   const [editLoading, setEditLoading] = useState(false);
 
+  const exitToLauncher = () => {
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = "/launcher";
+  };
+
+  const goBack = () => {
+    if (editPath) {
+      if (!editDirty || confirm("Discard unsaved changes?")) {
+        setEditPath(null);
+        setEditDirty(false);
+      }
+      return;
+    }
+    exitToLauncher();
+  };
+
   // ── Navigation ─────────────────────────────────────────────────────────────
 
   const browse = useCallback(async (path: string) => {
@@ -237,7 +253,12 @@ export default function FileManagerPage() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-4 py-3 space-y-2">
         <div className="flex items-center gap-x-2">
-          <button onClick={() => window.location.href = "/"} className="p-1.5 mr-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition flex items-center gap-2 pr-3 shrink-0">
+          <button
+            onClick={goBack}
+            className="mr-2 flex h-12 shrink-0 items-center gap-2 rounded-full bg-zinc-800 px-4 text-zinc-300 transition active:bg-zinc-700"
+            style={{ touchAction: "manipulation" }}
+            aria-label={editPath ? "Back to file list" : "Back to launcher"}
+          >
             <ArrowLeft className="h-4 w-4" />
             <span className="text-xs font-bold uppercase tracking-wider">Back</span>
           </button>

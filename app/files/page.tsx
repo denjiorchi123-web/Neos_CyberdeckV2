@@ -86,6 +86,23 @@ export default function FilesPage() {
 
   useEffect(() => { loadDrives(); }, [loadDrives]);
 
+  const exitToLauncher = () => {
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = "/launcher";
+  };
+
+  const goBack = () => {
+    if (listing) {
+      const parent = listing.crumbs.length > 1
+        ? listing.crumbs[listing.crumbs.length - 2].path
+        : null;
+      if (parent) browse(parent);
+      else setListing(null);
+      return;
+    }
+    exitToLauncher();
+  };
+
   // ── Browse a directory ───────────────────────────────────────────────────────
   const browse = useCallback(async (path: string) => {
     setBrowsing(true);
@@ -137,27 +154,16 @@ export default function FilesPage() {
     <div className="min-h-screen bg-[#0d1117] text-zinc-200 font-mono">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-6 py-4 flex items-center gap-x-3">
-        {listing ? (
-          <button
-            onClick={() => {
-              const parent = listing.crumbs.length > 1
-                ? listing.crumbs[listing.crumbs.length - 2].path
-                : null;
-              if (parent) browse(parent); else setListing(null);
-            }}
-            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-        ) : (
-          <button
-            onClick={() => window.location.href = "/"}
-            className="p-1 -ml-1 rounded-lg hover:bg-zinc-800 text-indigo-400 hover:text-indigo-300 transition"
-            title="Go to Dashboard"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-        )}
+        <button
+          onClick={goBack}
+          className="flex h-12 shrink-0 items-center gap-2 rounded-full bg-zinc-800 px-4 text-zinc-300 transition active:bg-zinc-700"
+          title={listing ? "Back" : "Back to launcher"}
+          aria-label={listing ? "Back" : "Back to launcher"}
+          style={{ touchAction: "manipulation" }}
+        >
+          <ArrowLeft className="h-5 w-5" />
+          <span className="text-xs font-bold uppercase tracking-wider">Back</span>
+        </button>
 
         <div className="flex-1 flex items-center gap-x-2 overflow-hidden">
           {listing ? (
