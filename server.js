@@ -14,7 +14,7 @@ const { startMeshDiscovery } = require("./server/mesh");
 // ── Windows: self-elevate to Administrator ───────────────────────────────────
 // Network config (netsh) requires admin rights. If not elevated, re-launch
 // via PowerShell Start-Process -Verb RunAs which triggers a UAC prompt once.
-if (process.platform === "win32") {
+if (process.platform === "win32" && process.env.CYBERDECK_SKIP_ELEVATION !== "1") {
   let elevated = false;
   try { execSync("net session", { stdio: "pipe" }); elevated = true; } catch {}
   if (!elevated) {
