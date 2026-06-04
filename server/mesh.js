@@ -32,8 +32,12 @@ if (SECRET === "GHOSTWIRE_ALPHA_7") {
   console.error("> [NodeMesh][AUTH] WARNING: using built-in default MESH_SECRET; set private/mesh-secret.key on both devices");
 }
 const CONTROL_ENCRYPTION = process.env.MESH_CONTROL_ENCRYPTION !== "0";
-const DIRECTED_BROADCAST_ADDR = process.env.MESH_BROADCAST_ADDR || "192.168.10.255";
-const PEER_FALLBACK_IPS = (process.env.MESH_PEER_FALLBACK_IPS || "192.168.10.1,192.168.10.2")
+const DIRECT_CABLE_PREFIXES = (process.env.MESH_DIRECT_PREFIXES || "10.0.0.,192.168.10.")
+  .split(",")
+  .map((prefix) => prefix.trim())
+  .filter(Boolean);
+const DIRECTED_BROADCAST_ADDR = process.env.MESH_BROADCAST_ADDR || "";
+const PEER_FALLBACK_IPS = (process.env.MESH_PEER_FALLBACK_IPS || "10.0.0.1,10.0.0.100,192.168.10.1,192.168.10.2")
   .split(",")
   .map((ip) => ip.trim())
   .filter(Boolean);
@@ -62,6 +66,10 @@ let sqliteRuntimeReady = null;
 function normalizeSecurityStatus(value) {
   const status = typeof value === "string" ? value.trim() : "";
   return status ? status.slice(0, 64) : VERIFIED_LAN_STATUS;
+}
+
+function isDirectCableIp(ip) {
+  return DIRECT_CABLE_PREFIXES.some((prefix) => ip.startsWith(prefix));
 }
 
 function ensureSqliteRuntime() {
@@ -136,7 +144,7 @@ ensureSqliteRuntime().catch((error) => {
 function getMac() {
   for (const interfaces of Object.values(os.networkInterfaces())) {
     const hasCableIp = (interfaces || []).some(
-      (iface) => !iface.internal && iface.family === "IPv4" && iface.address.startsWith("192.168.10."),
+      (iface) => !iface.internal && iface.family === "IPv4" && isDirectCableIp(iface.address),
     );
     if (!hasCableIp) continue;
     for (const iface of interfaces || []) {
@@ -158,7 +166,7 @@ function getMac() {
 
 function getIp() {
   const ips = getLocalIps();
-  return ips.find((ip) => ip.startsWith("192.168.10.")) || ips[0] || "127.0.0.1";
+  return ips.find(isDirectCableIp) || ips[0] || "127.0.0.1";
 }
 
 function getLocalIps() {
@@ -1389,7 +1397,8 @@ function startControlServer() {
 }
 
 function broadcastAddresses() {
-  const addresses = new Set([DIRECTED_BROADCAST_ADDR]);
+  const addresses = new Set();
+  if (DIRECTED_BROADCAST_ADDR) addresses.add(DIRECTED_BROADCAST_ADDR);
   for (const interfaces of Object.values(os.networkInterfaces())) {
     for (const iface of interfaces || []) {
       if (!iface.internal && iface.family === "IPv4") {

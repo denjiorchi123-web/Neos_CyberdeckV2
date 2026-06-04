@@ -14,7 +14,7 @@ export async function GET() {
       ethernetReady: isDirectEthernetReady(),
       ethernetMessage: isDirectEthernetReady()
         ? "Direct Ethernet link ready"
-        : "Ethernet link not ready - set static IP 192.168.10.1/24 on Pi and 192.168.10.2/24 on laptop",
+        : "Ethernet link not ready - set static IP 10.0.0.1/24 on Pi and 10.0.0.100/24 on laptop, or use 192.168.10.1/24 and 192.168.10.2/24",
       timestamp: Date.now() / 1000
     });
   } catch (error) {

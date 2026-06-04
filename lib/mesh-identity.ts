@@ -16,11 +16,19 @@ function loadMeshSecret() {
 
 export const MESH_SECRET = loadMeshSecret();
 const CONTROL_ENCRYPTION = process.env.MESH_CONTROL_ENCRYPTION !== "0";
+const DIRECT_CABLE_PREFIXES = (process.env.MESH_DIRECT_PREFIXES || "10.0.0.,192.168.10.")
+  .split(",")
+  .map((prefix) => prefix.trim())
+  .filter(Boolean);
+
+function isDirectCableIp(ip: string) {
+  return DIRECT_CABLE_PREFIXES.some((prefix) => ip.startsWith(prefix));
+}
 
 export function getLocalNodeId(): string {
   for (const interfaces of Object.values(os.networkInterfaces())) {
     const hasCableIp = (interfaces || []).some(
-      (iface) => !iface.internal && iface.family === "IPv4" && iface.address.startsWith("192.168.10."),
+      (iface) => !iface.internal && iface.family === "IPv4" && isDirectCableIp(iface.address),
     );
     if (!hasCableIp) continue;
     for (const iface of interfaces || []) {
@@ -52,11 +60,11 @@ export function getLocalIps(): string[] {
 
 export function getLocalIp(): string {
   const ips = getLocalIps();
-  return ips.find((ip) => ip.startsWith("192.168.10.")) || ips[0] || "127.0.0.1";
+  return ips.find(isDirectCableIp) || ips[0] || "127.0.0.1";
 }
 
 export function isDirectEthernetReady(): boolean {
-  return getLocalIps().some((ip) => ip === "192.168.10.1" || ip === "192.168.10.2");
+  return getLocalIps().some(isDirectCableIp);
 }
 
 export function signedControlMessage(payload: Record<string, unknown>) {
