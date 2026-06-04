@@ -413,79 +413,61 @@ function AudioPlayer({ src, fileName }: { src: string; fileName?: string | null 
 // ── Video Player ──────────────────────────────────────────────────────────────
 
 function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: string | null; onClick: () => void }) {
-  const touchStartRef = React.useRef<{ x: number; y: number; opened: boolean } | null>(null);
-
   const open = (event?: React.SyntheticEvent) => {
     event?.preventDefault();
     event?.stopPropagation();
-    if (touchStartRef.current?.opened) return;
-    if (touchStartRef.current) touchStartRef.current.opened = true;
     onClick();
   };
 
-  const onPointerDown = (e: React.PointerEvent<HTMLAnchorElement>) => {
-    e.stopPropagation();
-    touchStartRef.current = { x: e.clientX, y: e.clientY, opened: false };
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const start = touchStartRef.current;
-    if (!start) {
-      open(e);
-      return;
-    }
-    const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-    if (moved <= 12) open(e);
-    window.setTimeout(() => {
-      touchStartRef.current = null;
-    }, 0);
-  };
-
   return (
-    <a
-      href={src}
-      className="relative block rounded-xl overflow-hidden bg-black w-[min(300px,calc(100vw-132px))] min-h-[168px] border border-black/30 cursor-pointer group touch-manipulation select-none text-left"
-      onClickCapture={open}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerUpCapture={(e) => {
-        const start = touchStartRef.current;
-        if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) <= 12) open(e);
-      }}
-      onPointerCancel={() => {
-        touchStartRef.current = null;
-      }}
-      onTouchEnd={(e) => {
-        e.stopPropagation();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          open(e);
-        }
-      }}
-      aria-label="Open video player"
+    <div
+      className="relative rounded-xl overflow-hidden bg-black w-[min(300px,calc(100vw-132px))] border border-black/30 select-none cursor-pointer"
+      onClick={open}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
       style={{ touchAction: "manipulation" }}
+      role="button"
+      tabIndex={0}
+      aria-label="Open video"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") open(event);
+      }}
     >
       <video
         src={src}
         poster={thumbnail ?? undefined}
-        className="w-full h-full min-h-[168px] object-cover pointer-events-none"
+        className="block w-full min-h-[168px] max-h-[260px] object-contain bg-black"
         preload="metadata"
-        muted
+        controls
         playsInline
+        controlsList="nodownload"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        style={{ touchAction: "manipulation" }}
       />
-      <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/50 transition">
-        <div className="h-20 w-20 rounded-full bg-white/20 active:bg-white/35 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
-          <Play className="h-10 w-10 text-white fill-white ml-1" />
-        </div>
+      <div className="flex items-center gap-2 border-t border-white/10 bg-black/80 p-2">
+        <button
+          type="button"
+          onClick={open}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white active:bg-indigo-500"
+        >
+          <Play className="h-4 w-4 fill-white" />
+          Open full screen
+        </button>
+        <a
+          href={src}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white active:bg-white/20"
+        >
+          Direct
+        </a>
       </div>
-      <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-black/70 px-3 py-2 text-center text-xs font-bold text-white">
-        Open video
-      </div>
-      <span className="sr-only">Open video player</span>
-    </a>
+    </div>
   );
 }
 
@@ -698,7 +680,7 @@ function ChatItemInner({
       )}
 
       <ContextMenu>
-        <ContextMenuTrigger asChild>
+              <ContextMenuTrigger asChild disabled={hasOpenableMedia}>
           <motion.div 
             id={`message-${id}`} 
             drag={hasOpenableMedia ? false : "x"}
@@ -707,7 +689,11 @@ function ChatItemInner({
             dragDirectionLock
             onDragEnd={onDragEnd}
             animate={controls}
-            className={cn("relative group flex items-start px-4 mb-4 w-full cursor-pointer touch-pan-y", isOwner ? "justify-end" : "justify-start")}
+            className={cn(
+              "relative group flex items-start px-4 mb-4 w-full touch-pan-y",
+              hasOpenableMedia ? "cursor-default" : "cursor-pointer",
+              isOwner ? "justify-end" : "justify-start"
+            )}
           >
             <div className={cn("flex max-w-[80%] gap-x-3", isOwner ? "flex-row-reverse" : "flex-row")}>
           {!isOwner && (
@@ -1034,6 +1020,7 @@ function ChatItemInner({
       </motion.div>
       </ContextMenuTrigger>
       
+      {!hasOpenableMedia && (
       <ContextMenuContent className="w-48 bg-black/90 border-white/10 text-zinc-300">
         <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={() => setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl })}>
           <Reply className="mr-2 h-4 w-4" /> Reply
@@ -1065,6 +1052,7 @@ function ChatItemInner({
           </>
         )}
       </ContextMenuContent>
+      )}
       </ContextMenu>
     </>
   );

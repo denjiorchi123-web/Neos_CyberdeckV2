@@ -790,6 +790,25 @@ async function sendMediaForMessage(peerIp, context, message) {
   });
 }
 
+async function sendMediaOfferForMessage(peerIp, context, message) {
+  const local = uploadInfoForUrl(message.fileUrl);
+  if (!local || !fs.existsSync(local.path)) return;
+
+  const info = await fs.promises.stat(local.path);
+  await sendControl(peerIp, {
+    type: "direct_media_offer",
+    ...context,
+    fileUrl: message.fileUrl,
+    storageName: local.filename,
+    fileName: message.fileName || local.filename,
+    mimeType: message.mimeType || "application/octet-stream",
+    totalSize: info.size,
+    fileSha256: await sha256File(local.path),
+  }).catch((error) => {
+    console.error(`> [NodeMesh][MEDIA] Failed to offer media ${message.id}: ${error.message}`);
+  });
+}
+
 async function upsertReceivedFileIndex({ storageName, fileName, mimeType, totalSize, fromUsername }) {
   const session = getMeshSession();
   let uploaderId = session?.profileId || "mesh";
@@ -956,9 +975,119 @@ async function receiveDirectMediaChunk(data, peerIp) {
       totalSize: data.totalSize,
       fromUsername,
     });
+    if (typeof data.messageId === "string" && data.messageId) {
+      const stored = await db.directMessage.findUnique({
+        where: { id: data.messageId },
+        include: { member: { include: { profile: true } } },
+      }).catch(() => null);
+      if (stored) {
+        ioEmitter?.to(stored.conversationId).emit(`chat:${stored.conversationId}:messages:update`, stored);
+      }
+    }
     console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername} at ${finalPath}`);
     console.log(`> [NodeMesh][MEDIA] Manual copy: cp ${JSON.stringify(finalPath)} ~/`);
   }
+}
+
+async function receiveDirectMediaOffer(data, peerIp) {
+  const session = getMeshSession();
+  if (!session) return;
+
+  const fromNodeId = typeof data.fromNodeId === "string" ? data.fromNodeId.trim() : "";
+  const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
+  const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
+  const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
+  if (!fromUsername || toUsername !== session.username) return;
+
+  const trustedPeer = fromNodeId
+    ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
+    : null;
+  if (
+    !trustedPeer ||
+    !TRUSTED_STATUSES.has(trustedPeer.status) ||
+    trustedPeer.publicName !== fromUsername ||
+    (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
+  ) {
+    console.error(`> [NodeMesh][MEDIA] Rejected media offer from unaccepted peer ${fromUsername}`);
+    return;
+  }
+
+  const storageName = path.basename(String(data.storageName || uploadInfoForUrl(data.fileUrl)?.filename || ""));
+  if (!storageName || storageName.includes("..")) return;
+
+  const finalPath = resolveStoredFilePath(storageName);
+  let hasValidFile = false;
+  if (fs.existsSync(finalPath)) {
+    const expectedSize = Number(data.totalSize);
+    const actualSize = (await fs.promises.stat(finalPath)).size;
+    const sizeOk = !Number.isFinite(expectedSize) || expectedSize === actualSize;
+    const expectedHash = typeof data.fileSha256 === "string" ? data.fileSha256 : "";
+    const hashOk = !expectedHash || (await sha256File(finalPath).catch(() => "")) === expectedHash;
+    hasValidFile = sizeOk && hashOk;
+  }
+  if (hasValidFile) return;
+
+  await sendControl(peerIp, {
+    type: "direct_media_request",
+    fromNodeId: getMac(),
+    fromUserId: session.profileId,
+    fromUsername: session.username,
+    toUsername: fromUsername,
+    messageId: data.messageId,
+    fileUrl: data.fileUrl,
+    storageName,
+  }).catch((error) => {
+    console.error(`> [NodeMesh][MEDIA] Failed to request missing media ${storageName}: ${error.message}`);
+  });
+}
+
+async function receiveDirectMediaRequest(data, peerIp) {
+  const session = getMeshSession();
+  if (!session) return;
+
+  const fromNodeId = typeof data.fromNodeId === "string" ? data.fromNodeId.trim() : "";
+  const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
+  const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
+  const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
+  if (!fromUsername || toUsername !== session.username) return;
+
+  const trustedPeer = fromNodeId
+    ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
+    : null;
+  if (
+    !trustedPeer ||
+    !TRUSTED_STATUSES.has(trustedPeer.status) ||
+    trustedPeer.publicName !== fromUsername ||
+    (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
+  ) {
+    console.error(`> [NodeMesh][MEDIA] Rejected media request from unaccepted peer ${fromUsername}`);
+    return;
+  }
+
+  const found = await findDirectConversationByNames(session.username, fromUsername);
+  if (!found || typeof data.messageId !== "string") return;
+
+  const message = await db.directMessage.findFirst({
+    where: {
+      id: data.messageId,
+      conversationId: found.conversation.id,
+      memberId: found.firstMember.id,
+      fileUrl: { not: null },
+      deleted: false,
+    },
+  });
+  if (!message) return;
+
+  const context = {
+    fromNodeId: getMac(),
+    fromUserId: session.profileId,
+    fromUsername: session.username,
+    toUsername: fromUsername,
+    messageId: message.id,
+  };
+  await sendMediaForMessage(peerIp, context, message).catch((error) => {
+    console.error(`> [NodeMesh][MEDIA] Failed to repair media ${message.id}: ${error.message}`);
+  });
 }
 
 async function receiveDirectMessageSync(data, peerIp) {
@@ -1104,6 +1233,27 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
     }).catch((error) => {
       console.error(`> [NodeMesh][SYNC] Failed to send ${message.id}: ${error.message}`);
     });
+  }
+
+  const mediaMessages = await db.directMessage.findMany({
+    where: {
+      conversationId: found.conversation.id,
+      memberId: found.firstMember.id,
+      fileUrl: { not: null },
+      deleted: false,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  for (const message of mediaMessages) {
+    await sendMediaOfferForMessage(peerIp, {
+      fromNodeId: getMac(),
+      fromUserId: session.profileId,
+      fromUsername: session.username,
+      toUsername: peerUsername,
+      messageId: message.id,
+    }, message);
   }
 }
 
@@ -1529,6 +1679,8 @@ function startControlServer() {
         if (data.type === "connection_response") await receiveConnectionResponse(data, socket.remoteAddress);
         if (data.type === "direct_message_sync") await receiveDirectMessageSync(data, socket.remoteAddress);
         if (data.type === "direct_media_chunk") await receiveDirectMediaChunk(data, socket.remoteAddress);
+        if (data.type === "direct_media_offer") await receiveDirectMediaOffer(data, socket.remoteAddress);
+        if (data.type === "direct_media_request") await receiveDirectMediaRequest(data, socket.remoteAddress);
         if (data.type === "direct_message_ack") await receiveDirectMessageAck(data);
         if (data.type === "call_signal") await receiveCallSignal(data, socket.remoteAddress);
       } catch (error) {
