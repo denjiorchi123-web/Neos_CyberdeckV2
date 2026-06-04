@@ -2,6 +2,8 @@ import { Server as NetServer } from "http";
 import { NextApiRequest } from "next";
 import { Server as ServerIO } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
+import fs from "fs";
+import path from "path";
 
 import { NextApiResponseServerIo } from "@/types";
 import { redis, redisPub, redisSub } from "@/lib/redis";
@@ -30,6 +32,21 @@ async function authenticatedProfileId(socket: any): Promise<string | null> {
   });
 
   return profile?.id ?? null;
+}
+
+function readMeshSignalIdentity(): { profileId: string; username: string } | null {
+  const sessionFile =
+    process.env.MESH_SESSION_FILE ||
+    path.join(process.cwd(), "private", "mesh-session.json");
+  try {
+    const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+    const profileId = String(session.profileId || session.userId || "").trim();
+    const username = String(session.username || session.displayName || "").trim();
+    if (!profileId || !username || /^node[-_]/i.test(username)) return null;
+    return { profileId, username };
+  } catch {
+    return null;
+  }
 }
 
 // ── Terminal PTY helper ───────────────────────────────────────────────────────
@@ -148,15 +165,19 @@ async function relayMeshCallSignal(
   }
   if (!peer?.ipAddress) return false;
 
-  const localUserId = socket?.data?.userId || socket?.data?.authenticatedProfileId || "";
-  const localProfile = localUserId
-    ? await db.profile.findUnique({ where: { id: localUserId }, select: { name: true } })
+  const localSocketUserId = socket?.data?.userId || socket?.data?.authenticatedProfileId || data?.callerUserId || "";
+  const localProfile = localSocketUserId
+    ? await db.profile.findUnique({ where: { id: localSocketUserId }, select: { name: true } })
     : null;
+  const meshIdentity = readMeshSignalIdentity();
+  const signalUsername = meshIdentity?.username || localProfile?.name || data?.callerName || "Unknown";
+  const signalUserId = meshIdentity?.profileId || localSocketUserId;
 
   if (data?.callId) {
     await redis.hset(`mesh:call:${data.callId}`, {
       localChatId: data.chatId || "",
-      localUserId,
+      localUserId: localSocketUserId,
+      localSignalUserId: signalUserId,
       peerMac: peer.macAddress,
       peerIp: peer.ipAddress,
       peerName: peer.publicName || "",
@@ -167,8 +188,8 @@ async function relayMeshCallSignal(
   await sendMeshControl(peer.ipAddress, {
     type: "call_signal",
     event,
-    fromUsername: localProfile?.name || data?.callerName || "Unknown",
-    fromUserId: localUserId,
+    fromUsername: signalUsername,
+    fromUserId: signalUserId,
     payload: data,
   });
   return true;
@@ -209,8 +230,12 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       });
 
       // ── Presence System ────────────────────────────────────
-      socket.on("presence:identify", async () => {
-        const userId = socket.data.authenticatedProfileId;
+      socket.on("presence:identify", async (providedProfileId?: string) => {
+        const providedId =
+          typeof providedProfileId === "string" && /^[0-9a-f-]{20,}$/i.test(providedProfileId)
+            ? providedProfileId
+            : null;
+        const userId = socket.data.authenticatedProfileId || providedId;
         if (!userId) return;
         socket.data.userId = userId;
 

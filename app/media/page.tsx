@@ -321,7 +321,24 @@ export default function MediaPage() {
                     <audio src={f.url} controls className="mt-1 h-7 w-full max-w-xs" />
                   )}
                   {isVideo(f) && (
-                    <video src={f.url} controls className="mt-1 rounded-lg max-h-32 max-w-xs" />
+                    <div className="mt-1 flex flex-col gap-y-2">
+                      <video
+                        src={f.url}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="rounded-lg max-h-32 max-w-xs bg-black"
+                        style={{ touchAction: "manipulation" }}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLightbox(f)}
+                        className="h-10 w-fit px-3 rounded-lg bg-blue-500/15 text-blue-300 text-xs font-semibold active:bg-blue-500/25"
+                      >
+                        Open video
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -344,17 +361,42 @@ export default function MediaPage() {
 
       {/* Lightbox */}
       {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
-          <button className="absolute top-4 right-4 text-white/60 hover:text-white">
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+          style={{ touchAction: "manipulation" }}
+        >
+          <button className="absolute top-4 right-4 h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-white/80 hover:text-white active:bg-white/20">
             <X className="h-6 w-6" />
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightbox.url}
-            alt={lightbox.name}
-            className="max-w-full max-h-full rounded-xl shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          />
+          {isVideo(lightbox) ? (
+            <video
+              src={lightbox.url}
+              controls
+              autoPlay
+              playsInline
+              preload="metadata"
+              className="max-w-full max-h-full rounded-xl shadow-2xl bg-black"
+              onClick={e => e.stopPropagation()}
+              style={{ touchAction: "manipulation" }}
+            />
+          ) : isAudio(lightbox) ? (
+            <div
+              className="w-full max-w-lg rounded-2xl bg-zinc-950 border border-white/10 p-6 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <p className="text-white text-sm font-semibold mb-4 truncate">{lightbox.name}</p>
+              <audio src={lightbox.url} controls autoPlay className="w-full" />
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={lightbox.url}
+              alt={lightbox.name}
+              className="max-w-full max-h-full rounded-xl shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            />
+          )}
           <div className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-xs">
             {lightbox.name} · {humanSize(lightbox.size)}
           </div>

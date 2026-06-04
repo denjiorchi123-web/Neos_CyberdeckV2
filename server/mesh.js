@@ -985,11 +985,16 @@ async function findTrustedSignalPeer(fromUsername, fromUserId, peerIp) {
     },
   });
 
-  return candidates.find((peer) => {
+  const exact = candidates.find((peer) => {
     const nameOk = !peer.publicName || peer.publicName === fromUsername;
     const userOk = !fromUserId || !peer.userId || peer.userId === fromUserId;
     return nameOk && userOk;
-  }) || null;
+  });
+  if (exact) return exact;
+
+  return peerIp
+    ? candidates.find((peer) => normalizeIp(peer.ipAddress || "") === peerIp) || null
+    : null;
 }
 
 async function storeMeshCallRoute(callId, fields) {
@@ -1038,6 +1043,7 @@ async function receiveCallStartSignal(payload, fromUsername, fromUserId, peerIp,
   });
 
   ioEmitter?.to(`user:${found.secondMember.profileId}`).emit("call:start", localPayload);
+  ioEmitter?.to(found.conversation.id).emit("call:start", localPayload);
   console.log(`> [NodeMesh][CALL] Incoming ${localPayload.type || "audio"} call from ${fromUsername}`);
 }
 
@@ -1112,12 +1118,15 @@ async function receiveCallSignal(data, peerIp) {
     return;
   }
 
+  const trustedUsername = peer.publicName || fromUsername;
+  const trustedUserId = peer.userId || fromUserId;
+
   if (event === "call:start") {
-    await receiveCallStartSignal(payload, fromUsername, fromUserId, peerIp, peer);
+    await receiveCallStartSignal(payload, trustedUsername, trustedUserId, peerIp, peer);
     return;
   }
 
-  await emitRoutedCallSignal(event, payload, fromUsername, fromUserId, peerIp, peer);
+  await emitRoutedCallSignal(event, payload, trustedUsername, trustedUserId, peerIp, peer);
 }
 
 async function receiveConnectionRequest(data, peerIp) {

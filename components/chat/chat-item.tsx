@@ -81,10 +81,13 @@ function fmtTime(sec: number) {
 function LightboxVideoPlayer({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [touchMode, setTouchMode] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
   useEffect(() => {
     // Attempt autoplay immediately
@@ -97,11 +100,24 @@ function LightboxVideoPlayer({ src }: { src: string }) {
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+    };
   }, []);
 
-  const togglePlay = (e: React.MouseEvent) => {
+  const revealControls = (pointerType?: string) => {
+    if (pointerType === "touch") setTouchMode(true);
+    setControlsVisible(true);
+    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+    if (pointerType !== "touch") {
+      controlsTimerRef.current = setTimeout(() => setControlsVisible(false), 3500);
+    }
+  };
+
+  const togglePlay = (e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation();
+    revealControls("pointerType" in e ? e.pointerType : undefined);
     const v = videoRef.current;
     if (!v) return;
     if (playing) {
@@ -114,6 +130,7 @@ function LightboxVideoPlayer({ src }: { src: string }) {
   const handleScrub = (e: React.MouseEvent | React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
     if (!videoRef.current || !duration) return;
+    revealControls("pointerType" in e ? e.pointerType : undefined);
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
     videoRef.current.currentTime = (x / rect.width) * duration;
@@ -144,6 +161,8 @@ function LightboxVideoPlayer({ src }: { src: string }) {
         isFullscreen ? "max-w-none max-h-none" : "max-w-[90vw] max-h-[90vh] rounded-xl"
       )}
       onClick={togglePlay}
+      onPointerDown={(e) => revealControls(e.pointerType)}
+      style={{ touchAction: "manipulation" }}
     >
       <video
         ref={videoRef}
@@ -157,7 +176,9 @@ function LightboxVideoPlayer({ src }: { src: string }) {
         onEnded={() => setPlaying(false)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        controls={false}
         playsInline
+        style={{ touchAction: "manipulation" }}
       />
 
       {/* Big Play Overlay */}
@@ -172,44 +193,56 @@ function LightboxVideoPlayer({ src }: { src: string }) {
       {/* Scrubber Bottom Bar */}
       <div 
         className={cn(
-          "absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 rounded-b-xl flex items-center gap-x-4",
-          playing ? "opacity-0 group-hover:opacity-100" : "opacity-100"
+          "absolute bottom-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/55 to-transparent transition-opacity duration-300 rounded-b-xl flex items-center gap-x-3 sm:gap-x-4",
+          (!playing || controlsVisible || touchMode) ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         )}
         onClick={e => e.stopPropagation()}
+        style={{ touchAction: "manipulation" }}
       >
-        <button onClick={togglePlay} className="text-white hover:text-zinc-300 transition">
-          {playing ? <Pause className="h-7 w-7 fill-white" /> : <Play className="h-7 w-7 fill-white" />}
+        <button
+          onClick={togglePlay}
+          className="h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-white/15 active:bg-white/25 text-white hover:text-zinc-300 transition flex items-center justify-center shrink-0"
+          aria-label={playing ? "Pause video" : "Play video"}
+        >
+          {playing ? <Pause className="h-7 w-7 fill-white" /> : <Play className="h-7 w-7 fill-white ml-1" />}
         </button>
         
         <div 
-          className="flex-1 py-4 cursor-pointer relative group/scrubber flex items-center"
+          className="flex-1 py-5 cursor-pointer relative group/scrubber flex items-center"
           onPointerDown={(e) => {
             e.stopPropagation();
+            revealControls(e.pointerType);
             e.currentTarget.setPointerCapture(e.pointerId);
             handleScrub(e);
           }}
           onPointerMove={(e) => {
             e.stopPropagation();
+            revealControls(e.pointerType);
             if (e.buttons === 1) handleScrub(e);
           }}
+          style={{ touchAction: "none" }}
         >
-          <div className="w-full h-2.5 bg-white/20 rounded-full relative hover:h-3 transition-all">
+          <div className="w-full h-3 bg-white/20 rounded-full relative hover:h-3 transition-all">
             <div
               className="absolute top-0 left-0 bottom-0 bg-indigo-500 rounded-full"
               style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
             />
             <div 
-              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover/scrubber:opacity-100 transition-opacity"
-              style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 8px)` }}
+              className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg opacity-100 transition-opacity"
+              style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 10px)` }}
             />
           </div>
         </div>
 
-        <span className="text-white text-sm font-mono font-medium drop-shadow-md">
+        <span className="text-white text-xs sm:text-sm font-mono font-medium drop-shadow-md min-w-[82px] text-right">
           {fmtTime(progress)} / {fmtTime(duration)}
         </span>
 
-        <button onClick={toggleFullscreen} className="text-white hover:text-zinc-300 transition ml-2">
+        <button
+          onClick={toggleFullscreen}
+          className="h-12 w-12 rounded-full bg-white/15 active:bg-white/25 text-white hover:text-zinc-300 transition flex items-center justify-center shrink-0"
+          aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen video"}
+        >
           {isFullscreen ? <Minimize className="h-6 w-6" /> : <Maximize className="h-6 w-6" />}
         </button>
       </div>
@@ -367,6 +400,13 @@ function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: str
     <div 
       className="relative rounded-xl overflow-hidden bg-black max-w-[300px] border border-black/30 cursor-pointer group"
       onClick={onClick}
+      onPointerUp={(e) => {
+        if (e.pointerType === "touch") onClick();
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label="Open video player"
+      style={{ touchAction: "manipulation" }}
     >
       <video
         src={src}
@@ -377,8 +417,8 @@ function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: str
         playsInline
       />
       <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/50 transition">
-        <div className="h-14 w-14 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
-          <Play className="h-7 w-7 text-white fill-white ml-1" />
+        <div className="h-16 w-16 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
+          <Play className="h-8 w-8 text-white fill-white ml-1" />
         </div>
       </div>
     </div>
