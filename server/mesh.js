@@ -490,11 +490,42 @@ function resolveStoredFilePath(filename) {
     path.join(MEDIA_DIRS.documents, filename),
     path.join(MEDIA_DIRS.uploads, filename),
   ];
-  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+  const direct = candidates.find((candidate) => fs.existsSync(candidate));
+  if (direct) return direct;
+
+  for (const dir of [MEDIA_DIRS.photos, MEDIA_DIRS.videos, MEDIA_DIRS.audio, MEDIA_DIRS.documents]) {
+    const nested = findNestedFile(dir, filename);
+    if (nested) return nested;
+  }
+
+  return candidates[0];
 }
 
-function storageDirForMime(mimeType = "") {
-  return MEDIA_DIRS[categoryFromMime(mimeType)] || MEDIA_DIRS.documents;
+function findNestedFile(dir, filename, depth = 2) {
+  if (depth < 0 || !fs.existsSync(dir)) return null;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isFile() && entry.name === filename) return fullPath;
+    if (entry.isDirectory()) {
+      const found = findNestedFile(fullPath, filename, depth - 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function safeStorageSegment(value) {
+  const segment = String(value || "")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\s+/g, " ")
+    .slice(0, 64);
+  return segment || "Unknown";
+}
+
+function storageDirForMime(mimeType = "", ownerName = "") {
+  const base = MEDIA_DIRS[categoryFromMime(mimeType)] || MEDIA_DIRS.documents;
+  return ownerName ? path.join(base, safeStorageSegment(ownerName)) : base;
 }
 
 async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
@@ -602,7 +633,7 @@ async function receiveDirectMediaChunk(data, peerIp) {
   if (!Number.isInteger(chunkIndex) || !Number.isInteger(totalChunks) || chunkIndex < 0 || totalChunks <= 0) return;
   if (typeof data.dataBase64 !== "string") return;
 
-  const uploadDir = storageDirForMime(data.mimeType || "");
+  const uploadDir = storageDirForMime(data.mimeType || "", fromUsername);
   fs.mkdirSync(uploadDir, { recursive: true });
   const finalPath = path.join(uploadDir, storageName);
   const tempPath = path.join(uploadDir, `.mesh-${data.messageId || "media"}-${storageName}.part`);

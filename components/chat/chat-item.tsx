@@ -372,6 +372,9 @@ function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: str
         src={src}
         poster={thumbnail ?? undefined}
         className="w-full"
+        preload="metadata"
+        muted
+        playsInline
       />
       <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/50 transition">
         <div className="h-14 w-14 rounded-full bg-white/20 group-hover:bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/30 transition">
@@ -506,6 +509,10 @@ function ChatItemInner({
 
   const resolvedUrl = mediaKey ? (mediaBlobUrl ?? null) : fileUrl;
   const isDecrypting = !!fileUrl && !!mediaKey && !mediaBlobUrl;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [resolvedUrl]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -785,7 +792,10 @@ function ChatItemInner({
                       )}
                       loading="lazy"
                       onClick={() => { setLightboxSrc(resolvedUrl); setLightboxAlt(fileName ?? content); setLightboxType("image"); setLightboxOpen(true); }}
-                      onError={() => setImgError(true)}
+                      onError={() => {
+                        setImgError(true);
+                        window.setTimeout(() => setImgError(false), 1800);
+                      }}
                     />
                     {/* Download overlay on hover */}
                     <a
@@ -814,7 +824,16 @@ function ChatItemInner({
                 {/* ── Video ── */}
                 {isVideo && resolvedUrl && (
                   <div className={cn(hasOnlyMedia ? "" : "mb-2")}>
-                    <VideoPlayer src={resolvedUrl} thumbnail={thumbnailUrl} onClick={() => { setLightboxType("video"); setLightboxOpen(true); }} />
+                    <VideoPlayer
+                      src={resolvedUrl}
+                      thumbnail={thumbnailUrl}
+                      onClick={() => {
+                        setLightboxSrc(resolvedUrl);
+                        setLightboxAlt(fileName ?? (content || "Video"));
+                        setLightboxType("video");
+                        setLightboxOpen(true);
+                      }}
+                    />
                   </div>
                 )}
 

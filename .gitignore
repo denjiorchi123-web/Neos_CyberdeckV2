@@ -42,6 +42,7 @@ prisma/*.db-wal
 
 # Uploaded / generated media (device-local, not for source control)
 private/uploads/
+private/CyberDeck/
 public/uploads/
 private/mesh-session.json
 mesh_config.json
