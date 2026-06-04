@@ -182,6 +182,11 @@ export default function MediaPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const goBack = () => {
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = "/";
+  };
+
   const load = useCallback(async (cat: Category) => {
     setLoading(true);
     try {
@@ -196,6 +201,15 @@ export default function MediaPage() {
   }, []);
 
   useEffect(() => { load(category); }, [category, load]);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
 
   const deleteFile = async (file: MediaFile) => {
     if (!confirm(`Delete "${file.name}"?`)) return;
@@ -221,7 +235,7 @@ export default function MediaPage() {
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-6 py-3">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-x-4">
-            <button onClick={() => window.location.href = "/"} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition flex items-center gap-2 pr-3">
+            <button onClick={goBack} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition flex items-center gap-2 pr-3">
               <ArrowLeft className="h-4 w-4" />
               <span className="text-xs font-bold uppercase tracking-wider">Back</span>
             </button>
@@ -366,7 +380,29 @@ export default function MediaPage() {
           onClick={() => setLightbox(null)}
           style={{ touchAction: "manipulation" }}
         >
-          <button className="absolute top-4 right-4 h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-white/80 hover:text-white active:bg-white/20">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setLightbox(null);
+            }}
+            className="absolute left-4 top-4 z-10 flex h-12 items-center gap-2 rounded-full bg-white/10 px-4 text-sm font-bold text-white/90 active:bg-white/20"
+            style={{ touchAction: "manipulation" }}
+            aria-label="Back to media list"
+          >
+            <ArrowLeft className="h-5 w-5" />
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setLightbox(null);
+            }}
+            className="absolute top-4 right-4 h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-white/80 hover:text-white active:bg-white/20"
+            style={{ touchAction: "manipulation" }}
+            aria-label="Close preview"
+          >
             <X className="h-6 w-6" />
           </button>
           {isVideo(lightbox) ? (

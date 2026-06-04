@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { format } from "date-fns";
-import { FileIcon, LinkIcon, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, FileIcon, LinkIcon, Download, Loader2, X } from "lucide-react";
 
 import {
   Dialog,
@@ -18,7 +18,12 @@ import { storeMedia } from "@/lib/device-storage";
 import Image from "next/image";
 
 // Reusable thumbnail for media gallery
-function GalleryMediaItem({ message }: { message: any }) {
+type GalleryPreview =
+  | { kind: "media"; url: string; name: string; mediaType: "image" | "video" }
+  | { kind: "doc"; url: string; name: string }
+  | { kind: "link"; url: string; name: string };
+
+function GalleryMediaItem({ message, onPreview }: { message: any; onPreview: (preview: GalleryPreview) => void }) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -38,8 +43,9 @@ function GalleryMediaItem({ message }: { message: any }) {
   if (message.type === "video") {
     return (
       <div 
-        onClick={() => window.open(url, "_blank")} 
+        onClick={() => onPreview({ kind: "media", url, name: message.fileName || "Video", mediaType: "video" })}
         className="relative h-24 w-24 rounded-md overflow-hidden bg-black group cursor-pointer"
+        style={{ touchAction: "manipulation" }}
       >
         <video src={url} className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition" />
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -53,8 +59,9 @@ function GalleryMediaItem({ message }: { message: any }) {
 
   return (
     <div 
-      onClick={() => window.open(url, "_blank")}
+      onClick={() => onPreview({ kind: "media", url, name: message.fileName || "Media", mediaType: "image" })}
       className="relative h-24 w-24 rounded-md overflow-hidden group cursor-pointer"
+      style={{ touchAction: "manipulation" }}
     >
       <Image src={url} alt="Media" fill className="object-cover group-hover:scale-105 transition" />
     </div>
@@ -68,6 +75,7 @@ export function ChatMediaGalleryModal() {
 
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<GalleryPreview | null>(null);
 
   useEffect(() => {
     if (isModalOpen && chatId) {
@@ -108,11 +116,73 @@ export function ChatMediaGalleryModal() {
   return (
     <Dialog open={isModalOpen} onOpenChange={onClose}>
       <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-[600px] h-[80vh] flex flex-col">
-        <DialogHeader className="pt-6 px-6 pb-2">
-          <DialogTitle className="text-xl font-bold">Media, links and docs</DialogTitle>
+        <DialogHeader className="pt-4 px-4 pb-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={preview ? () => setPreview(null) : onClose}
+              className="flex h-12 items-center gap-2 rounded-full bg-zinc-100 px-4 text-sm font-bold text-zinc-800 active:bg-zinc-200 dark:bg-zinc-800 dark:text-white dark:active:bg-zinc-700"
+              style={{ touchAction: "manipulation" }}
+              aria-label={preview ? "Back to media list" : "Back to chat"}
+            >
+              <ArrowLeft className="h-5 w-5" />
+              Back
+            </button>
+            <DialogTitle className="text-lg font-bold">
+              {preview ? preview.name : "Media, links and docs"}
+            </DialogTitle>
+          </div>
         </DialogHeader>
 
-        <Tabs defaultValue="media" className="flex-1 flex flex-col px-6 pb-6">
+        {preview ? (
+          <div className="flex-1 min-h-0 px-4 pb-4">
+            <div className="relative flex h-full min-h-0 items-center justify-center overflow-hidden rounded-xl bg-black">
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                className="absolute right-3 top-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white active:bg-white/25"
+                aria-label="Close preview"
+                style={{ touchAction: "manipulation" }}
+              >
+                <X className="h-6 w-6" />
+              </button>
+              {preview.kind === "media" && preview.mediaType === "video" ? (
+                <video
+                  src={preview.url}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  className="h-full max-h-full w-full max-w-full bg-black object-contain"
+                  style={{ touchAction: "manipulation" }}
+                />
+              ) : preview.kind === "media" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={preview.url} alt={preview.name} className="max-h-full max-w-full object-contain" />
+              ) : preview.kind === "doc" ? (
+                <div className="flex w-full max-w-sm flex-col items-center gap-4 p-6 text-center text-white">
+                  <FileIcon className="h-16 w-16 text-indigo-300" />
+                  <p className="text-sm font-bold">{preview.name}</p>
+                  <a
+                    href={preview.url}
+                    download={preview.name}
+                    className="flex h-12 items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 text-sm font-bold text-white active:bg-indigo-500"
+                    style={{ touchAction: "manipulation" }}
+                  >
+                    <Download className="h-5 w-5" />
+                    Download
+                  </a>
+                </div>
+              ) : (
+                <div className="flex w-full max-w-sm flex-col items-center gap-4 p-6 text-center text-white">
+                  <LinkIcon className="h-16 w-16 text-sky-300" />
+                  <p className="max-w-full break-all text-sm">{preview.url}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+        <Tabs defaultValue="media" className="flex-1 flex flex-col px-4 pb-4">
           <TabsList className="w-full bg-zinc-100 dark:bg-zinc-800 mb-4">
             <TabsTrigger value="media" className="flex-1">Media</TabsTrigger>
             <TabsTrigger value="docs" className="flex-1">Docs</TabsTrigger>
@@ -132,7 +202,7 @@ export function ChatMediaGalleryModal() {
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {mediaMessages.map(msg => (
-                        <GalleryMediaItem key={msg.id} message={msg} />
+                        <GalleryMediaItem key={msg.id} message={msg} onPreview={setPreview} />
                       ))}
                     </div>
                   )}
@@ -154,9 +224,14 @@ export function ChatMediaGalleryModal() {
                             <p className="text-sm font-semibold truncate">{msg.fileName || "Document"}</p>
                             <p className="text-xs text-zinc-500">{format(new Date(msg.createdAt), "MMM d, yyyy")}</p>
                           </div>
-                          <a href={msg.fileUrl} download={msg.fileName || "download"} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-indigo-500 transition cursor-pointer p-2">
+                          <button
+                            type="button"
+                            onClick={() => setPreview({ kind: "doc", url: msg.fileUrl, name: msg.fileName || "Document" })}
+                            className="text-zinc-500 hover:text-indigo-500 transition cursor-pointer p-2"
+                            style={{ touchAction: "manipulation" }}
+                          >
                             <Download className="h-5 w-5" />
-                          </a>
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -178,9 +253,14 @@ export function ChatMediaGalleryModal() {
                               <LinkIcon className="h-5 w-5" />
                             </div>
                             <div className="flex flex-col flex-1 overflow-hidden">
-                              <a href={url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-sky-500 hover:underline truncate">
+                              <button
+                                type="button"
+                                onClick={() => setPreview({ kind: "link", url, name: extractDomain(msg.content) })}
+                                className="text-left text-sm font-semibold text-sky-500 hover:underline truncate"
+                                style={{ touchAction: "manipulation" }}
+                              >
                                 {msg.content}
-                              </a>
+                              </button>
                               <p className="text-xs text-zinc-500 mt-1 flex gap-2">
                                 <span>{extractDomain(msg.content)}</span>
                                 <span>•</span>
@@ -197,6 +277,7 @@ export function ChatMediaGalleryModal() {
             </>
           )}
         </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );

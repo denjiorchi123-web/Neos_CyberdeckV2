@@ -282,8 +282,21 @@ function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt
           event.stopPropagation();
           close();
         }}
+        className="absolute left-4 top-4 z-[1000] flex h-12 items-center justify-center gap-2 rounded-full bg-white/10 px-4 text-sm font-bold text-white transition active:bg-white/25"
+        aria-label="Back to chat"
+        style={{ touchAction: "manipulation" }}
+      >
+        <X className="h-5 w-5" />
+        Back
+      </button>
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          close();
+        }}
         className="absolute top-4 right-4 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/25 text-white transition z-[1000] flex items-center justify-center"
         aria-label="Close media player"
+        style={{ touchAction: "manipulation" }}
       >
         <X className="h-7 w-7" />
       </button>
@@ -457,15 +470,15 @@ function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: str
           <Play className="h-4 w-4 fill-white" />
           Open full screen
         </button>
-        <a
-          href={src}
-          onClick={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={open}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
           className="flex min-h-[44px] items-center justify-center rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white active:bg-white/20"
         >
-          Direct
-        </a>
+          Preview
+        </button>
       </div>
     </div>
   );
