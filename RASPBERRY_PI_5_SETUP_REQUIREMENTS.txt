@@ -44,6 +44,7 @@ Install on each Raspberry Pi:
   - npm
   - git
   - Redis server binary
+  - OpenSSH server
   - OpenSSL
   - Chromium browser
   - SQLite tools
@@ -52,7 +53,7 @@ Install on each Raspberry Pi:
 Recommended install command on Raspberry Pi OS:
 
   sudo apt update
-  sudo apt install -y git curl ca-certificates openssl redis-server sqlite3 chromium-browser build-essential
+  sudo apt install -y git curl ca-certificates openssl openssh-server redis-server sqlite3 chromium-browser build-essential
 
 If your OS package does not provide Node.js 20+, install NodeSource Node 20:
 
@@ -64,6 +65,7 @@ Verify:
   node -v
   npm -v
   redis-server --version
+  ssh -V
   chromium --version
 
 
@@ -92,7 +94,51 @@ that device to be another device for the same user. For normal testing, use:
   Pi 2 profile: Neo
 
 
-3A. Permanently Disable WiFi and Bluetooth Radios
+3A. Enable SSH over LAN by Default
+----------------------------------
+
+Enable SSH on every Pi so it can be administered over Ethernet/LAN even with
+WiFi and Bluetooth disabled.
+
+After cloning the repo, run:
+
+  cd /opt/cyberdeck
+  sudo sh deploy/scripts/enable-lan-ssh.sh
+
+Manual commands:
+
+  sudo apt install -y openssh-server
+  sudo systemctl enable ssh.service
+  sudo systemctl restart ssh.service
+  systemctl is-active ssh.service
+
+The bundled script writes this config:
+
+  /etc/ssh/sshd_config.d/99-cyberdeck-lan.conf
+
+Default policy:
+
+  - SSH listens on IPv4 LAN interfaces, port 22.
+  - Root login is disabled.
+  - Password login is enabled for setup convenience.
+  - Public-key login is enabled.
+  - X11 forwarding and TCP forwarding are disabled.
+
+Recommended after first login:
+
+  1. Add your public SSH key to `~/.ssh/authorized_keys`.
+  2. Change `PasswordAuthentication yes` to `PasswordAuthentication no`.
+  3. Restart SSH:
+
+     sudo systemctl restart ssh.service
+
+Verify from another LAN device:
+
+  ssh <username>@10.0.0.1
+  ssh <username>@10.0.0.2
+
+
+3B. Permanently Disable WiFi and Bluetooth Radios
 -------------------------------------------------
 
 For a strict air-gapped Ethernet-only build, disable WiFi and Bluetooth on every
