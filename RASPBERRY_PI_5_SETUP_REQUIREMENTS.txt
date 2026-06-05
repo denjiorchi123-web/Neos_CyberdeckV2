@@ -92,6 +92,76 @@ that device to be another device for the same user. For normal testing, use:
   Pi 2 profile: Neo
 
 
+3A. Permanently Disable WiFi and Bluetooth Radios
+-------------------------------------------------
+
+For a strict air-gapped Ethernet-only build, disable WiFi and Bluetooth on every
+Raspberry Pi. This removes radio signatures and prevents accidental wireless
+interfaces from coming up after reboot.
+
+After cloning the repo, the easiest command is:
+
+  cd /opt/cyberdeck
+  sudo sh deploy/scripts/disable-radios.sh
+  sudo reboot
+
+Manual commands are listed below for reference.
+
+Run on each Pi:
+
+  sudo rfkill block wifi
+  sudo rfkill block bluetooth
+
+Disable Bluetooth services:
+
+  sudo systemctl disable --now bluetooth.service 2>/dev/null || true
+  sudo systemctl mask bluetooth.service 2>/dev/null || true
+  sudo systemctl disable --now hciuart.service 2>/dev/null || true
+  sudo systemctl mask hciuart.service 2>/dev/null || true
+
+Disable WiFi services if present:
+
+  sudo systemctl disable --now wpa_supplicant.service 2>/dev/null || true
+  sudo systemctl mask wpa_supplicant.service 2>/dev/null || true
+  sudo systemctl disable --now NetworkManager-wait-online.service 2>/dev/null || true
+
+Add hardware overlays to the Pi boot config. Raspberry Pi OS Bookworm usually
+uses `/boot/firmware/config.txt`; older images may use `/boot/config.txt`.
+
+  BOOT_CONFIG=/boot/firmware/config.txt
+  [ -f "$BOOT_CONFIG" ] || BOOT_CONFIG=/boot/config.txt
+  sudo cp "$BOOT_CONFIG" "$BOOT_CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+  grep -q '^dtoverlay=disable-wifi$' "$BOOT_CONFIG" || echo 'dtoverlay=disable-wifi' | sudo tee -a "$BOOT_CONFIG"
+  grep -q '^dtoverlay=disable-bt$' "$BOOT_CONFIG" || echo 'dtoverlay=disable-bt' | sudo tee -a "$BOOT_CONFIG"
+
+Reboot:
+
+  sudo reboot
+
+Verify after reboot:
+
+  rfkill list
+  ip link show
+  systemctl is-enabled bluetooth.service 2>/dev/null || true
+  systemctl is-enabled hciuart.service 2>/dev/null || true
+  systemctl is-enabled wpa_supplicant.service 2>/dev/null || true
+
+Expected:
+
+  - No wlan0 interface, or wlan0 stays blocked/unavailable.
+  - No hci0 Bluetooth controller.
+  - Bluetooth services are masked or disabled.
+  - Ethernet eth0 remains available.
+
+To re-enable radios later:
+
+  sudo systemctl unmask bluetooth.service hciuart.service wpa_supplicant.service 2>/dev/null || true
+  sudo sed -i '/^dtoverlay=disable-wifi$/d;/^dtoverlay=disable-bt$/d' "$BOOT_CONFIG"
+  sudo rfkill unblock wifi
+  sudo rfkill unblock bluetooth
+  sudo reboot
+
+
 4. Set Static Ethernet IP
 -------------------------
 
