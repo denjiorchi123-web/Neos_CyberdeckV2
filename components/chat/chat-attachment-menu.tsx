@@ -23,6 +23,8 @@ import { LocationShare } from "@/components/chat/location-share";
 import { ContactShare } from "@/components/chat/contact-share";
 import qs from "query-string";
 import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
+import { enqueue } from "@/lib/offline-queue";
 
 interface ChatAttachmentMenuProps {
   apiUrl: string;
@@ -50,7 +52,32 @@ export function ChatAttachmentMenu({ apiUrl, query, replyToId, onSent }: ChatAtt
     type?: string;
   }) => {
     const url = qs.stringifyUrl({ url: apiUrl, query });
-    await axios.post(url, { ...payload, replyToId });
+    try {
+      await axios.post(url, { ...payload, replyToId });
+    } catch (error: any) {
+      if (error?.response?.status === 403) throw error;
+      await enqueue({
+        id: uuidv4(),
+        apiUrl,
+        query,
+        content: payload.content,
+        fileUrl: payload.fileUrl,
+        fileName: payload.fileName,
+        fileSize: payload.fileSize,
+        mimeType: payload.mimeType,
+        thumbnailUrl: payload.thumbnailUrl,
+        mediaKey: payload.mediaKey,
+        type: payload.type,
+        replyToId,
+        queuedAt: Date.now(),
+        retryCount: 0,
+      });
+      if ("serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
+      }
+      console.warn("[ChatAttachmentMenu] send failed; queued for retry", error);
+    }
     if (onSent) onSent();
   };
 

@@ -54,9 +54,9 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
   const isLoading = form.formState.isSubmitting;
 
   // ── Offline queue drain ────────────────────────────────────────────────────
-  // Drain the IndexedDB outbox whenever the socket (re)connects.
+  // Drain through HTTP; Socket.IO is only the realtime notification channel.
   useEffect(() => {
-    if (!isConnected || draining.current) return;
+    if (draining.current) return;
     if (typeof window === "undefined") return;
 
     draining.current = true;
@@ -84,7 +84,7 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
         router.refresh();
       }
     }).finally(() => { draining.current = false; });
-  }, [isConnected, router]);
+  }, [router]);
 
   // ── Service Worker registration ────────────────────────────────────────────
   useEffect(() => {
@@ -93,39 +93,19 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
 
     // Listen for DRAIN_OUTBOX message from SW background sync
     const onMsg = (e: MessageEvent) => {
-      if (e.data?.type === "DRAIN_OUTBOX" && isConnected) {
+      if (e.data?.type === "DRAIN_OUTBOX") {
         draining.current = false; // allow re-drain
       }
     };
     navigator.serviceWorker.addEventListener("message", onMsg);
     return () => navigator.serviceWorker.removeEventListener("message", onMsg);
-  }, [isConnected]);
+  }, []);
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       const url = qs.stringifyUrl({ url: apiUrl, query });
       form.reset();
-
-      if (!isConnected) {
-        // Server is down — queue the message for later delivery
-        await enqueue({
-          id:         uuidv4(),
-          apiUrl,
-          query,
-          content:    values.content,
-          replyToId:  replyingTo?.id,
-          queuedAt:   Date.now(),
-          retryCount: 0,
-        });
-        // Register background sync so the browser retries when online
-        if ("serviceWorker" in navigator) {
-          const reg = await navigator.serviceWorker.ready;
-          if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
-        }
-        return;
-      }
-
       await axios.post(url, { content: values.content, replyToId: replyingTo?.id });
       setReplyingTo(null);
       router.refresh();
@@ -148,6 +128,10 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
         queuedAt:   Date.now(),
         retryCount: 0,
       });
+      if ("serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
+      }
     }
   };
 

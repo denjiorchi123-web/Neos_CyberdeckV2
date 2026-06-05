@@ -25,6 +25,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { FileUpload, UploadResult } from "@/components/file-upload";
 import { useModal } from "@/hooks/use-modal-store";
+import { enqueue } from "@/lib/offline-queue";
+import { v4 as uuidv4 } from "uuid";
 
 const formSchema = z.object({
   fileUrl: z.string().min(1, { message: "Attachment is required." })
@@ -65,17 +67,36 @@ export function MessageFileModal() {
         query
       });
       const attachment = uploadMeta?.url === values.fileUrl ? uploadMeta : { url: values.fileUrl };
-      await axios.post(url, {
+      const payload = {
         content: attachment.fileName || values.fileUrl,
         fileUrl: attachment.url,
         fileName: attachment.fileName,
         fileSize: attachment.fileSize,
         mimeType: attachment.mimeType,
-        thumbnailUrl: attachment.thumbnailUrl,
-        mediaKey: attachment.mediaKey,
+        thumbnailUrl: attachment.thumbnailUrl || undefined,
+        mediaKey: attachment.mediaKey || undefined,
         type: attachment.type || "DOCUMENT",
         replyToId,
-      });
+      };
+
+      try {
+        await axios.post(url, payload);
+      } catch (error: any) {
+        if (error?.response?.status === 403) throw error;
+        await enqueue({
+          id: uuidv4(),
+          apiUrl: apiUrl || "",
+          query: query || {},
+          ...payload,
+          queuedAt: Date.now(),
+          retryCount: 0,
+        });
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
+        }
+        console.warn("[MessageFileModal] send failed; queued for retry", error);
+      }
 
       form.reset();
       router.refresh();
