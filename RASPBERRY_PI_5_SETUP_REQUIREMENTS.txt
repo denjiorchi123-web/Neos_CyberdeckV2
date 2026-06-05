@@ -1,0 +1,442 @@
+CYBERDECK / TRINITY P2P - RASPBERRY PI 5 SETUP REQUIREMENTS
+============================================================
+
+Goal
+----
+Run this application between two or more Raspberry Pi 5 devices over LAN/Ethernet
+without a laptop, internet, cloud, router, or central server.
+
+Each Pi runs the same app, owns its own SQLite database, and syncs records with
+trusted peers after LAN discovery and handshake.
+
+
+1. Hardware Required
+--------------------
+
+Required per Pi:
+
+  - Raspberry Pi 5
+  - Raspberry Pi OS 64-bit or Debian 64-bit
+  - Official Raspberry Pi 7-inch touchscreen, 800x480, if using kiosk mode
+  - Ethernet cable
+  - Reliable 5V/5A USB-C power supply
+  - microSD card or NVMe/USB storage, 32 GB minimum, 64 GB+ recommended
+
+For two Pis:
+
+  Option A - direct cable:
+    Pi 1 Ethernet port <---- cable ----> Pi 2 Ethernet port
+
+  Option B - small LAN switch:
+    Pi 1 Ethernet ----+
+                      +---- unmanaged Ethernet switch
+    Pi 2 Ethernet ----+
+
+No WiFi/internet is required after the app and dependencies are installed.
+
+
+2. Software Required
+--------------------
+
+Install on each Raspberry Pi:
+
+  - Node.js 20 LTS or newer
+  - npm
+  - git
+  - Redis server binary
+  - OpenSSL
+  - Chromium browser
+  - SQLite tools
+  - build tools for native npm packages
+
+Recommended install command on Raspberry Pi OS:
+
+  sudo apt update
+  sudo apt install -y git curl ca-certificates openssl redis-server sqlite3 chromium-browser build-essential
+
+If your OS package does not provide Node.js 20+, install NodeSource Node 20:
+
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt install -y nodejs
+
+Verify:
+
+  node -v
+  npm -v
+  redis-server --version
+  chromium --version
+
+
+3. Network Plan
+---------------
+
+Use one unique static Ethernet IP per Pi.
+
+Recommended two-Pi direct cable setup:
+
+  Pi 1:
+    hostname: nova
+    eth0 IP : 10.0.0.1/24
+    app URL : https://10.0.0.1:3000
+
+  Pi 2:
+    hostname: trinity-pi2   (or any unique hostname)
+    eth0 IP : 10.0.0.2/24
+    app URL : https://10.0.0.2:3000
+
+Do not give both Pis the same IP or hostname.
+Do not use the same local profile as the same human unless you intentionally want
+that device to be another device for the same user. For normal testing, use:
+
+  Pi 1 profile: Trinity
+  Pi 2 profile: Neo
+
+
+4. Set Static Ethernet IP
+-------------------------
+
+Run on Pi 1:
+
+  sudo nmcli con show
+  sudo nmcli con mod "Wired connection 1" ipv4.method manual ipv4.addresses 10.0.0.1/24 ipv4.gateway "" ipv4.dns ""
+  sudo nmcli con up "Wired connection 1"
+
+Run on Pi 2:
+
+  sudo nmcli con show
+  sudo nmcli con mod "Wired connection 1" ipv4.method manual ipv4.addresses 10.0.0.2/24 ipv4.gateway "" ipv4.dns ""
+  sudo nmcli con up "Wired connection 1"
+
+If the connection name is different, replace "Wired connection 1" with the name
+shown by `nmcli con show`.
+
+Alternative temporary commands:
+
+  # Pi 1
+  sudo ip addr flush dev eth0
+  sudo ip addr add 10.0.0.1/24 dev eth0
+  sudo ip link set eth0 up
+
+  # Pi 2
+  sudo ip addr flush dev eth0
+  sudo ip addr add 10.0.0.2/24 dev eth0
+  sudo ip link set eth0 up
+
+Verify from Pi 1:
+
+  ping -c 3 10.0.0.2
+
+Verify from Pi 2:
+
+  ping -c 3 10.0.0.1
+
+If ping fails, fix Ethernet/IP first. The app cannot discover peers if the cable
+link itself is not working.
+
+
+5. Clone or Copy the Application
+--------------------------------
+
+On each Pi:
+
+  sudo mkdir -p /opt/cyberdeck
+  sudo chown -R $USER:$USER /opt/cyberdeck
+  cd /opt
+  git clone https://github.com/denjiorchi123-web/Neos_CyberdeckV2.git cyberdeck
+
+If the Pi is air-gapped and cannot clone from GitHub:
+
+  1. Build or copy the repo from your laptop onto a USB drive.
+  2. Plug the USB into the Pi.
+  3. Copy the repo:
+
+     sudo mkdir -p /opt/cyberdeck
+     sudo cp -a /media/$USER/<USB_NAME>/Neos_CyberdeckV2/. /opt/cyberdeck/
+     sudo chown -R $USER:$USER /opt/cyberdeck
+
+
+6. Install Dependencies and Initialize DB
+-----------------------------------------
+
+Run on each Pi:
+
+  cd /opt/cyberdeck
+  npm install --include=optional --no-audit --no-fund
+  npx prisma generate
+  npm run db:push
+
+Create or confirm `.env`:
+
+  cat > .env << 'EOF'
+DATABASE_URL="file:./prisma/dev.db?journal_mode=WAL"
+REDIS_URL=redis://127.0.0.1:6379
+NEXT_PUBLIC_SITE_URL=https://localhost:3000
+CYBERDECK_HOME=/opt/cyberdeck
+MESH_SECRET=change-this-shared-lan-secret-on-all-pis
+EOF
+
+Important:
+
+  - Use the same MESH_SECRET on all Pis in the same trusted mesh.
+  - Use a different MESH_SECRET if you want a different private mesh.
+  - Do not expose MESH_SECRET outside your trusted LAN.
+
+
+7. Build the App
+----------------
+
+Run on each Pi:
+
+  cd /opt/cyberdeck
+  npm run build
+
+Expected result:
+
+  - Build completes successfully.
+  - Warnings about <img> or dynamic cookie usage may appear; they are not fatal.
+
+
+8. Redis Service
+----------------
+
+Install the bundled CyberDeck Redis service. This avoids distro naming
+differences such as `redis.service` vs `redis-server.service`.
+
+  sudo cp /opt/cyberdeck/deploy/systemd/redis-cyberdeck.service /etc/systemd/system/redis-cyberdeck.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable redis-cyberdeck.service
+  sudo systemctl restart redis-cyberdeck.service
+  systemctl is-active redis-cyberdeck.service
+
+Expected:
+
+  active
+
+
+9. CyberDeck Systemd Service
+----------------------------
+
+Create service user:
+
+  sudo useradd --system --create-home --home /home/cyberdeck --shell /usr/sbin/nologin cyberdeck || true
+  sudo chown -R cyberdeck:cyberdeck /opt/cyberdeck
+
+Install service:
+
+  sudo cp /opt/cyberdeck/deploy/systemd/cyberdeck-web.service /etc/systemd/system/cyberdeck-web.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable cyberdeck-web.service
+  sudo systemctl restart cyberdeck-web.service
+  systemctl is-active cyberdeck-web.service
+
+Optional compatibility alias if your existing scripts expect `cyberdeck.service`:
+
+  sudo ln -sf /etc/systemd/system/cyberdeck-web.service /etc/systemd/system/cyberdeck.service
+  sudo systemctl daemon-reload
+
+Expected:
+
+  active
+
+Check logs:
+
+  journalctl -u cyberdeck-web.service --no-pager -n 80
+
+
+10. Kiosk Mode for Official 7-inch Touchscreen
+----------------------------------------------
+
+If you boot into a desktop session on the Pi, run:
+
+  /opt/cyberdeck/deploy/scripts/start-kiosk.sh
+
+For desktop Raspberry Pi OS, create a user autostart entry:
+
+  mkdir -p ~/.config/autostart
+  cat > ~/.config/autostart/cyberdeck-kiosk.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=CyberDeck Kiosk
+Exec=/opt/cyberdeck/deploy/scripts/start-kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+The kiosk opens:
+
+  https://127.0.0.1:3000/launcher
+
+For a systemd kiosk service using the bundled unit:
+
+  sudo cp /opt/cyberdeck/deploy/systemd/cyberdeck-kiosk.service /etc/systemd/system/cyberdeck-kiosk.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable cyberdeck-kiosk.service
+  sudo systemctl restart cyberdeck-kiosk.service
+
+
+11. First Login / Profile Rules
+-------------------------------
+
+On each Pi, open the local app and create or choose the local profile.
+
+Recommended test:
+
+  Pi 1: create/login as Trinity
+  Pi 2: create/login as Neo
+
+Rules:
+
+  - One local human profile per device.
+  - Do not create two profiles with the same name on one device.
+  - The app now prevents same-name duplicate profiles case-insensitively.
+  - Mesh peers are contacts, not local users.
+
+
+12. Pairing Two Pis
+-------------------
+
+After both apps are running:
+
+  1. Make sure both Pis can ping each other.
+  2. Open the app on both touchscreens.
+  3. Go to Network/Peers or the chat launcher.
+  4. Wait for discovery.
+  5. Send a connection request from Pi 1 to Pi 2.
+  6. Accept on Pi 2.
+  7. Confirm both show each other online.
+  8. Start chat, send text, image, video, document, audio, contacts, maps.
+  9. Test audio/video calls.
+
+Expected:
+
+  Pi 1 sees Neo online.
+  Pi 2 sees Trinity online.
+  No duplicate Trinity or Neo profiles are created.
+
+
+13. Updating the Second Pi Later
+--------------------------------
+
+When you push new code to GitHub, update each Pi:
+
+  cd /opt/cyberdeck
+  sudo systemctl stop cyberdeck-web.service
+  git pull origin main
+  npm install --include=optional --no-audit --no-fund
+  npx prisma generate
+  npm run db:push
+  npm run build
+  sudo systemctl restart cyberdeck-web.service
+  systemctl is-active cyberdeck-web.service
+
+Refresh kiosk:
+
+  pkill -f '/usr/lib/chromium/chromium .*--kiosk' 2>/dev/null || true
+  pkill -f '/opt/cyberdeck/deploy/scripts/start-kiosk.sh' 2>/dev/null || true
+  nohup /opt/cyberdeck/deploy/scripts/start-kiosk.sh >/tmp/cyberdeck-kiosk.log 2>&1 &
+
+
+14. Verification Checklist
+--------------------------
+
+Network:
+
+  ip addr show eth0
+  ping -c 3 <other-pi-ip>
+
+Services:
+
+  systemctl is-active redis-cyberdeck.service
+  systemctl is-active cyberdeck-web.service
+  ss -lntp | grep -E ':(3000|5006|6379)\b'
+
+App:
+
+  curl -k https://127.0.0.1:3000/launcher
+  journalctl -u cyberdeck-web.service --no-pager -n 80
+
+Database:
+
+  cd /opt/cyberdeck
+  sqlite3 prisma/dev.db "PRAGMA journal_mode;"
+  sqlite3 prisma/dev.db "SELECT name,email FROM Profile ORDER BY name;"
+
+Expected SQLite journal mode:
+
+  wal
+
+
+15. Common Problems
+-------------------
+
+Problem: Peer is not discovered.
+
+Fix:
+
+  - Check static IPs.
+  - Check ping between Pis.
+  - Check both apps are running.
+  - Check firewall rules if enabled.
+  - Check `journalctl -u cyberdeck-web.service`.
+
+Problem: Duplicate profile appears.
+
+Fix:
+
+  - Do not create a second local profile with the same name.
+  - Pull latest code; duplicate prevention is implemented.
+  - Check:
+
+    sqlite3 prisma/dev.db "SELECT id,userId,name,email FROM Profile WHERE lower(name)=lower('Trinity');"
+
+Problem: Kiosk touch is not scrolling.
+
+Fix:
+
+  - Confirm Chromium was launched by `deploy/scripts/start-kiosk.sh`.
+  - Confirm the command line contains `--touch-events=enabled`.
+  - Reboot the Pi if the touchscreen driver is not reporting touch.
+
+Problem: HTTPS warning appears.
+
+Fix:
+
+  - This is expected with local self-signed certificates.
+  - Kiosk mode passes `--ignore-certificate-errors`.
+
+
+16. Short Bring-Up Summary
+--------------------------
+
+On Pi 1:
+
+  hostnamectl set-hostname nova
+  sudo nmcli con mod "Wired connection 1" ipv4.method manual ipv4.addresses 10.0.0.1/24 ipv4.gateway "" ipv4.dns ""
+  sudo nmcli con up "Wired connection 1"
+
+On Pi 2:
+
+  hostnamectl set-hostname trinity-pi2
+  sudo nmcli con mod "Wired connection 1" ipv4.method manual ipv4.addresses 10.0.0.2/24 ipv4.gateway "" ipv4.dns ""
+  sudo nmcli con up "Wired connection 1"
+
+On both:
+
+  cd /opt
+  git clone https://github.com/denjiorchi123-web/Neos_CyberdeckV2.git cyberdeck
+  cd /opt/cyberdeck
+  npm install --include=optional --no-audit --no-fund
+  npx prisma generate
+  npm run db:push
+  npm run build
+  sudo cp deploy/systemd/redis-cyberdeck.service /etc/systemd/system/redis-cyberdeck.service
+  sudo systemctl enable redis-cyberdeck.service
+  sudo systemctl restart redis-cyberdeck.service
+  sudo cp deploy/systemd/cyberdeck-web.service /etc/systemd/system/cyberdeck-web.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable cyberdeck-web.service
+  sudo systemctl restart cyberdeck-web.service
+
+Then open:
+
+  https://127.0.0.1:3000/launcher
