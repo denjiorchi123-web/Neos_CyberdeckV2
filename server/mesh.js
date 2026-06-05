@@ -473,10 +473,14 @@ async function findReusableContactProfile(userId, username) {
   const exact = await db.profile.findUnique({ where: { userId } });
   if (exact) return exact;
 
-  const sameName = await db.profile.findMany({
-    where: { name: username },
-    orderBy: { createdAt: "asc" },
-  });
+  const sameName = await db.$queryRawUnsafe(
+    `SELECT * FROM Profile
+     WHERE lower(trim(name)) = lower(trim(?))
+     ORDER BY
+       CASE WHEN email LIKE '%@mesh.local' THEN 1 ELSE 0 END ASC,
+       createdAt ASC`,
+    username
+  );
   if (!sameName.length) return null;
 
   return sameName.find((profile) => !String(profile.email || "").endsWith("@mesh.local")) || sameName[0];

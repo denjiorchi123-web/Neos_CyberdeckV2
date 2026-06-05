@@ -24,9 +24,20 @@ export async function POST(req: Request) {
     }
 
     // Use Raw SQL to bypass stale Prisma Client types
+    const normalizedIdentifier = String(identifier).trim();
+
     const profiles: any[] = await db.$queryRawUnsafe(
-      `SELECT * FROM Profile WHERE name = ? OR email = ? OR userId = ? LIMIT 1`,
-      identifier, identifier, identifier
+      `SELECT *
+       FROM Profile
+       WHERE lower(trim(name)) = lower(trim(?))
+          OR lower(trim(email)) = lower(trim(?))
+          OR userId = ?
+       ORDER BY
+         CASE WHEN email LIKE '%@mesh.local' THEN 1 ELSE 0 END ASC,
+         CASE WHEN password IS NULL OR password = '' THEN 1 ELSE 0 END ASC,
+         createdAt ASC
+       LIMIT 1`,
+      normalizedIdentifier, normalizedIdentifier, normalizedIdentifier
     );
 
     const profile = profiles[0];

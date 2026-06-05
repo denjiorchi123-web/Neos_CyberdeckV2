@@ -10,6 +10,37 @@ function hashPassword(password: string, salt: string) {
   return crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
 }
 
+function normalizeProfileName(name: string) {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+function profileDisplayKey(name: string) {
+  return normalizeProfileName(name).toLowerCase();
+}
+
+function isMeshContactEmail(email?: string | null) {
+  return String(email || "").toLowerCase().endsWith("@mesh.local");
+}
+
+function dedupeProfilesForDisplay<T extends { name: string; email?: string | null; createdAt?: Date }>(profiles: T[]) {
+  const byName = new Map<string, T>();
+  for (const profile of profiles) {
+    const key = profileDisplayKey(profile.name);
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, profile);
+      continue;
+    }
+
+    const existingIsMesh = isMeshContactEmail(existing.email);
+    const currentIsMesh = isMeshContactEmail(profile.email);
+    if (existingIsMesh && !currentIsMesh) {
+      byName.set(key, profile);
+    }
+  }
+  return Array.from(byName.values());
+}
+
 /**
  * GET /api/profiles
  * Returns all profiles.
@@ -30,7 +61,7 @@ export async function GET() {
       },
       orderBy: { createdAt: "desc" }
     });
-    return NextResponse.json(profiles);
+    return NextResponse.json(dedupeProfilesForDisplay(profiles));
   } catch (error) {
     console.error("[PROFILES_GET]", error);
     return new NextResponse("Internal Error", { status: 500 });
@@ -48,12 +79,16 @@ export async function POST(req: Request) {
     if (!name) return new NextResponse("Name is required", { status: 400 });
     if (!password) return new NextResponse("Password is required", { status: 400 });
 
-    const finalEmail = email || `${name.toLowerCase().replace(/\s/g, ".")}@cyberdeck.local`;
+    const finalName = normalizeProfileName(String(name));
+    const finalEmail = String(email || `${finalName.toLowerCase().replace(/\s/g, ".")}@cyberdeck.local`).trim();
 
     // Check for existing profile
     const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id FROM Profile WHERE name = ? OR email = ? LIMIT 1`,
-      name, finalEmail
+      `SELECT id FROM Profile
+       WHERE lower(trim(name)) = lower(trim(?))
+          OR lower(trim(email)) = lower(trim(?))
+       LIMIT 1`,
+      finalName, finalEmail
     );
 
     if (existing.length > 0) {
@@ -69,10 +104,10 @@ export async function POST(req: Request) {
     await db.$executeRawUnsafe(
       `INSERT INTO Profile (id, userId, name, imageUrl, email, password, createdAt, updatedAt) 
        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-      id, userId, name, finalImageUrl, finalEmail, hashedPassword
+      id, userId, finalName, finalImageUrl, finalEmail, hashedPassword
     );
 
-    const profile = { id, userId, name, imageUrl: finalImageUrl, email: finalEmail };
+    const profile = { id, userId, name: finalName, imageUrl: finalImageUrl, email: finalEmail };
 
     // Auto-join the default server if it exists
     const defaultServer = await db.server.findFirst({
