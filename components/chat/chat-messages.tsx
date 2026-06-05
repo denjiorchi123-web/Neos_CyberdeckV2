@@ -106,12 +106,14 @@ export function ChatMessages({
     }
   }, [data, socket, member.id, type, chatId]);
 
+  const messageCount = data?.pages.reduce((count, page) => count + (page?.items?.length ?? 0), 0) ?? 0;
+
   useChatScroll({
     chatRef,
     bottomRef,
     loadMore: fetchNextPage,
     shouldLoadMore: !isFetchingNextPage && !!hasNextPage,
-    count: data?.pages?.[0]?.items?.length ?? 0
+    count: messageCount
   });
 
   if (status === "loading")
@@ -146,7 +148,8 @@ export function ChatMessages({
       onPointerUp={deactivateTouchScroll}
       onPointerCancel={deactivateTouchScroll}
       onPointerLeave={deactivateTouchScroll}
-      className="touch-scroll flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+      className="touch-scroll chat-scroll-viewport flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+      style={{ touchAction: "pan-y", WebkitOverflowScrolling: "touch" as any }}
     >
       {hasNextPage && (
         <div className="flex justify-center">

@@ -50,21 +50,9 @@ export const useChatScroll = ({
       return;
     }
 
-    const shouldAutoScroll = () => {
-      if (!hasInitialized && bottomDiv) {
-        setHasInitialized(true);
-        return true;
-      }
-
-      if (!topDiv) return false;
-
-      const distanceFromBottom =
-        topDiv.scrollHeight - topDiv.scrollTop - topDiv.clientHeight;
-      return distanceFromBottom <= 150; // Allow a 150px "snap" zone
-    };
-
-    if (shouldAutoScroll()) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (bottomDiv) {
+      if (!hasInitialized) setHasInitialized(true);
+      bottomDiv.scrollIntoView({ behavior: hasInitialized ? "smooth" : "auto", block: "end" });
     }
   }, [bottomRef, chatRef, count, hasInitialized]);
 };

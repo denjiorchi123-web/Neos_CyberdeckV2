@@ -567,7 +567,42 @@ function ChatItemInner({
   const canEdit     = !deleted && isOwner && !fileUrl;
 
   const controls = useAnimation();
+  const messageRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    pointerStartRef.current = null;
+  };
+
+  const startLongPress = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "touch") return;
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      messageRef.current?.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }));
+      clearLongPress();
+    }, 550);
+  };
+
+  const cancelLongPressOnMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = pointerStartRef.current;
+    if (!start) return;
+    const dx = Math.abs(event.clientX - start.x);
+    const dy = Math.abs(event.clientY - start.y);
+    if (dx > 12 || dy > 12) clearLongPress();
+  };
+
   const onDragEnd = (event: any, info: any) => {
+    clearLongPress();
     // If dragged right more than 40px or flicked right with velocity
     if (info.offset.x > 40 || info.velocity.x > 300) {
       setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
@@ -693,20 +728,27 @@ function ChatItemInner({
       )}
 
       <ContextMenu>
-              <ContextMenuTrigger asChild disabled={hasOpenableMedia}>
+        <ContextMenuTrigger asChild>
           <motion.div 
+            ref={messageRef}
             id={`message-${id}`} 
             drag={hasOpenableMedia ? false : "x"}
             dragConstraints={{ left: 0, right: 80 }}
             dragElastic={0.2}
             dragDirectionLock
             onDragEnd={onDragEnd}
+            onPointerDown={startLongPress}
+            onPointerMove={cancelLongPressOnMove}
+            onPointerUp={clearLongPress}
+            onPointerCancel={clearLongPress}
+            onPointerLeave={clearLongPress}
             animate={controls}
             className={cn(
-              "relative group flex items-start px-4 mb-4 w-full touch-pan-y",
+              "relative group flex items-start px-4 mb-4 w-full touch-pan-y chat-message-touch-target",
               hasOpenableMedia ? "cursor-default" : "cursor-pointer",
               isOwner ? "justify-end" : "justify-start"
             )}
+            style={{ touchAction: "pan-y" }}
           >
             <div className={cn("flex max-w-[80%] gap-x-3", isOwner ? "flex-row-reverse" : "flex-row")}>
           {!isOwner && (
@@ -1033,7 +1075,6 @@ function ChatItemInner({
       </motion.div>
       </ContextMenuTrigger>
       
-      {!hasOpenableMedia && (
       <ContextMenuContent className="w-48 bg-black/90 border-white/10 text-zinc-300">
         <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={() => setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl })}>
           <Reply className="mr-2 h-4 w-4" /> Reply
@@ -1065,7 +1106,6 @@ function ChatItemInner({
           </>
         )}
       </ContextMenuContent>
-      )}
       </ContextMenu>
     </>
   );

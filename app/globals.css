@@ -74,6 +74,17 @@ body {
   border-radius: 999px;
 }
 
+.chat-scroll-viewport {
+  touch-action: pan-y;
+  overflow-anchor: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-message-touch-target {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+}
+
 .touch-scroll-x,
 .overflow-x-auto {
   -webkit-overflow-scrolling: touch;
