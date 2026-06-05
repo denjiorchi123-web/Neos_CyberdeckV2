@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import { io as ClientIO } from "socket.io-client";
 import { useModal } from "@/hooks/use-modal-store";
+import { useRouter } from "next/navigation";
 
 type OnlineUser = {
   userId: string;
@@ -68,6 +69,7 @@ export const usePreferences = () => useContext(PreferencesContext);
 
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { onOpen } = useModal();
+  const router = useRouter();
   const [socket,      setSocket]      = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
@@ -176,6 +178,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     s.on("mesh:pair-request", (data: { mac: string; hostname: string; userId?: string; displayName?: string; publicName?: string; ip: string }) => {
       console.log("[SocketProvider] Received mesh:pair-request global event:", data);
       openPairingRequest(data);
+    });
+
+    s.on("chat:refresh-list", () => {
+      router.refresh();
     });
 
     setSocket(s);

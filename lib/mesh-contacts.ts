@@ -45,10 +45,23 @@ export async function ensureAcceptedMeshContact(input: MeshContactInput) {
   const username = cleanName(input.username);
   const userId = contactUserId(input.userId, input.macAddress);
 
-  const defaultServer = await db.server.findFirst({
+  let defaultServer = await db.server.findFirst({
     where: { inviteCode: "cyberdeck-default" },
   });
-  if (!defaultServer) throw new Error("Default chat server is missing");
+  if (!defaultServer) {
+    // Find a local profile to own the server
+    const anyLocalProfile = await db.profile.findFirst();
+    if (!anyLocalProfile) throw new Error("No local profile exists to own the default server");
+    
+    defaultServer = await db.server.create({
+      data: {
+        name: "CyberDeck Main",
+        imageUrl: "",
+        inviteCode: "cyberdeck-default",
+        profileId: anyLocalProfile.id,
+      }
+    });
+  }
 
   let profile = await findReusableContactProfile(userId, username);
   if (!profile) {

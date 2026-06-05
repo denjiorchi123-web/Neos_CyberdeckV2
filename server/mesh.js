@@ -1112,23 +1112,86 @@ async function receiveDirectMessageSync(data, peerIp) {
   }
   if (typeof message.id !== "string" || typeof message.content !== "string") return;
 
-  const trustedPeer = fromNodeId
+  let trustedPeer = fromNodeId
     ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
     : null;
+  
+  if (trustedPeer && trustedPeer.status === "BLOCKED") {
+    console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync from blocked peer ${fromUsername}`);
+    return;
+  }
+
+  let found = await findDirectConversationByNames(fromUsername, toUsername);
+
   if (
+    !found ||
     !trustedPeer ||
     !TRUSTED_STATUSES.has(trustedPeer.status) ||
     trustedPeer.publicName !== fromUsername ||
     (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
   ) {
-    console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync from unaccepted peer ${fromUsername}`);
-    return;
-  }
+    console.log(`> [NodeMesh][SYNC] Auto-creating unknown contact and conversation for ${fromUsername}`);
+    
+    const defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
+    if (!defaultServer) {
+       console.error("> [NodeMesh][SYNC] Cannot auto-create unknown contact without default server");
+       return;
+    }
+    
+    const userId = fromUserId || `mesh_${fromNodeId || Date.now()}`;
+    const email = `${userId.replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
+    
+    let profile = await db.profile.findUnique({ where: { userId } });
+    if (!profile) {
+      const sameName = await db.$queryRawUnsafe(`SELECT * FROM Profile WHERE lower(trim(name)) = lower(trim(?)) ORDER BY createdAt ASC`, fromUsername);
+      if (sameName && sameName.length) profile = sameName[0];
+    }
+    if (!profile) {
+      profile = await db.profile.create({
+        data: { userId, name: fromUsername, imageUrl: "", email, password: "", isOnline: new Date() }
+      });
+    }
 
-  const found = await findDirectConversationByNames(fromUsername, toUsername);
-  if (!found) {
-    console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync: missing local profiles for ${fromUsername}/${toUsername}`);
-    return;
+    let member = await db.member.findFirst({ where: { profileId: profile.id, serverId: defaultServer.id } });
+    if (!member) {
+      member = await db.member.create({ data: { profileId: profile.id, serverId: defaultServer.id, role: "GUEST" } });
+    }
+
+    if (fromNodeId) {
+      await db.meshPeer.upsert({
+        where: { macAddress: fromNodeId },
+        update: { userId, status: "TRUSTED", publicName: fromUsername, displayName: fromUsername, lastHandshake: new Date() },
+        create: { macAddress: fromNodeId, userId, status: "TRUSTED", hostname: "", ipAddress: peerIp, publicName: fromUsername, displayName: fromUsername, lastHandshake: new Date() }
+      }).catch(() => null);
+    }
+    
+    const toProfile = await db.profile.findFirst({ where: { name: toUsername } });
+    if (toProfile) {
+      const toMember = await db.member.findFirst({ where: { profileId: toProfile.id, serverId: defaultServer.id } });
+      if (toMember) {
+        let conversation = await db.conversation.findFirst({
+          where: {
+            OR: [
+              { memberOneId: toMember.id, memberTwoId: member.id },
+              { memberOneId: member.id, memberTwoId: toMember.id }
+            ]
+          }
+        });
+        if (!conversation) {
+          conversation = await db.conversation.create({
+            data: { memberOneId: toMember.id, memberTwoId: member.id }
+          });
+        }
+      }
+    }
+
+    found = await findDirectConversationByNames(fromUsername, toUsername);
+    if (!found) {
+      console.error(`> [NodeMesh][SYNC] Failed to auto-create conversation for ${fromUsername}`);
+      return;
+    }
+    
+    if (ioEmitter) ioEmitter.emit("chat:refresh-list");
   }
 
   if (message.fileUrl) {
@@ -1748,7 +1811,26 @@ function joinMulticastGroups(udp) {
   } catch {}
 }
 
+async function ensureDefaultServer() {
+  let defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
+  if (!defaultServer) {
+    const anyLocalProfile = await db.profile.findFirst();
+    if (anyLocalProfile) {
+      await db.server.create({
+        data: {
+          name: "CyberDeck Main",
+          imageUrl: "",
+          inviteCode: "cyberdeck-default",
+          profileId: anyLocalProfile.id,
+        }
+      });
+      console.log("> [NodeMesh] Auto-created cyberdeck-default server on startup.");
+    }
+  }
+}
+
 function startMeshDiscovery() {
+  ensureDefaultServer().catch(e => console.error("> [NodeMesh] Failed to ensure default server:", e.message));
   const myMac = getMac();
   const udp = dgram.createSocket({ type: "udp4", reuseAddr: true });
   let beaconTick = 0;
