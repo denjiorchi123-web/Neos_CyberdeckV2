@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Network,
   Cpu,
+  Send,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -25,6 +26,7 @@ interface Peer {
 interface LauncherResponse {
   self: { hostname: string };
   peers: Peer[];
+  lanReady?: boolean;
 }
 
 export default function LauncherPage() {
@@ -32,6 +34,9 @@ export default function LauncherPage() {
   const [selfName, setSelfName]   = useState<string>("THIS DEVICE");
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefresh]  = useState(false);
+  const [manualIp, setManualIp]   = useState("");
+  const [manualBusy, setManualBusy] = useState(false);
+  const [manualError, setManualError] = useState("");
 
   // Pairing Handshake states
   const [pairingPeer, setPairingPeer] = useState<any>(null);
@@ -46,6 +51,12 @@ export default function LauncherPage() {
     try {
       const res  = await fetch("/api/peers", { cache: "no-store" });
       const data = (await res.json()) as LauncherResponse;
+      
+      if (data.lanReady === false && (!data.peers || data.peers.length === 0)) {
+        router.push("/");
+        return;
+      }
+      
       setPeers(data.peers || []);
       if (data.self?.hostname) setSelfName(data.self.hostname.toUpperCase());
     } catch {
@@ -65,19 +76,36 @@ export default function LauncherPage() {
   // Poll the durable SQLite request row while waiting for the remote user.
   useEffect(() => {
     if (!pairingRequestId) return;
+    let timer: any;
     const poll = async () => {
-      const res = await fetch(`/api/peers/requests?requestId=${pairingRequestId}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const [request] = await res.json();
-      if (request?.status === "ACCEPTED") setPairingStatus("Trusted peer relationship established.");
-      if (request?.status === "DECLINED") setPairingError("Connection was declined by the peer.");
-      if (request?.status === "IGNORED") setPairingError("Connection request was ignored by the peer.");
-      if (request?.status === "BLOCKED") setPairingError("Connection request was blocked by the peer.");
+      try {
+        const res = await fetch(`/api/peers/requests?requestId=${pairingRequestId}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const [request] = await res.json();
+        if (!request) return;
+
+        if (request.status === "ACCEPTED") {
+          setPairingStatus("Trusted peer relationship established. Routing...");
+          clearInterval(timer);
+          setTimeout(() => router.push("/"), 1500);
+        } else if (request.status === "DECLINED") {
+          setPairingError("Connection was declined by the peer.");
+          clearInterval(timer);
+        } else if (request.status === "IGNORED") {
+          setPairingError("Connection request was ignored by the peer.");
+          clearInterval(timer);
+        } else if (request.status === "BLOCKED") {
+          setPairingError("Connection request was blocked by the peer.");
+          clearInterval(timer);
+        }
+      } catch (err) {
+        // ignore fetch errors during polling
+      }
     };
     poll();
-    const timer = setInterval(poll, 2500);
+    timer = setInterval(poll, 2500);
     return () => clearInterval(timer);
-  }, [pairingRequestId]);
+  }, [pairingRequestId, router]);
 
   const useThisDevice = () => {
     router.push("/");
@@ -119,8 +147,47 @@ export default function LauncherPage() {
     }
   };
 
+  const connectToManualIp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const ipAddress = manualIp.trim();
+    if (!ipAddress || manualBusy) return;
+
+    setManualBusy(true);
+    setManualError("");
+    setPairingError("");
+    setPairingPeer({
+      name: "Manual peer",
+      host: ipAddress,
+      macAddress: ""
+    });
+    setPairingStatus("Sending secure request to static IP...");
+
+    try {
+      const res = await fetch("/api/peers/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ipAddress })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Could not reach that peer IP.");
+      }
+
+      const body = await res.json();
+      setPairingRequestId(body.requestId);
+      setPairingStatus("Request sent. Waiting for the peer to accept...");
+    } catch (err: any) {
+      const message = err.message || "Could not reach that peer IP.";
+      setManualError(message);
+      setPairingError(message);
+    } finally {
+      setManualBusy(false);
+    }
+  };
+
   return (
-    <div className="touch-scroll min-h-screen bg-[#0a0e14] text-zinc-100 flex flex-col items-center justify-start py-5 sm:py-8 px-4 sm:px-6 font-mono overflow-y-auto">
+    <div className="touch-scroll h-screen bg-[#0a0e14] text-zinc-100 flex flex-col items-center justify-start py-5 sm:py-8 px-4 sm:px-6 font-mono overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: "touch" }}>
       <div className="max-w-2xl w-full space-y-5 sm:space-y-8">
         <div className="text-center space-y-2">
           <h1 className="text-3xl sm:text-4xl uppercase tracking-[0.3em] font-black bg-gradient-to-r from-zinc-100 via-indigo-200 to-zinc-100 bg-clip-text text-transparent">CyberDeck</h1>
@@ -146,6 +213,49 @@ export default function LauncherPage() {
           </div>
           <ChevronRight className="h-6 w-6 group-hover:translate-x-1 transition" />
         </motion.button>
+
+        <form
+          onSubmit={connectToManualIp}
+          className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4 sm:p-5 space-y-3"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xs uppercase text-zinc-500 tracking-widest">
+                Direct peer IP
+              </h2>
+              <p className="text-xs text-zinc-600 normal-case tracking-normal mt-1">
+                Static LAN request
+              </p>
+            </div>
+            <Network className="h-5 w-5 text-indigo-300" />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              value={manualIp}
+              onChange={(event) => {
+                setManualIp(event.target.value);
+                if (manualError) setManualError("");
+              }}
+              disabled={manualBusy}
+              inputMode="decimal"
+              placeholder="10.0.0.2"
+              className="min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-indigo-500/70"
+            />
+            <button
+              type="submit"
+              disabled={manualBusy || manualIp.trim().length === 0}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 py-3 text-sm font-bold uppercase tracking-wider text-zinc-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {manualBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Connect
+            </button>
+          </div>
+          {manualError && (
+            <p className="text-xs text-rose-400 normal-case tracking-normal">
+              {manualError}
+            </p>
+          )}
+        </form>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">

@@ -100,11 +100,11 @@ export default function NetworkDiagnosticsPage() {
   const isHealthy = !error && health !== null;
 
   return (
-    <div className="min-h-screen w-full flex-col bg-[#111214] text-zinc-300 p-6 font-mono">
+    <div className="touch-scroll h-screen w-full overflow-y-auto bg-[#111214] text-zinc-300 p-4 sm:p-6 font-mono">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-400 flex items-center gap-2 tracking-widest uppercase">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-emerald-400 flex flex-wrap items-center gap-2 tracking-widest uppercase">
             <button 
               onClick={() => router.push("/")}
               className="p-1 hover:bg-zinc-800 rounded-md transition-colors mr-2"
@@ -125,7 +125,7 @@ export default function NetworkDiagnosticsPage() {
           </h1>
           <p className="text-zinc-500 text-sm mt-1">Air-Gapped Encrypted Mesh Network Control Center</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 shrink-0">
           <div className="text-right">
             <p className="text-xs text-zinc-500 uppercase tracking-widest">System Status</p>
             {isHealthy ? (

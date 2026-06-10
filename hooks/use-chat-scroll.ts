@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 type ChatScrollProps = {
   chatRef: React.RefObject<HTMLDivElement>;
@@ -6,6 +6,7 @@ type ChatScrollProps = {
   shouldLoadMore: boolean;
   loadMore: () => void;
   count: number;
+  isLoadingMore?: boolean;
 };
 
 export const useChatScroll = ({
@@ -13,9 +14,12 @@ export const useChatScroll = ({
   bottomRef,
   shouldLoadMore,
   loadMore,
-  count
+  count,
+  isLoadingMore = false
 }: ChatScrollProps) => {
-  const [hasInitialized, setHasInitialized] = useState(false);
+  const hasInitialized = useRef(false);
+  const pendingHistoryLoad = useRef(false);
+  const previousCount = useRef(0);
   const previousScrollHeight = useRef(0);
 
   useEffect(() => {
@@ -28,7 +32,8 @@ export const useChatScroll = ({
       const { scrollTop, scrollHeight } = topDiv;
       const isAtTop = scrollTop <= 100;
 
-      if (isAtTop && shouldLoadMore) {
+      if (isAtTop && shouldLoadMore && !pendingHistoryLoad.current) {
+        pendingHistoryLoad.current = true;
         previousScrollHeight.current = scrollHeight;
         loadMore();
       }
@@ -40,19 +45,35 @@ export const useChatScroll = ({
   }, [shouldLoadMore, loadMore, chatRef]);
 
   useEffect(() => {
+    if (!isLoadingMore && pendingHistoryLoad.current && previousCount.current === count) {
+      pendingHistoryLoad.current = false;
+      previousScrollHeight.current = 0;
+    }
+  }, [count, isLoadingMore]);
+
+  useLayoutEffect(() => {
     const bottomDiv = bottomRef?.current;
     const topDiv = chatRef?.current;
 
-    if (topDiv && previousScrollHeight.current > 0) {
+    if (!topDiv) return;
+
+    if (pendingHistoryLoad.current && previousScrollHeight.current > 0) {
       const heightDelta = topDiv.scrollHeight - previousScrollHeight.current;
-      topDiv.scrollTop = heightDelta;
+      topDiv.scrollTop = Math.max(0, heightDelta);
+      previousCount.current = count;
+      pendingHistoryLoad.current = false;
       previousScrollHeight.current = 0;
       return;
     }
 
     if (bottomDiv) {
-      if (!hasInitialized) setHasInitialized(true);
-      bottomDiv.scrollIntoView({ behavior: hasInitialized ? "smooth" : "auto", block: "end" });
+      const didAddMessages = count > previousCount.current;
+      bottomDiv.scrollIntoView({
+        behavior: hasInitialized.current && didAddMessages ? "smooth" : "auto",
+        block: "end"
+      });
+      hasInitialized.current = true;
+      previousCount.current = count;
     }
-  }, [bottomRef, chatRef, count, hasInitialized]);
+  }, [bottomRef, chatRef, count]);
 };

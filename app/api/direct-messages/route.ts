@@ -52,7 +52,7 @@ export async function GET(req: Request) {
           createdAt: { gt: clearedAt }
         },
         include: includeConfig,
-        orderBy: { createdAt: "desc" }
+        orderBy: { seqId: "desc" }
       });
     } else {
       messages = await db.directMessage.findMany({
@@ -62,7 +62,7 @@ export async function GET(req: Request) {
           createdAt: { gt: clearedAt }
         },
         include: includeConfig,
-        orderBy: { createdAt: "desc" }
+        orderBy: { seqId: "desc" }
       });
     }
 

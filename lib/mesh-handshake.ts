@@ -1,7 +1,7 @@
 import "server-only";
 
 import os from "os";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getLocalIp, getLocalNodeId, MESH_CONTROL_PORT } from "@/lib/mesh-identity";
 import { sendMeshControl } from "@/lib/mesh-control";
@@ -16,11 +16,24 @@ import {
 } from "@/lib/trusted-peers";
 
 const REQUEST_TTL_MS = 5 * 60 * 1000;
+const MANUAL_PEER_PREFIX = "manual-ip:";
 
 type MeshProfileIdentity = {
   id: string;
   name: string;
 };
+
+function manualPeerNodeId(ipAddress: string) {
+  return `${MANUAL_PEER_PREFIX}${createHash("sha1").update(ipAddress).digest("hex").slice(0, 24)}`;
+}
+
+export function isManualPeerNodeId(nodeId: string) {
+  return nodeId.startsWith(MANUAL_PEER_PREFIX);
+}
+
+function normalizeIpAddress(value: string) {
+  return value.startsWith("::ffff:") ? value.slice(7) : value.trim();
+}
 
 export async function sendConnectionRequest(
   profile: MeshProfileIdentity,
@@ -80,6 +93,49 @@ export async function sendConnectionRequest(
   });
 
   return { requestId, expiresAt };
+}
+
+export async function sendConnectionRequestToIp(
+  profile: MeshProfileIdentity,
+  ipAddress: string,
+  message?: string,
+) {
+  const peerIp = normalizeIpAddress(ipAddress);
+  if (!profile.name?.trim()) throw new Error("Cannot send mesh identity without a logged-in username");
+
+  const requestId = randomUUID();
+  const localNodeId = getLocalNodeId();
+  const expiresAt = new Date(Date.now() + REQUEST_TTL_MS);
+  const temporaryPeerNodeId = manualPeerNodeId(peerIp);
+
+  await db.connectionRequest.create({
+    data: {
+      requestId,
+      fromNodeId: localNodeId,
+      toNodeId: temporaryPeerNodeId,
+      direction: "OUTGOING",
+      status: "PENDING",
+      message,
+      expiresAt,
+    },
+  });
+
+  await sendMeshControl(peerIp, {
+    type: "connection_request",
+    requestId,
+    fromNodeId: localNodeId,
+    fromUserId: profile.id,
+    fromUsername: profile.name,
+    fromHostname: os.hostname(),
+    fromPublicName: profile.name,
+    fromDeviceName: os.hostname(),
+    fromIp: getLocalIp(),
+    securityStatus: VERIFIED_LAN_STATUS,
+    message: message || `${profile.name} wants to connect`,
+    expiresAt: expiresAt.getTime(),
+  });
+
+  return { requestId, expiresAt, targetIp: peerIp };
 }
 
 export async function respondToConnectionRequest(

@@ -1,5 +1,0 @@
-select vdisk file="C:\Users\brije\AppData\Local\wsl\{7acfed25-66fa-4d2a-a295-5ff5cbbfcd2a}\ext4.vhdx"
-attach vdisk readonly
-compact vdisk
-detach vdisk
-exit

@@ -217,6 +217,9 @@ model DirectMessage {
   deliveredAt DateTime?
   readAt      DateTime?
 
+  seqId       Int       @default(0)
+  senderSeqId Int?
+
   edits DirectMessageEdit[]
 
   expiresAt DateTime?
@@ -227,6 +230,7 @@ model DirectMessage {
   @@index([memberId])
   @@index([conversationId])
   @@index([conversationId, createdAt(sort: Desc)])
+  @@index([conversationId, seqId(sort: Desc)])
 }
 
 model CallHistory {

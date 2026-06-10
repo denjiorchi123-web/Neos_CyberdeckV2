@@ -37,6 +37,44 @@ if command -v ssh-keygen >/dev/null 2>&1; then
   ssh-keygen -A
 fi
 
+echo "[CyberDeck] Enabling automatic IPv4 link-local on eth0..."
+if command -v nmcli >/dev/null 2>&1; then
+  if ! nmcli -t -f NAME con show | grep -qx "cyberdeck-lan"; then
+    nmcli con add type ethernet ifname eth0 con-name cyberdeck-lan autoconnect yes >/dev/null 2>&1 || true
+  fi
+  nmcli con mod cyberdeck-lan \
+    connection.interface-name eth0 \
+    connection.autoconnect yes \
+    ipv4.method link-local \
+    ipv4.never-default yes \
+    ipv6.method disabled >/dev/null 2>&1 || true
+  nmcli con up cyberdeck-lan >/dev/null 2>&1 || true
+elif command -v networkctl >/dev/null 2>&1; then
+  mkdir -p /etc/systemd/network
+  cat > /etc/systemd/network/10-cyberdeck-eth0.network <<'EOF'
+[Match]
+Name=eth0
+
+[Network]
+DHCP=no
+LinkLocalAddressing=ipv4
+IPv6AcceptRA=no
+EOF
+  systemctl enable systemd-networkd.service >/dev/null 2>&1 || true
+  systemctl restart systemd-networkd.service >/dev/null 2>&1 || true
+elif [ -f /etc/dhcpcd.conf ]; then
+  if ! grep -q "CyberDeck eth0 link-local" /etc/dhcpcd.conf; then
+    cat >> /etc/dhcpcd.conf <<'EOF'
+
+# CyberDeck eth0 link-local fallback for direct cable pairing.
+interface eth0
+ipv4ll
+noipv6
+EOF
+  fi
+  systemctl restart dhcpcd.service >/dev/null 2>&1 || true
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
   systemctl unmask ssh.service 2>/dev/null || true
   systemctl unmask sshd.service 2>/dev/null || true
@@ -45,5 +83,6 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 echo "[CyberDeck] LAN SSH enabled."
+echo "[CyberDeck] eth0 will self-assign a 169.254.x.x address when no router is present."
 echo "[CyberDeck] Verify with: systemctl is-active ssh || systemctl is-active sshd"
 echo "[CyberDeck] From another LAN node: ssh <user>@<pi-ethernet-ip>"

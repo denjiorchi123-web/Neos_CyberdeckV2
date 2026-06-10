@@ -158,9 +158,13 @@ async function relayMeshCallSignal(
 ) {
   let peer = await findMeshCallPeer(data?.targetUserId);
   if (!peer && data?.callId) {
-    const route = await redis.hgetall(`mesh:call:${data.callId}`);
-    if (route?.peerMac) {
-      peer = await db.meshPeer.findUnique({ where: { macAddress: route.peerMac } });
+    try {
+      const route = await redis.hgetall(`mesh:call:${data.callId}`);
+      if (route?.peerMac) {
+        peer = await db.meshPeer.findUnique({ where: { macAddress: route.peerMac } });
+      }
+    } catch (err: any) {
+      console.error("[WebRTC] Redis error getting call route:", err.message);
     }
   }
   if (!peer?.ipAddress) return false;
@@ -174,15 +178,19 @@ async function relayMeshCallSignal(
   const signalUserId = meshIdentity?.profileId || localSocketUserId;
 
   if (data?.callId) {
-    await redis.hset(`mesh:call:${data.callId}`, {
-      localChatId: data.chatId || "",
-      localUserId: localSocketUserId,
-      localSignalUserId: signalUserId,
-      peerMac: peer.macAddress,
-      peerIp: peer.ipAddress,
-      peerName: peer.publicName || "",
-    });
-    await redis.expire(`mesh:call:${data.callId}`, 60 * 60);
+    try {
+      await redis.hset(`mesh:call:${data.callId}`, {
+        localChatId: data.chatId || "",
+        localUserId: localSocketUserId,
+        localSignalUserId: signalUserId,
+        peerMac: peer.macAddress,
+        peerIp: peer.ipAddress,
+        peerName: peer.publicName || "",
+      });
+      await redis.expire(`mesh:call:${data.callId}`, 60 * 60);
+    } catch (err: any) {
+      console.error("[WebRTC] Redis error saving call route:", err.message);
+    }
   }
 
   await sendMeshControl(peer.ipAddress, {
@@ -211,10 +219,11 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
       transports: ["websocket", "polling"], // Reliable fallback chain
     });
 
-    // ── Redis Adapter ──────────────────────────────────────────
-    // Enables cross-node pub/sub so multiple Next.js instances
-    // (multiple Pi nodes) can relay socket events to each other.
-    io.adapter(createAdapter(redisPub, redisSub));
+    // ── Global Socket.IO Instance ──────────────────────────────
+    // Expose io to global so mesh.js can access it directly
+    // without needing Redis or @socket.io/redis-emitter!
+    // @ts-ignore
+    global.nextIo = io;
 
     // ── Connection Handler ─────────────────────────────────────
     io.on("connection", async (socket) => {
@@ -444,36 +453,42 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
             startTime: String(Date.now()),
           };
 
-          // #1: offline check
-          const isOnline = await redis.sismember("presence:online", data.targetUserId);
-          if (!isOnline) {
-            if (await relayMeshCallSignal("call:start", data, socket)) return;
-            await writeCallMeta(data.chatId, { ...startMeta, status: "offline" });
-            if (data.callerUserId) {
-              io.to(`user:${data.callerUserId}`).emit("call:offline", {
-                chatId: data.chatId,
-                callId: data.callId,
-                targetUserId: data.targetUserId,
-              });
+          try {
+            // #1: offline check
+            const isOnline = await redis.sismember("presence:online", data.targetUserId);
+            if (!isOnline) {
+              if (await relayMeshCallSignal("call:start", data, socket)) return;
+              await writeCallMeta(data.chatId, { ...startMeta, status: "offline" });
+              if (data.callerUserId) {
+                io.to(`user:${data.callerUserId}`).emit("call:offline", {
+                  chatId: data.chatId,
+                  callId: data.callId,
+                  targetUserId: data.targetUserId,
+                });
+              }
+              return;
             }
-            return;
-          }
 
-          // #4: busy check — target already has an active call in another room
-          const targetActiveCall = await redis.get(`user:${data.targetUserId}:activeCall`);
-          if (targetActiveCall && targetActiveCall !== data.chatId) {
-            await writeCallMeta(data.chatId, { ...startMeta, status: "busy" });
-            if (data.callerUserId) {
-              io.to(`user:${data.callerUserId}`).emit("call:busy", {
-                chatId: data.chatId,
-                callId: data.callId,
-                targetUserId: data.targetUserId,
-              });
+            // #4: busy check — target already has an active call in another room
+            const targetActiveCall = await redis.get(`user:${data.targetUserId}:activeCall`);
+            if (targetActiveCall && targetActiveCall !== data.chatId) {
+              await writeCallMeta(data.chatId, { ...startMeta, status: "busy" });
+              if (data.callerUserId) {
+                io.to(`user:${data.callerUserId}`).emit("call:busy", {
+                  chatId: data.chatId,
+                  callId: data.callId,
+                  targetUserId: data.targetUserId,
+                });
+              }
+              return;
             }
-            return;
-          }
 
-          await writeCallMeta(data.chatId, startMeta);
+            await writeCallMeta(data.chatId, startMeta);
+          } catch (err: any) {
+            console.error("[CallStart] Redis error:", err.message);
+            // Fallback: write call metadata anyway to allow direct mesh calling
+            await writeCallMeta(data.chatId, startMeta);
+          }
         } else if (data.callerUserId) {
           // Group/channel call: still seed meta so cleanup logs sensibly.
           await writeCallMeta(data.chatId, {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import os from "os";
 import { db } from "@/lib/db";
-import { getLocalNodeId } from "@/lib/mesh-identity";
+import { getLocalNodeId, isDirectEthernetReady } from "@/lib/mesh-identity";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -52,8 +52,9 @@ export async function GET() {
         hostname: myHostname,
       },
       peers,
+      lanReady: isDirectEthernetReady(),
     });
   } catch (error) {
-     return NextResponse.json({ self: { hostname: os.hostname() }, peers: [] });
+     return NextResponse.json({ self: { hostname: os.hostname() }, peers: [], lanReady: false });
   }
 }

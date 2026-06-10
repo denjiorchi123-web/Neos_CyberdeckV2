@@ -10,28 +10,36 @@ export function normalizeSecurityStatus(value: unknown) {
   return status ? status.slice(0, 64) : VERIFIED_LAN_STATUS;
 }
 
+let peerTablesReady: Promise<void> | null = null;
+
 export async function ensureTrustedPeerTables(db: SqliteExecutor) {
-  await db.$queryRawUnsafe("PRAGMA journal_mode=WAL");
-  await db.$queryRawUnsafe("PRAGMA busy_timeout=30000");
-  await db.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS trusted_peers (
-      mac_id TEXT PRIMARY KEY,
-      host_address TEXT,
-      security_status TEXT,
-      paired_at INTEGER,
-      is_active INTEGER DEFAULT 1
-    )
-  `);
-  await db.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS rejected_peers (
-      request_id TEXT PRIMARY KEY,
-      mac_id TEXT,
-      host_address TEXT,
-      security_status TEXT,
-      action TEXT,
-      rejected_at INTEGER
-    )
-  `);
+  if (!peerTablesReady) {
+    peerTablesReady = (async () => {
+      await db.$queryRawUnsafe("PRAGMA journal_mode=WAL");
+      await db.$queryRawUnsafe("PRAGMA synchronous=FULL");
+      await db.$queryRawUnsafe("PRAGMA busy_timeout=30000");
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS trusted_peers (
+          mac_id TEXT PRIMARY KEY,
+          host_address TEXT,
+          security_status TEXT,
+          paired_at INTEGER,
+          is_active INTEGER DEFAULT 1
+        )
+      `);
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS rejected_peers (
+          request_id TEXT PRIMARY KEY,
+          mac_id TEXT,
+          host_address TEXT,
+          security_status TEXT,
+          action TEXT,
+          rejected_at INTEGER
+        )
+      `);
+    })();
+  }
+  return peerTablesReady;
 }
 
 export async function readConnectionRequestPayload(db: SqliteExecutor, requestId: string) {

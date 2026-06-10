@@ -1,5 +1,6 @@
 import qs from "query-string";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 
 import { useSocket } from "@/components/providers/socket-provider";
 
@@ -17,6 +18,7 @@ export const useChatQuery = ({
   paramValue
 }: ChatQueryProps) => {
   const { isConnected } = useSocket();
+  const prevConnected = useRef(false);
 
   const fetchMessages = async ({ pageParam = undefined }) => {
     const url = qs.stringifyUrl(
@@ -34,14 +36,38 @@ export const useChatQuery = ({
     return res.json();
   };
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } =
-    useInfiniteQuery({
-      queryKey: [queryKey],
-      queryFn: fetchMessages,
-      getNextPageParam: (lastPage) => lastPage?.nextCursor,
-      refetchInterval: isConnected ? false : 5000,
-      staleTime: 1000 * 60 * 5, // Cache messages for 5 minutes
-    });
+  const query = useInfiniteQuery({
+    queryKey: [queryKey],
+    queryFn: fetchMessages,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor,
+    // Always load from DB on first mount — this is how historical messages
+    // appear after a reboot even before any new socket events arrive.
+    refetchOnMount: true,
+    // When socket re-connects after being down, refetch so DB messages
+    // that arrived while offline (synced by mesh) show up immediately.
+    refetchOnReconnect: true,
+    // When socket is connected, real-time updates arrive via useChatSocket.
+    // Only fall back to polling (every 5s) when the socket is offline.
+    refetchInterval: isConnected ? false : 5000,
+    staleTime: 0,
+  });
 
-  return { data, fetchNextPage, hasNextPage, isFetchingNextPage, status };
+  // Whenever the socket transitions from disconnected → connected,
+  // force a REST refetch so any messages that the mesh synced to the local
+  // DB while the socket was down are immediately visible in the UI.
+  useEffect(() => {
+    if (isConnected && !prevConnected.current) {
+      query.refetch();
+    }
+    prevConnected.current = isConnected;
+  }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return {
+    data: query.data,
+    fetchNextPage: query.fetchNextPage,
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    status: query.status,
+  };
 };
+

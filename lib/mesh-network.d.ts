@@ -7,8 +7,10 @@ export type MeshLanInterface = {
   score: number;
 };
 
+export function broadcastFor(address: string, netmask: string): string | null;
 export function getBroadcastAddresses(): string[];
 export function getConfiguredFallbackIps(): string[];
+export function getDirectProbeAddresses(): string[];
 export function getLanInterfaces(): MeshLanInterface[];
 export function getLanIps(): string[];
 export function getLocalIps(): string[];
@@ -20,6 +22,8 @@ export function getNetworkSummary(): {
 };
 export function getPreferredLanIp(): string;
 export function getPreferredLanMac(): string;
+export function isIpInInterfaceSubnet(ip: string, iface: MeshLanInterface): boolean;
 export function isLanReady(): boolean;
 export function isLocalIp(ip: string): boolean;
+export function isPrivateOrLinkLocalIPv4(ip: string): boolean;
 export function normalizeIp(ip: string): string;

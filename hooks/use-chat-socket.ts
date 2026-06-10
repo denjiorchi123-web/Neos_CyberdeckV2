@@ -31,6 +31,16 @@ export const useChatSocket = ({
     const chatId = addKey.split(":")[1];
     socket.emit("chat:join", chatId);
 
+    // When the socket (re)connects — e.g. after a reboot or network blip —
+    // invalidate the query so React Query immediately fetches all historical
+    // messages from the REST API.  This surfaces any messages the mesh
+    // delivered to the local SQLite DB while the socket was offline.
+    const handleConnect = () => {
+      socket.emit("chat:join", chatId);
+      queryClient.invalidateQueries({ queryKey: [queryKey] });
+    };
+    socket.on("connect", handleConnect);
+
     socket.on(updateKey, (message: MessageWithMemberWithProfile) => {
       queryClient.setQueryData([queryKey], (oldData: any) => {
         if (!oldData || !oldData.pages || oldData.pages.length === 0) {
@@ -71,7 +81,7 @@ export const useChatSocket = ({
         const newData = [...oldData.pages];
 
         // DEDUPLICATION: Ensure we don't add the same message twice
-        const alreadyExists = newData.some(page => 
+        const alreadyExists = newData.some(page =>
           page.items.some((item: any) => item.id === message.id)
         );
         if (alreadyExists) return oldData;
@@ -89,8 +99,10 @@ export const useChatSocket = ({
     });
 
     return () => {
+      socket.off("connect", handleConnect);
       socket.off(addKey);
       socket.off(updateKey);
     };
   }, [queryClient, addKey, queryKey, socket, updateKey]);
 };
+

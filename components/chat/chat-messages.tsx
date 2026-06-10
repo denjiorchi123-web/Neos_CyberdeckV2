@@ -113,7 +113,8 @@ export function ChatMessages({
     bottomRef,
     loadMore: fetchNextPage,
     shouldLoadMore: !isFetchingNextPage && !!hasNextPage,
-    count: messageCount
+    count: messageCount,
+    isLoadingMore: isFetchingNextPage
   });
 
   if (status === "loading")

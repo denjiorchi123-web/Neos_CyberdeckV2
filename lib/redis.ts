@@ -17,6 +17,7 @@ const createRedisClient = (role?: string) => {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: false,
+    enableOfflineQueue: false,
     retryStrategy(times) {
       const delay = Math.min(times * 200, 5000);
       console.log(`[Redis:${role ?? "cmd"}] reconnecting in ${delay}ms…`);

@@ -8,6 +8,14 @@ const cluster = require("cluster");
 const os = require("os");
 const { spawn, execSync } = require("child_process");
 
+// Custom servers do not get Next's env loading until the app is prepared.
+// Mesh discovery starts before that, so load .env here for daemon settings too.
+try {
+  require("@next/env").loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
+} catch (error) {
+  console.warn(`> Unable to load Next environment config before mesh startup: ${error.message}`);
+}
+
 // ── Native Node.js Mesh Discovery ──────────────────────────────────────────────
 const { startMeshDiscovery } = require("./server/mesh");
 

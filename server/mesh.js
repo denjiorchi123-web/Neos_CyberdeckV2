@@ -6,24 +6,66 @@ const os = require("os");
 const path = require("path");
 const { PrismaClient } = require("@prisma/client");
 const {
+  broadcastFor,
   getBroadcastAddresses,
   getConfiguredFallbackIps,
+  getDirectProbeAddresses,
   getLanInterfaces,
   getLocalIps: getAllLocalIps,
   getPreferredLanIp,
   getPreferredLanMac,
+  isIpInInterfaceSubnet,
   isLocalIp,
   normalizeIp,
 } = require("../lib/mesh-network");
 
 const db = new PrismaClient();
 let redisClient = null;
-let ioEmitter = null;
+
+// ── WebSockets via Local IPC Bridge ───────────────────────────────────────────
+const https = require("https");
+
+async function emitToLocalSocket(channel, event, data) {
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({ channel, event, data });
+    const reqOpts = {
+      hostname: "127.0.0.1",
+      port: 3000,
+      path: "/api/socket/internal-emit",
+      method: "POST",
+      rejectUnauthorized: false, // Next runs on self-signed HTTPS
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(postData),
+      },
+    };
+
+    const req = https.request(reqOpts, (res) => {
+      let responseBody = "";
+      res.on("data", (chunk) => {
+        responseBody += chunk;
+      });
+      res.on("end", () => {
+        if (res.statusCode !== 200) {
+          console.warn(`> [NodeMesh][SocketIPC] Failed to emit (status ${res.statusCode}): ${responseBody}`);
+        }
+        resolve();
+      });
+    });
+
+    req.on("error", (err) => {
+      console.warn(`> [NodeMesh][SocketIPC] Network error emitting to local socket: ${err.message}`);
+      resolve();
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 try {
   const Redis = require("ioredis");
-  const { Emitter } = require("@socket.io/redis-emitter");
   redisClient = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:6379");
-  ioEmitter = new Emitter(redisClient);
 } catch {}
 const BEACON_PORT = Number(process.env.MESH_BEACON_PORT || 5005);
 const CONTROL_PORT = Number(process.env.MESH_CONTROL_PORT || 5006);
@@ -44,15 +86,24 @@ if (SECRET === "GHOSTWIRE_ALPHA_7") {
 const CONTROL_ENCRYPTION = process.env.MESH_CONTROL_ENCRYPTION !== "0";
 const MESH_MULTICAST_ADDR = process.env.MESH_MULTICAST_ADDR || "239.255.77.77";
 const MESH_SESSION_FILE = process.env.MESH_SESSION_FILE || path.join(process.cwd(), "private", "mesh-session.json");
-const MAX_CLOCK_SKEW_MS = Number(process.env.MESH_MAX_CLOCK_SKEW_MS || 24 * 60 * 60 * 1000);
+const MAX_CLOCK_SKEW_MS = Number(process.env.MESH_MAX_CLOCK_SKEW_MS || 3650 * 24 * 60 * 60 * 1000);
+const MAX_HELLO_CLOCK_SKEW_MS = Number(
+  process.env.MESH_HELLO_MAX_CLOCK_SKEW_MS || process.env.MESH_DISCOVERY_MAX_CLOCK_SKEW_MS || 3650 * 24 * 60 * 60 * 1000,
+);
 const MAX_PACKET_BYTES = Number(process.env.MESH_MAX_PACKET_BYTES || 1024 * 1024);
 const MEDIA_CHUNK_BYTES = Number(process.env.MESH_MEDIA_CHUNK_BYTES || 96 * 1024);
+const OUTBOX_SYNC_INTERVAL_MS = Number(process.env.MESH_OUTBOX_SYNC_INTERVAL_MS || 10 * 1000);
 const AUTH_FAIL_WINDOW_MS = 60 * 1000;
 const AUTH_FAIL_LIMIT = 5;
 const AUTH_RATE_LIMIT_MS = 10 * 60 * 1000;
-const TRUSTED_STATUSES = new Set(["TRUSTED", "ACCEPTED"]);
+const TRUSTED_STATUSES = new Set(["TRUSTED", "ACCEPTED", "VERIFIED LAN"]);
+const MANUAL_PEER_PREFIX = "manual-ip:";
 const authFailures = new Map();
 const learnedPeerIps = new Map();
+const beaconSendSockets = new Map();
+const multicastMemberships = new Set();
+let outboxSyncRunning = false;
+let lastOutboxSyncAt = 0;
 const VERIFIED_LAN_STATUS = "VERIFIED LAN";
 const PRIVATE_ROOT = path.join(process.cwd(), "private");
 const CYBERDECK_MEDIA_ROOT = process.env.CYBERDECK_MEDIA_ROOT || path.join(os.homedir(), "LAN_Chat_Media");
@@ -82,6 +133,7 @@ function ensureSqliteRuntime() {
   if (!sqliteRuntimeReady) {
     sqliteRuntimeReady = (async () => {
       await db.$queryRawUnsafe("PRAGMA journal_mode=WAL");
+      await db.$queryRawUnsafe("PRAGMA synchronous=FULL");
       await db.$queryRawUnsafe("PRAGMA busy_timeout=30000");
       await db.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS trusted_peers (
@@ -298,12 +350,18 @@ function verify(packet, sourceIp) {
     return null;
   }
   const skewMs = Number.isFinite(data.timestamp) ? Math.abs(Date.now() - data.timestamp) : Number.POSITIVE_INFINITY;
-  if (!Number.isFinite(data.timestamp) || skewMs > MAX_CLOCK_SKEW_MS) {
+  const allowedSkewMs = data.type === "HELLO" ? MAX_HELLO_CLOCK_SKEW_MS : MAX_CLOCK_SKEW_MS;
+  if (!Number.isFinite(data.timestamp) || skewMs > allowedSkewMs) {
     const skewSeconds = Number.isFinite(skewMs) ? Math.round(skewMs / 1000) : "missing";
     console.error(
-      `> [NodeMesh][AUTH] Rejected signed packet: clock skew ${skewSeconds}s exceeds ${Math.round(MAX_CLOCK_SKEW_MS / 1000)}s`,
+      `> [NodeMesh][AUTH] Rejected signed ${data.type || "packet"}: clock skew ${skewSeconds}s exceeds ${Math.round(allowedSkewMs / 1000)}s`,
     );
-    logMeshEvent("AUTH_CLOCK_SKEW", { sourceIp: normalizeIp(sourceIp || "unknown"), skewSeconds }, sourceIp);
+    logMeshEvent("AUTH_CLOCK_SKEW", {
+      sourceIp: normalizeIp(sourceIp || "unknown"),
+      packetType: data.type || "unknown",
+      skewSeconds,
+      allowedSkewSeconds: Math.round(allowedSkewMs / 1000),
+    }, sourceIp);
     return null;
   }
   clearAuthFail(sourceIp);
@@ -322,6 +380,7 @@ async function sendControl(ip, payload) {
     socket.once("close", (hadError) => {
       clearTimeout(timeout);
       if (!hadError) resolve();
+      else reject(new Error("Socket closed with error"));
     });
   });
 }
@@ -852,7 +911,7 @@ async function receiveDirectMediaChunk(data, peerIp) {
 
   const fromNodeId = typeof data.fromNodeId === "string" ? data.fromNodeId.trim() : "";
   const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
-  const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
+  const fromUsername = typeof data.fromUsername === "string" ? fromUsername.trim() : "";
   const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
   if (!fromUsername || toUsername !== session.username) {
     console.error("> [NodeMesh][MEDIA] Rejected direct_media_chunk: identity mismatch");
@@ -985,7 +1044,7 @@ async function receiveDirectMediaChunk(data, peerIp) {
         include: { member: { include: { profile: true } } },
       }).catch(() => null);
       if (stored) {
-        ioEmitter?.to(stored.conversationId).emit(`chat:${stored.conversationId}:messages:update`, stored);
+        emitToLocalSocket(stored.conversationId, `chat:${stored.conversationId}:messages:update`, stored);
       }
     }
     console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername} at ${finalPath}`);
@@ -1097,7 +1156,7 @@ async function receiveDirectMediaRequest(data, peerIp) {
 async function receiveDirectMessageSync(data, peerIp) {
   const session = getMeshSession();
   if (!session) {
-    console.error("> [NodeMesh][AUTH] Rejected direct_message_sync: no local session");
+    console.error(`> [NodeMesh][AUTH] Rejected direct_message_sync: no local session (peerIp: ${peerIp})`);
     return;
   }
 
@@ -1107,10 +1166,13 @@ async function receiveDirectMessageSync(data, peerIp) {
   const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
   const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
   if (!fromUsername || !toUsername || toUsername !== session.username) {
-    console.error("> [NodeMesh][AUTH] Rejected direct_message_sync: identity mismatch");
+    console.error(`> [NodeMesh][AUTH] Rejected direct_message_sync: identity mismatch. from: ${fromUsername}, to: ${toUsername}, session: ${session.username}`);
     return;
   }
-  if (typeof message.id !== "string" || typeof message.content !== "string") return;
+  if (typeof message.id !== "string" || typeof message.content !== "string") {
+    console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync: invalid message format. id: ${message.id}`);
+    return;
+  }
 
   let trustedPeer = fromNodeId
     ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
@@ -1130,14 +1192,14 @@ async function receiveDirectMessageSync(data, peerIp) {
     trustedPeer.publicName !== fromUsername ||
     (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
   ) {
-    console.log(`> [NodeMesh][SYNC] Auto-creating unknown contact and conversation for ${fromUsername}`);
-    
+    console.log(`> [NodeMesh][SYNC] Auto-creating unknown contact and conversation for ${fromUsername} (found: ${!!found}, trustedPeer: ${!!trustedPeer}, trustedStatus: ${trustedPeer?.status}, trustedPublicName: ${trustedPeer?.publicName}, trustedUserId: ${trustedPeer?.userId}, fromUserId: ${fromUserId})`);
+
     const defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
     if (!defaultServer) {
        console.error("> [NodeMesh][SYNC] Cannot auto-create unknown contact without default server");
        return;
     }
-    
+
     const userId = fromUserId || `mesh_${fromNodeId || Date.now()}`;
     const email = `${userId.replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
     
@@ -1191,7 +1253,7 @@ async function receiveDirectMessageSync(data, peerIp) {
       return;
     }
     
-    if (ioEmitter) ioEmitter.emit("chat:refresh-list");
+    emitToLocalSocket(null, "chat:refresh-list", null);
   }
 
   if (message.fileUrl) {
@@ -1208,6 +1270,12 @@ async function receiveDirectMessageSync(data, peerIp) {
   });
 
   if (!stored) {
+    const maxSeq = await db.directMessage.aggregate({
+      where: { conversationId: found.conversation.id },
+      _max: { seqId: true }
+    });
+    const nextLocalSeq = (maxSeq._max.seqId ?? 0) + 1;
+
     stored = await db.directMessage.create({
       data: {
         id: message.id,
@@ -1222,13 +1290,21 @@ async function receiveDirectMessageSync(data, peerIp) {
         conversationId: found.conversation.id,
         memberId: found.firstMember.id,
         status: "DELIVERED",
-        createdAt: message.createdAt ? new Date(message.createdAt) : new Date(),
+        createdAt: new Date(), // Always use local time to prevent airgapped clock drift from burying messages in the past
+        seqId: nextLocalSeq,
+        senderSeqId: typeof message.seqId === "number" ? message.seqId : null,
       },
       include: { member: { include: { profile: true } } },
     });
+
+    // Force WAL flush to disk immediately so power pulls don't lose the message!
+    await db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
   }
 
-  ioEmitter?.to(found.conversation.id).emit(`chat:${found.conversation.id}:messages`, stored);
+  // Notify the UI to instantly append the new message!
+  emitToLocalSocket(found.conversation.id, `chat:${found.conversation.id}:messages`, stored);
+  emitToLocalSocket(null, "chat:refresh-list", null);
+  redisClient?.del(`cache:chat:${found.conversation.id}:messages`).catch(() => {});
   await sendControl(peerIp, {
     type: "direct_message_ack",
     messageId: message.id,
@@ -1240,16 +1316,21 @@ async function receiveDirectMessageSync(data, peerIp) {
 
 async function receiveDirectMessageAck(data) {
   if (typeof data.messageId !== "string") return;
+  const localSession = getMeshSession();
+  const localUserId = localSession?.profileId;
   await db.directMessage.updateMany({
     where: { id: data.messageId, status: "SENT" },
     data: { status: "DELIVERED", deliveredAt: new Date() },
   });
+  
+  await db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
   const message = await db.directMessage.findUnique({
     where: { id: data.messageId },
     include: { member: { include: { profile: true } } },
   });
-  if (message) {
-    ioEmitter?.to(message.conversationId).emit(`chat:${message.conversationId}:messages:update`, message);
+  // If it's the sender's own receipt update, don't ping the whole room, but we do update the DB.
+  if (message && message.memberId !== localUserId) {
+    emitToLocalSocket(message.conversationId, `chat:${message.conversationId}:messages:update`, message);
   }
   console.log(`> [NodeMesh][SYNC] Acked direct message ${data.messageId}`);
 }
@@ -1272,6 +1353,7 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
     take: 50,
   });
 
+  let consecutiveFailures = 0;
   for (const message of pending) {
     const context = {
       fromNodeId: getMac(),
@@ -1290,6 +1372,7 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
     );
     if (!mediaReady) continue;
 
+    let failed = false;
     await sendControl(peerIp, {
       type: "direct_message_sync",
       fromNodeId: context.fromNodeId,
@@ -1299,7 +1382,16 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
       message: directMessagePayload(message, session.username, peerUsername),
     }).catch((error) => {
       console.error(`> [NodeMesh][SYNC] Failed to send ${message.id}: ${error.message}`);
+      failed = true;
     });
+
+    if (failed) consecutiveFailures++;
+    else consecutiveFailures = 0;
+
+    if (consecutiveFailures >= 3) {
+      console.log(`> [NodeMesh][SYNC] Peer ${peerIp} unreachable, aborting sync`);
+      break;
+    }
   }
 
   const mediaMessages = await db.directMessage.findMany({
@@ -1321,6 +1413,54 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
       toUsername: peerUsername,
       messageId: message.id,
     }, message);
+  }
+}
+
+async function syncPendingDirectMessagesForOnlinePeers({ force = false } = {}) {
+  const session = getMeshSession();
+  if (!session) return;
+
+  const now = Date.now();
+  if (!force && now - lastOutboxSyncAt < OUTBOX_SYNC_INTERVAL_MS) return;
+  if (outboxSyncRunning) return;
+
+  outboxSyncRunning = true;
+  lastOutboxSyncAt = now;
+  try {
+    const activeThreshold = new Date(Date.now() - 5 * 60 * 1000); // 5-minute window so rebooted peers still get their offline messages
+    const peers = await db.meshPeer.findMany({
+      where: {
+        status: { in: Array.from(TRUSTED_STATUSES) },
+        ipAddress: { not: null },
+        publicName: { not: null },
+        lastSeen: { gte: activeThreshold },
+      },
+      orderBy: { lastSeen: "desc" },
+    });
+
+    // Deduplicate by IP: only sync to the MOST RECENTLY SEEN peer per IP address.
+    // This prevents sending "toUsername: Cyber Admin" to Pi-2 (which is Deck-01)
+    // when multiple peer rows happen to share the same IP.
+    const seenIps = new Map();
+    for (const peer of peers) {
+      const ip = peer.ipAddress;
+      if (!ip) continue;
+      if (!seenIps.has(ip)) {
+        seenIps.set(ip, peer); // first entry is the most recent (ordered by lastSeen desc)
+      }
+    }
+    const dedupedPeers = Array.from(seenIps.values());
+
+    for (const peer of dedupedPeers) {
+      const username = typeof peer.publicName === "string" ? peer.publicName.trim() : "";
+      if (!username || username === session.username || !peer.ipAddress) continue;
+
+      await syncPendingDirectMessages(peer.publicName, peer.ipAddress).catch((error) => {
+        console.error(`> [NodeMesh][SYNC] Outbox retry failed for ${peer.publicName}: ${error.message}`);
+      });
+    }
+  } finally {
+    outboxSyncRunning = false;
   }
 }
 
@@ -1393,8 +1533,10 @@ async function receiveCallStartSignal(payload, fromUsername, fromUserId, peerIp,
     peerUserId: fromUserId || "",
   });
 
-  ioEmitter?.to(`user:${found.secondMember.profileId}`).emit("call:start", localPayload);
-  ioEmitter?.to(found.conversation.id).emit("call:start", localPayload);
+  // Emit to the local frontend UI so it triggers the incoming call ringing screen!
+  // We emit to the user's specific room so it reaches their active tab/device
+  emitToLocalSocket(`user:${found.secondMember.profileId}`, "call:start", localPayload);
+  emitToLocalSocket(found.conversation.id, "call:start", localPayload);
   console.log(`> [NodeMesh][CALL] Incoming ${localPayload.type || "audio"} call from ${fromUsername}`);
 }
 
@@ -1417,21 +1559,20 @@ async function emitRoutedCallSignal(event, payload, fromUsername, fromUserId, pe
     });
   }
 
-  if (event.startsWith("webrtc:") && localPayload.targetId) {
-    ioEmitter?.to(localPayload.targetId).emit(event, {
+  if (event === "call:accepted" || event === "call:declined" || event === "call:busy") {
+    // These route specifically to the target user (the caller waiting)
+    emitToLocalSocket(localPayload.targetId, event, {
       ...localPayload,
-      peerId: localPayload.peerId,
+      callerId: localPayload.callerId,
     });
     return;
-  }
-
-  if (route.localUserId) {
-    ioEmitter?.to(`user:${route.localUserId}`).emit(event, localPayload);
-    return;
-  }
-
-  if (localPayload.chatId) {
-    ioEmitter?.to(localPayload.chatId).emit(event, localPayload);
+  } else if (event === "call:ping" || event === "call:pong") {
+    // Diagnostic pings, point-to-point only
+    emitToLocalSocket(`user:${route.localUserId}`, event, localPayload);
+  } else {
+    // End/signal/candidate broadcast to the entire call room
+    // The UI handles deduplication and routing
+    emitToLocalSocket(localPayload.chatId, event, localPayload);
   }
 }
 
@@ -1584,7 +1725,13 @@ async function receiveConnectionResponse(data, peerIp) {
   ) return;
 
   const request = await db.connectionRequest.findUnique({ where: { requestId: data.requestId } });
-  if (!request || request.direction !== "OUTGOING" || request.toNodeId !== data.fromNodeId || request.status !== "PENDING") return;
+  const isManualIpRequest = typeof request?.toNodeId === "string" && request.toNodeId.startsWith(MANUAL_PEER_PREFIX);
+  if (
+    !request ||
+    request.direction !== "OUTGOING" ||
+    request.status !== "PENDING" ||
+    (!isManualIpRequest && request.toNodeId !== data.fromNodeId)
+  ) return;
 
   const peerStatus =
     data.status === "ACCEPTED" ? "TRUSTED" :
@@ -1598,7 +1745,7 @@ async function receiveConnectionResponse(data, peerIp) {
 
   await db.connectionRequest.update({
     where: { requestId: data.requestId },
-    data: { status: data.status, respondedAt: new Date() },
+    data: { status: data.status, respondedAt: new Date(), toNodeId: data.fromNodeId },
   });
   await db.meshPeer.upsert({
     where: { macAddress: data.fromNodeId },
@@ -1750,8 +1897,9 @@ function startControlServer() {
         if (data.type === "direct_media_request") await receiveDirectMediaRequest(data, socket.remoteAddress);
         if (data.type === "direct_message_ack") await receiveDirectMessageAck(data);
         if (data.type === "call_signal") await receiveCallSignal(data, socket.remoteAddress);
+        socket.end("OK\n");
       } catch (error) {
-        console.error("> [NodeMesh] Rejected control packet:", error.message);
+        console.error("> [NodeMesh] Rejected control packet:", error.message, "RAW_LEN:", raw.length, "RAW_START:", raw.substring(0, 100), "RAW_END:", raw.slice(-100));
       }
     });
   });
@@ -1786,22 +1934,121 @@ async function knownPeerIps() {
   return peers.map((peer) => peer.ipAddress).filter(Boolean);
 }
 
+function beaconSenderKey(iface) {
+  return `${iface.name}:${iface.address}`;
+}
+
+function closeStaleBeaconSenders(activeKeys) {
+  for (const [key, entry] of beaconSendSockets.entries()) {
+    if (activeKeys.has(key)) continue;
+    beaconSendSockets.delete(key);
+    try {
+      entry.socket.close();
+    } catch {}
+  }
+}
+
+function safeUdpSend(socket, packet, address, label = "default") {
+  if (!address || isLocalIp(address)) return;
+  socket.send(packet, BEACON_PORT, address, (error) => {
+    if (error) {
+      console.warn(`> [NodeMesh] Beacon send skipped via ${label} to ${address}: ${error.message}`);
+    }
+  });
+}
+
+function getBeaconSender(iface) {
+  const key = beaconSenderKey(iface);
+  const existing = beaconSendSockets.get(key);
+  if (existing) return existing;
+
+  const socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+  const entry = { socket, ready: false, queue: [] };
+  beaconSendSockets.set(key, entry);
+
+  socket.on("error", (error) => {
+    console.warn(`> [NodeMesh] Interface sender ${key} unavailable: ${error.message}`);
+    beaconSendSockets.delete(key);
+    try {
+      socket.close();
+    } catch {}
+  });
+
+  socket.bind(0, iface.address, () => {
+    entry.ready = true;
+    try {
+      socket.setBroadcast(true);
+    } catch {}
+    try {
+      socket.setMulticastTTL(1);
+    } catch {}
+    try {
+      socket.setMulticastInterface(iface.address);
+    } catch {}
+
+    const queued = entry.queue.splice(0);
+    for (const send of queued) send();
+  });
+
+  return entry;
+}
+
+function sendFromInterface(packet, iface, address) {
+  const entry = getBeaconSender(iface);
+  const send = () => safeUdpSend(entry.socket, packet, address, `${iface.name}/${iface.address}`);
+  if (entry.ready) {
+    send();
+  } else if (entry.queue.length < 50) {
+    entry.queue.push(send);
+  }
+}
+
 async function discoveryTargets({ includeUnicast = false } = {}) {
   const targets = new Set([
     ...getBroadcastAddresses(),
     MESH_MULTICAST_ADDR,
   ]);
   if (includeUnicast) {
-    for (const ip of [...getConfiguredFallbackIps(), ...rememberedPeerIps(), ...(await knownPeerIps())]) targets.add(ip);
+    for (const ip of [
+      ...getConfiguredFallbackIps(),
+      ...getDirectProbeAddresses(),
+      ...rememberedPeerIps(),
+      ...(await knownPeerIps()),
+    ]) {
+      targets.add(ip);
+    }
   }
   return [...targets].filter((target) => target && !isLocalIp(target));
+}
+
+async function sendDiscoveryPacket(udp, packet, { includeUnicast = false } = {}) {
+  const interfaces = getLanInterfaces();
+  closeStaleBeaconSenders(new Set(interfaces.map(beaconSenderKey)));
+  joinMulticastGroups(udp);
+
+  const defaultTargets = [...new Set(await discoveryTargets({ includeUnicast }))].filter(
+    (target) => target && target !== MESH_MULTICAST_ADDR && !isLocalIp(target),
+  );
+  for (const address of defaultTargets) safeUdpSend(udp, packet, address);
+
+  for (const iface of interfaces) {
+    const interfaceTargets = new Set([MESH_MULTICAST_ADDR]);
+    const broadcast = broadcastFor(iface.address, iface.netmask);
+    if (broadcast && broadcast !== iface.address) interfaceTargets.add(broadcast);
+    for (const address of interfaceTargets) {
+      if (address && !isLocalIp(address)) sendFromInterface(packet, iface, address);
+    }
+  }
 }
 
 function joinMulticastGroups(udp) {
   const interfaces = getLanInterfaces();
   for (const iface of interfaces) {
+    const key = `${MESH_MULTICAST_ADDR}:${iface.address}`;
+    if (multicastMemberships.has(key)) continue;
     try {
       udp.addMembership(MESH_MULTICAST_ADDR, iface.address);
+      multicastMemberships.add(key);
     } catch (error) {
       console.warn(`> [NodeMesh] Multicast join skipped on ${iface.name} (${iface.address}): ${error.message}`);
     }
@@ -1831,17 +2078,27 @@ async function ensureDefaultServer() {
 
 function startMeshDiscovery() {
   ensureDefaultServer().catch(e => console.error("> [NodeMesh] Failed to ensure default server:", e.message));
-  const myMac = getMac();
   const udp = dgram.createSocket({ type: "udp4", reuseAddr: true });
   let beaconTick = 0;
 
-  udp.on("message", async (message, rinfo) => {
-    const sourceIp = normalizeIp(rinfo.address);
+  udp.on("message", async (msg, rinfo) => {
     try {
-      const data = verify(JSON.parse(message.toString("utf8")), sourceIp);
-      if (!data || data.type !== "HELLO" || typeof data.nodeId !== "string" || data.nodeId === myMac) return;
+      const sourceIp = normalizeIp(rinfo.address);
+      const str = msg.toString("utf8");
+      console.log(`> [NodeMesh][UDP] Received UDP packet from ${sourceIp}, len: ${msg.length}`);
+
+      const parsed = JSON.parse(str.trim());
+      const data = verify(parsed, sourceIp);
+      if (!data || data.type !== "HELLO" || typeof data.nodeId !== "string" || data.nodeId === getMac()) return;
       if (isLocalIp(sourceIp)) return;
+      console.log(`> [NodeMesh][UDP] Verified HELLO from ${sourceIp} (${data.username})`);
+
       rememberPeerIp(sourceIp);
+      if (!data.probeReply) {
+        sendBeaconReply(sourceIp).catch((error) => {
+          console.warn(`> [NodeMesh] Discovery reply to ${sourceIp} failed: ${error.message}`);
+        });
+      }
 
       const username = typeof data.username === "string" ? data.username.trim() : "";
       const userId = typeof data.userId === "string" ? data.userId.trim() : "";
@@ -1868,6 +2125,10 @@ function startMeshDiscovery() {
           status: { in: ["TRUSTED", "ACCEPTED"] },
         },
       });
+
+      // Force WAL flush to disk immediately so power pulls don't lose the message!
+      await db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
+
       if (!sameUserPeer && trustedNameCollision) {
         await logImpersonationAttempt({ userId, username, macAddress, ipAddress: sourceIp, trustedPeer: trustedNameCollision });
         return;
@@ -1911,6 +2172,9 @@ function startMeshDiscovery() {
         syncPendingDirectMessages(username, sourceIp).catch((error) => {
           console.error(`> [NodeMesh][SYNC] Pending sync failed for ${username}: ${error.message}`);
         });
+        syncPendingDirectMessagesForOnlinePeers().catch((error) => {
+          console.error(`> [NodeMesh][SYNC] Outbox sweep failed: ${error.message}`);
+        });
       }
     } catch (error) {
       trackAuthFail(sourceIp, "bad_udp_packet", {}, null);
@@ -1929,33 +2193,75 @@ function startMeshDiscovery() {
     });
   }, 5000);
 
-  async function sendBeacon() {
+  setInterval(() => {
+    syncPendingDirectMessagesForOnlinePeers().catch((error) => {
+      console.error(`> [NodeMesh][SYNC] Outbox sweep failed: ${error.message}`);
+    });
+  }, OUTBOX_SYNC_INTERVAL_MS);
+
+  // Force a full outbox sweep 15 seconds after startup so any messages
+  // queued while the peer was offline get delivered as soon as it comes up.
+  setTimeout(() => {
+    syncPendingDirectMessagesForOnlinePeers({ force: true }).catch((error) => {
+      console.error(`> [NodeMesh][SYNC] Startup outbox sweep failed: ${error.message}`);
+    });
+  }, 15000);
+
+  // Periodic WAL checkpoint — ensures SQLite pages are flushed to the main DB
+  // file every 30 s so a sudden power cut doesn't lose unsaved messages.
+  setInterval(() => {
+    db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
+  }, 30000);
+
+  function buildHelloPacket(extra = {}, { logMissingSession = true } = {}) {
     const session = getMeshSession();
     if (!session) {
-      console.error("> [NodeMesh][AUTH] Mesh beacon paused: no logged-in user session");
-      return;
+      if (logMissingSession) console.error("> [NodeMesh][AUTH] Mesh beacon paused: no logged-in user session");
+      return null;
     }
 
-    const packet = Buffer.from(JSON.stringify(sign({
+    const localNodeId = getMac();
+    return Buffer.from(JSON.stringify(sign({
       type: "HELLO",
-      nodeId: myMac,
+      nodeId: localNodeId,
       userId: session.profileId,
       username: session.username,
       displayName: session.displayName,
-      deviceMac: myMac,
+      deviceMac: localNodeId,
       deviceName: session.deviceName,
       hostname: session.deviceName,
       publicName: session.username,
       securityStatus: VERIFIED_LAN_STATUS,
       dbVersion: "2.0.0",
-      vectorClock: { [myMac]: 0 },
+      vectorClock: { [localNodeId]: 0 },
       ip: getIp(),
+      ...extra,
     })));
+  }
+
+  function sendUnicastDiscoveryPacket(packet, address) {
+    if (!address || isLocalIp(address)) return;
+    safeUdpSend(udp, packet, address, "direct-reply");
+    for (const iface of getLanInterfaces()) {
+      if (isIpInInterfaceSubnet(address, iface)) sendFromInterface(packet, iface, address);
+    }
+  }
+
+  async function sendBeaconReply(address) {
+    const packet = buildHelloPacket({ probeReply: true }, { logMissingSession: false });
+    if (!packet) return;
+    sendUnicastDiscoveryPacket(packet, address);
+  }
+
+  async function sendBeacon() {
+    const packet = buildHelloPacket();
+    if (!packet) return;
+
     beaconTick += 1;
-    for (const address of await discoveryTargets()) udp.send(packet, BEACON_PORT, address);
+    await sendDiscoveryPacket(udp, packet);
     if (beaconTick >= 3) {
       beaconTick = 0;
-      for (const address of await discoveryTargets({ includeUnicast: true })) udp.send(packet, BEACON_PORT, address);
+      await sendDiscoveryPacket(udp, packet, { includeUnicast: true });
     }
   }
 

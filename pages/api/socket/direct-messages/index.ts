@@ -225,6 +225,12 @@ export default async function handler(
       console.warn("Redis unavailable, defaulting to SENT status");
     }
 
+    const maxSeq = await db.directMessage.aggregate({
+      where: { conversationId: conversationId as string },
+      _max: { seqId: true }
+    });
+    const nextSeq = (maxSeq._max.seqId ?? 0) + 1;
+
     const message = await db.directMessage.create({
       data: {
         content,
@@ -238,7 +244,10 @@ export default async function handler(
         replyToId:    replyToId    ?? undefined,
         conversationId: conversationId as string,
         memberId: member.id,
-        status: initialStatus
+        status: initialStatus,
+        createdAt: new Date(),
+        seqId: nextSeq,
+        senderSeqId: nextSeq
       },
       include: {
         member: {
@@ -257,6 +266,9 @@ export default async function handler(
         }
       }
     });
+
+    // Force WAL flush to disk immediately so power pulls don't lose the message!
+    await db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
 
     const channelKey = `chat:${conversationId}:messages`;
     if (!res.socket.server.io) { ioHandler(req, res); }
@@ -297,6 +309,7 @@ export default async function handler(
             thumbnailUrl: (message as any).thumbnailUrl,
             mediaKey: (message as any).mediaKey,
             createdAt: message.createdAt.toISOString(),
+            seqId: message.seqId,
             fromUsername: profile.name,
             toUsername: otherMember.profile.name,
           },

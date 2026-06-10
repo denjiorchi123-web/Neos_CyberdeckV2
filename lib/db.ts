@@ -125,16 +125,16 @@ if (!globalThis._walEnabled) {
   (async () => {
     try {
       await db.$queryRawUnsafe("PRAGMA journal_mode=WAL");
-      await db.$queryRawUnsafe("PRAGMA synchronous=NORMAL");    // safe with WAL
+      await db.$queryRawUnsafe("PRAGMA synchronous=NORMAL");
       await db.$queryRawUnsafe("PRAGMA busy_timeout=30000");    // wait 30s instead of failing instantly
       await db.$queryRawUnsafe("PRAGMA cache_size=-65536");     // 64 MB page cache
       await db.$queryRawUnsafe("PRAGMA temp_store=MEMORY");     // temp tables stay in RAM
       await db.$queryRawUnsafe("PRAGMA mmap_size=268435456");   // 256 MB memory-mapped I/O
       await db.$queryRawUnsafe("PRAGMA foreign_keys=ON");       // enforce relational integrity
       await ensureTrustedPeerTables(db as any);
-      console.log("[DB] SQLite WAL mode enabled");
+      console.log("[DB] SQLite WAL journal mode enabled (power-safe)");
     } catch (e) {
-      console.error("[DB] WAL setup failed:", e);
+      console.error("[DB] Journal setup failed:", e);
     }
   })();
 }

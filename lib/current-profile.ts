@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 import { redis } from "@/lib/redis";
+import { syncMeshSession } from "@/lib/mesh-session";
 
 export const currentProfile = async () => {
   const cookieStore = cookies();
@@ -12,7 +13,9 @@ export const currentProfile = async () => {
     // 1. Try Redis cache first
     const cachedProfile = await redis.get(`profile:${userId}`);
     if (cachedProfile) {
-      return JSON.parse(cachedProfile);
+      const profile = JSON.parse(cachedProfile);
+      syncMeshSession(profile);
+      return profile;
     }
 
     // 2. Fallback to Database
@@ -23,13 +26,16 @@ export const currentProfile = async () => {
     // 3. Cache the result for 1 hour
     if (profile) {
       await redis.set(`profile:${userId}`, JSON.stringify(profile), "EX", 3600);
+      syncMeshSession(profile);
     }
 
     return profile;
   } catch (error) {
     console.error("[CURRENT_PROFILE_REDIS_ERROR]", error);
     // Silent failover to DB if Redis is down
-    return await db.profile.findUnique({ where: { userId } });
+    const profile = await db.profile.findUnique({ where: { userId } });
+    syncMeshSession(profile);
+    return profile;
   }
 };
 
