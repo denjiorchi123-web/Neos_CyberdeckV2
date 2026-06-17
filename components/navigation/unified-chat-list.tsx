@@ -43,6 +43,8 @@ interface UnifiedChatListProps {
   chats: ChatItem[];
 }
 
+import { useDragScroll } from "@/hooks/use-drag-scroll";
+
 export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const router = useRouter();
   const params = useParams();
@@ -52,15 +54,8 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const { searchTerm, setSearchTerm, activeTab, setActiveTab } = useChatFilterStore();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "touch") {
-      event.currentTarget.classList.add("touch-scroll-active");
-    }
-  };
-
-  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.classList.remove("touch-scroll-active");
-  };
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useDragScroll(scrollRef);
 
   const onArchive = async (chat: ChatItem) => {
     try {
@@ -91,7 +86,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const onEdit = (chat: ChatItem) => {
     // For now, let's just log it or pass it. We need the actual server/community objects ideally,
     // but the modal usually fetches or accepts the object.
-    // DMs can't be edited. Groups use editServer. 
+    // DMs can't be edited. Groups use editServer.
     if (chat.type === "GROUP") {
        // We only have the ID, we might need to fetch the server, or the modal should handle ID
        // Let's assume editServer takes serverId if server is not passed, but useModal takes { server }
@@ -175,18 +170,18 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
     if (activeTab === "Unread") return false; // Not implemented yet
     if (activeTab === "Communities") return chat.type === "COMMUNITY";
     if (activeTab === "Channels") return chat.type === "CHANNEL";
-    
+
     return true;
   });
 
   const TabButton = ({ label }: { label: typeof activeTab }) => {
     const isActiveTab = activeTab === label;
     return (
-      <button 
+      <button
         onClick={() => setActiveTab(label)}
         className={cn(
           "min-h-8 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold transition touch-manipulation",
-          isActiveTab 
+          isActiveTab
             ? "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
             : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
         )}
@@ -219,12 +214,9 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
         </div>
       </div>
       <div
+        ref={scrollRef}
         tabIndex={0}
-        onPointerDown={activateTouchScroll}
-        onPointerUp={deactivateTouchScroll}
-        onPointerCancel={deactivateTouchScroll}
-        onPointerLeave={deactivateTouchScroll}
-        className="touch-scroll flex-1 min-h-0 w-full overflow-y-auto scrollbar-hide"
+        className="touch-scroll flex-1 min-h-0 w-full overflow-y-auto"
       >
       <div className="flex flex-col gap-y-[2px] p-2 pb-4">
         {filteredChats.map((chat) => (
@@ -297,13 +289,13 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
                 )}
               </div>
             ) : (
-              <UserAvatar 
-                src={chat.imageUrl} 
-                className="h-10 w-10 md:h-12 md:w-12" 
+              <UserAvatar
+                src={chat.imageUrl}
+                className="h-10 w-10 md:h-12 md:w-12"
                 status={chat.profileId ? (onlineUsers.some((u: any) => u.userId === chat.profileId) ? "online" : "offline") : undefined}
               />
             )}
-            
+
             <div className="flex flex-col items-start overflow-hidden w-full">
               <div className="flex items-center justify-between w-full">
                 <p
@@ -350,7 +342,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
                   </div>
                 </div>
               </div>
-              
+
               <p className="text-[13px] text-zinc-500 dark:text-zinc-400 truncate w-full text-left mt-[2px] flex items-center gap-x-1">
                 {chat.amILastSender && chat.lastMessageStatus === "READ" && (
                   <CheckCheck className="h-4 w-4 text-blue-500 shrink-0" />
@@ -381,9 +373,9 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
             <MessageSquare className="w-4 h-4 mr-2" />
             Message
           </ContextMenuItem>
-          
+
           <ContextMenuSeparator />
-          
+
           {chat.type !== "DM" && (
             <ContextMenuItem onClick={() => onEdit(chat)}>
               <Edit className="w-4 h-4 mr-2" />
@@ -400,7 +392,7 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
             {chat.isArchived ? <ArchiveRestore className="w-4 h-4 mr-2" /> : <Archive className="w-4 h-4 mr-2" />}
             {chat.isArchived ? "Unarchive Chat" : "Archive Chat"}
           </ContextMenuItem>
-          
+
           {chat.type !== "DM" && (
             <>
               <ContextMenuSeparator />

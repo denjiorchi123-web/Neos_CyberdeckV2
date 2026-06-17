@@ -2,7 +2,7 @@
 
 import React, { useRef, ElementRef, useEffect } from "react";
 import { Member, Message, Profile } from "@prisma/client";
-import { Loader2, ServerCrash } from "lucide-react";
+import { Loader2, ServerCrash, ArrowDown } from "lucide-react";
 import { format } from "date-fns";
 
 import { ChatWelcome } from "@/components/chat/chat-welcome";
@@ -11,6 +11,7 @@ import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { useChatRead } from "@/hooks/use-chat-read";
+import { useDragScroll } from "@/hooks/use-drag-scroll";
 import { useSocket } from "@/components/providers/socket-provider";
 
 interface ChatMessagesProps {
@@ -61,15 +62,7 @@ export function ChatMessages({
   const chatRef = useRef<ElementRef<"div">>(null);
   const bottomRef = useRef<ElementRef<"div">>(null);
 
-  const activateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "touch") {
-      event.currentTarget.classList.add("touch-scroll-active");
-    }
-  };
-
-  const deactivateTouchScroll = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.classList.remove("touch-scroll-active");
-  };
+  useDragScroll(chatRef);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } =
     useChatQuery({
@@ -108,7 +101,7 @@ export function ChatMessages({
 
   const messageCount = data?.pages.reduce((count, page) => count + (page?.items?.length ?? 0), 0) ?? 0;
 
-  useChatScroll({
+  const { isScrolledUp, scrollToBottom } = useChatScroll({
     chatRef,
     bottomRef,
     loadMore: fetchNextPage,
@@ -142,59 +135,67 @@ export function ChatMessages({
     .reverse() as MessagesWithMemberWithProfile[] | undefined;
 
   return (
-    <div
-      ref={chatRef}
-      tabIndex={0}
-      onPointerDown={activateTouchScroll}
-      onPointerUp={deactivateTouchScroll}
-      onPointerCancel={deactivateTouchScroll}
-      onPointerLeave={deactivateTouchScroll}
-      className="touch-scroll chat-scroll-viewport flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
-      style={{ touchAction: "pan-y", WebkitOverflowScrolling: "touch" as any }}
-    >
-      {hasNextPage && (
-        <div className="flex justify-center">
-          {isFetchingNextPage ? (
-            <Loader2 className="h-6 w-6 text-zinc-500 animate-spin my-4" />
-          ) : (
-            <button
-              onClick={() => fetchNextPage()}
-              className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 text-xs my-4 dark:hover:text-zinc-300 transition"
-            >
-              Load previous messages
-            </button>
-          )}
-        </div>
+    <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
+      <div
+        ref={chatRef}
+        tabIndex={0}
+        className="touch-scroll chat-scroll-viewport flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+      >
+        {hasNextPage && (
+          <div className="flex justify-center">
+            {isFetchingNextPage ? (
+              <Loader2 className="h-6 w-6 text-zinc-500 animate-spin my-4" />
+            ) : (
+              <button
+                onClick={() => fetchNextPage()}
+                className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 text-xs my-4 dark:hover:text-zinc-300 transition"
+              >
+                Load previous messages
+              </button>
+            )}
+          </div>
+        )}
+        {!hasNextPage && <ChatWelcome name={name} type={type} />}
+        {messages?.map((message: MessagesWithMemberWithProfile) => (
+          <ChatItem
+            key={message.id}
+            currentMember={member}
+            member={message.member}
+            id={message.id}
+            content={message.content}
+            fileUrl={message.fileUrl}
+            fileName={(message as any).fileName}
+            fileSize={(message as any).fileSize}
+            mimeType={(message as any).mimeType}
+            thumbnailUrl={(message as any).thumbnailUrl}
+            mediaKey={(message as any).mediaKey}
+            type={message.type}
+            deleted={message.deleted}
+            timestamp={format(
+              new Date(message.createdAt),
+              DATE_FORMAT
+            )}
+            isUpdated={wasMessageEdited(message)}
+            socketQuery={socketQuery}
+            socketUrl={socketUrl}
+            status={(message as any).status}
+            replyTo={(message as any).replyTo}
+            isPinned={(message as any).isPinned}
+          />
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {isScrolledUp && (
+        <button
+          onClick={() => scrollToBottom()}
+          className="absolute bottom-4 right-4 h-10 w-10 bg-indigo-500 hover:bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl transition-all animate-in fade-in slide-in-from-bottom-2 z-50 cursor-pointer active:scale-95"
+          title="Scroll to bottom"
+          aria-label="Scroll to bottom"
+        >
+          <ArrowDown className="h-5 w-5" />
+        </button>
       )}
-      {!hasNextPage && <ChatWelcome name={name} type={type} />}
-      {messages?.map((message: MessagesWithMemberWithProfile) => (
-        <ChatItem
-          key={message.id}
-          currentMember={member}
-          member={message.member}
-          id={message.id}
-          content={message.content}
-          fileUrl={message.fileUrl}
-          fileName={(message as any).fileName}
-          fileSize={(message as any).fileSize}
-          mimeType={(message as any).mimeType}
-          thumbnailUrl={(message as any).thumbnailUrl}
-          mediaKey={(message as any).mediaKey}
-          type={message.type}
-          deleted={message.deleted}
-          timestamp={format(
-            new Date(message.createdAt),
-            DATE_FORMAT
-          )}
-          isUpdated={wasMessageEdited(message)}
-          socketQuery={socketQuery}
-          socketUrl={socketUrl}
-          status={(message as any).status}
-          replyTo={(message as any).replyTo}
-          isPinned={(message as any).isPinned}
-        />
-      ))}
-      <div ref={bottomRef} />
     </div>
   );
 }

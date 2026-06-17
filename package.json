@@ -32,6 +32,7 @@
     "@radix-ui/react-tooltip": "^1.0.6",
     "@socket.io/redis-adapter": "^8.3.0",
     "@socket.io/redis-emitter": "^5.1.0",
+    "@tailwindcss/typography": "^0.5.20",
     "@tanstack/react-query": "^4.33.0",
     "@types/node": "20.5.6",
     "@types/react": "18.2.21",
@@ -49,7 +50,9 @@
     "eslint-config-next": "13.4.12",
     "framer-motion": "^12.38.0",
     "ioredis": "^5.10.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.269.0",
+    "mammoth": "^1.12.0",
     "next": "13.4.12",
     "next-themes": "^0.2.1",
     "node-pty": "^1.1.0",
@@ -59,24 +62,43 @@
     "react-dom": "18.2.0",
     "react-dropzone": "^14.2.3",
     "react-hook-form": "^7.45.4",
+    "react-markdown": "^9.0.1",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.0",
     "sharp": "^0.32.5",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.7.2",
+    "string-math": "^1.2.2",
     "tailwind-merge": "^1.14.0",
     "tailwindcss": "3.3.3",
     "tailwindcss-animate": "^1.0.6",
     "typescript": "5.2.2",
+    "uploadthing": "^5.3.3",
     "uuid": "^9.0.0",
+    "xlsx": "^0.18.5",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
     "zod": "^3.22.2",
     "zustand": "^4.4.1"
   },
+  "bundledDependencies": [
+    "mammoth",
+    "xlsx",
+    "jszip",
+    "@tailwindcss/typography"
+  ],
   "devDependencies": {
     "@prisma/client": "^5.20.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/busboy": "^1.5.4",
     "@types/uuid": "^9.0.2",
     "prisma": "^5.20.0"
-  }
+  },
+  "bundleDependencies": [
+    "mammoth",
+    "xlsx",
+    "jszip",
+    "@tailwindcss/typography"
+  ]
 }

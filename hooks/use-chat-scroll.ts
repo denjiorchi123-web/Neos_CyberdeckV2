@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 
 type ChatScrollProps = {
   chatRef: React.RefObject<HTMLDivElement>;
@@ -21,6 +21,7 @@ export const useChatScroll = ({
   const pendingHistoryLoad = useRef(false);
   const previousCount = useRef(0);
   const previousScrollHeight = useRef(0);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
 
   useEffect(() => {
     const topDiv = chatRef?.current;
@@ -29,8 +30,11 @@ export const useChatScroll = ({
       const topDiv = chatRef?.current;
       if (!topDiv) return;
 
-      const { scrollTop, scrollHeight } = topDiv;
+      const { scrollTop, scrollHeight, clientHeight } = topDiv;
       const isAtTop = scrollTop <= 100;
+
+      const distanceFromBottom = Math.round(scrollHeight - scrollTop - clientHeight);
+      setIsScrolledUp(distanceFromBottom > 50);
 
       if (isAtTop && shouldLoadMore && !pendingHistoryLoad.current) {
         pendingHistoryLoad.current = true;
@@ -51,6 +55,13 @@ export const useChatScroll = ({
     }
   }, [count, isLoadingMore]);
 
+  const scrollToBottom = useCallback((smooth = true) => {
+    bottomRef?.current?.scrollIntoView({
+      behavior: smooth ? "smooth" : "auto",
+      block: "end"
+    });
+  }, [bottomRef]);
+
   useLayoutEffect(() => {
     const bottomDiv = bottomRef?.current;
     const topDiv = chatRef?.current;
@@ -68,12 +79,18 @@ export const useChatScroll = ({
 
     if (bottomDiv) {
       const didAddMessages = count > previousCount.current;
-      bottomDiv.scrollIntoView({
-        behavior: hasInitialized.current && didAddMessages ? "smooth" : "auto",
-        block: "end"
-      });
+      // When a new message comes in, if we are scrolled up, do NOT auto-scroll
+      // unless it's the initial load.
+      if (!hasInitialized.current || !isScrolledUp) {
+        bottomDiv.scrollIntoView({
+          behavior: hasInitialized.current && didAddMessages ? "smooth" : "auto",
+          block: "end"
+        });
+      }
       hasInitialized.current = true;
       previousCount.current = count;
     }
-  }, [bottomRef, chatRef, count]);
+  }, [bottomRef, chatRef, count, isScrolledUp]);
+
+  return { isScrolledUp, scrollToBottom };
 };

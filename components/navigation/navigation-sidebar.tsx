@@ -6,12 +6,10 @@ import { db } from "@/lib/db";
 
 import { NavigationLauncher } from "@/components/navigation/navigation-launcher";
 import { NavigationHome } from "@/components/navigation/navigation-home";
-import { NavigationUsb } from "@/components/navigation/navigation-usb";
 import { NavigationMedia } from "@/components/navigation/navigation-media";
-import { NavigationLogs } from "@/components/navigation/navigation-logs";
 import { NavigationNetwork } from "@/components/navigation/navigation-network";
-import { NavigationFileManager } from "@/components/navigation/navigation-filemanager";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { NavigationUserControl } from "@/components/navigation/navigation-user-control";
 
 export async function NavigationSidebar() {
@@ -23,17 +21,15 @@ export async function NavigationSidebar() {
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-between overflow-hidden py-2 text-primary dark:bg-[#1e1f22] bg-[#e3e5e8]">
-      <div className="flex flex-1 min-h-0 w-full flex-col items-center justify-evenly py-1">
-        <NavigationLauncher />
-        <Separator className="h-[2px] bg-zinc-300 dark:bg-zinc-700 rounded-md w-10 mx-auto" />
-        <NavigationHome />
-        <Separator className="h-[2px] bg-zinc-300 dark:bg-zinc-700 rounded-md w-10 mx-auto" />
-        <NavigationUsb />
-        <NavigationMedia />
-        <NavigationLogs />
-        <NavigationNetwork />
-        <NavigationFileManager />
-      </div>
+      <ScrollArea className="flex-1 w-full">
+        <div className="flex flex-col items-center gap-y-4 py-4 w-full">
+          <NavigationLauncher />
+          <Separator className="h-[2px] bg-zinc-300 dark:bg-zinc-700 rounded-md w-10 mx-auto shrink-0" />
+          <NavigationHome />
+          <NavigationMedia />
+          <NavigationNetwork />
+        </div>
+      </ScrollArea>
       <NavigationUserControl userName={profile.name} />
     </div>
   );

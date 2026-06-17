@@ -125,7 +125,7 @@ if (!globalThis._walEnabled) {
   (async () => {
     try {
       await db.$queryRawUnsafe("PRAGMA journal_mode=WAL");
-      await db.$queryRawUnsafe("PRAGMA synchronous=NORMAL");
+      await db.$queryRawUnsafe("PRAGMA synchronous=FULL");
       await db.$queryRawUnsafe("PRAGMA busy_timeout=30000");    // wait 30s instead of failing instantly
       await db.$queryRawUnsafe("PRAGMA cache_size=-65536");     // 64 MB page cache
       await db.$queryRawUnsafe("PRAGMA temp_store=MEMORY");     // temp tables stay in RAM

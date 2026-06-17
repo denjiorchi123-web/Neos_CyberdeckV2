@@ -45,4 +45,6 @@ exec /usr/bin/chromium \
   --gpu-sandbox-failures-fatal=no \
   --disable-vulkan \
   --enable-native-gpu-memory-buffers \
+  --enable-features=UseOzonePlatform \
+  --ozone-platform=wayland \
   --ignore-gpu-blocklist

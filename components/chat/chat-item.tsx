@@ -95,7 +95,7 @@ function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => voi
     if (v) {
       v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     }
-    
+
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
@@ -159,7 +159,7 @@ function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => voi
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className={cn(
         "relative flex items-center justify-center w-full h-full group cursor-pointer bg-black",
@@ -196,7 +196,7 @@ function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => voi
       )}
 
       {/* Scrubber Bottom Bar */}
-      <div 
+      <div
         className={cn(
           "absolute bottom-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-t from-black/95 via-black/55 to-transparent transition-opacity duration-300 rounded-b-xl flex items-center gap-x-3 sm:gap-x-4",
           (!playing || controlsVisible || touchMode) ? "opacity-100" : "opacity-0 group-hover:opacity-100"
@@ -211,8 +211,8 @@ function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => voi
         >
           {playing ? <Pause className="h-7 w-7 fill-white" /> : <Play className="h-7 w-7 fill-white ml-1" />}
         </button>
-        
-        <div 
+
+        <div
           className="flex-1 py-5 cursor-pointer relative group/scrubber flex items-center"
           onPointerDown={(e) => {
             e.stopPropagation();
@@ -232,7 +232,7 @@ function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => voi
               className="absolute top-0 left-0 bottom-0 bg-indigo-500 rounded-full"
               style={{ width: `${duration > 0 ? (progress / duration) * 100 : 0}%` }}
             />
-            <div 
+            <div
               className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg opacity-100 transition-opacity"
               style={{ left: `calc(${duration > 0 ? (progress / duration) * 100 : 0}% - 10px)` }}
             />
@@ -255,22 +255,27 @@ function LightboxVideoPlayer({ src, onClose }: { src: string; onClose: () => voi
   );
 }
 
-// ── Image Lightbox ────────────────────────────────────────────────────────────
+import { createPortal } from "react-dom";
+import { FileViewer } from "@/components/file-viewer";
 
-function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt: string; type?: "image" | "video"; onClose: () => void }) {
+function MediaLightbox({ src, alt, type = "image", mimeType = "application/octet-stream", onClose }: { src: string; alt: string; type?: "image" | "video" | "document"; mimeType?: string; onClose: () => void }) {
+  const [mounted, setMounted] = useState(false);
   const close = React.useCallback(() => {
     onClose();
   }, [onClose]);
 
   useEffect(() => {
+    setMounted(true);
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [close]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/95 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 backdrop-blur-sm"
       onClick={close}
       role="dialog"
       aria-modal="true"
@@ -334,10 +339,15 @@ function MediaLightbox({ src, alt, type = "image", onClose }: { src: string; alt
           className="max-w-[90vw] max-h-[90vh] rounded-xl object-contain shadow-2xl"
           onClick={e => e.stopPropagation()}
         />
-      ) : (
+      ) : type === "video" ? (
         <LightboxVideoPlayer src={src} onClose={close} />
+      ) : (
+        <div className="w-[90vw] max-w-5xl h-[85vh] bg-zinc-950 rounded-xl overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+          <FileViewer url={src} name={alt} mimeType={mimeType} />
+        </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -486,8 +496,8 @@ function VideoPlayer({ src, thumbnail, onClick }: { src: string; thumbnail?: str
 
 // ── Document Cell ─────────────────────────────────────────────────────────────
 
-function DocCell({ url, fileName, fileSize, mimeType }: {
-  url: string; fileName?: string | null; fileSize?: number | null; mimeType?: string | null;
+function DocCell({ url, fileName, fileSize, mimeType, onClick }: {
+  url: string; fileName?: string | null; fileSize?: number | null; mimeType?: string | null; onClick?: () => void;
 }) {
   const ext = fileName?.split(".").pop()?.toUpperCase() ?? "FILE";
   const color =
@@ -521,22 +531,23 @@ function DocCell({ url, fileName, fileSize, mimeType }: {
   };
 
   return (
-    <a
-      href={url}
-      onClick={handleDownload}
-      className="flex items-center gap-x-3 px-3 py-2.5 rounded-xl bg-black/20 border border-white/5 hover:bg-black/30 transition max-w-[280px] cursor-pointer"
+    <div
+      onClick={(e) => { e.preventDefault(); onClick?.(); }}
+      className="flex items-center gap-x-3 px-3 py-2.5 rounded-xl bg-black/20 border border-white/5 hover:bg-black/30 transition max-w-[280px] cursor-pointer group"
     >
       <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 text-white text-[9px] font-black", color)}>
         {ext.slice(0, 4)}
       </div>
-      <div className="flex flex-col min-w-0">
+      <div className="flex flex-col min-w-0 flex-1">
         <span className="text-sm text-white font-medium truncate">{fileName ?? "Download"}</span>
         {fileSize && (
           <span className="text-[10px] text-white/40 font-mono">{fmtSize(fileSize)}</span>
         )}
       </div>
-      <Download className="h-4 w-4 text-white/40 shrink-0 ml-auto" />
-    </a>
+      <button onClick={(e) => { e.stopPropagation(); handleDownload(e); }} className="p-1.5 rounded-md hover:bg-white/10 text-white/40 hover:text-white transition" title="Download file">
+        <Download className="h-4 w-4 shrink-0" />
+      </button>
+    </div>
   );
 }
 
@@ -551,9 +562,10 @@ function ChatItemInner({
   const [isEditing,    setIsEditing]    = useState(false);
   const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxType, setLightboxType] = useState<"image" | "video">("image");
   const [lightboxSrc, setLightboxSrc]   = useState<string | null>(null);
   const [lightboxAlt, setLightboxAlt]   = useState<string>("");
+  const [lightboxType, setLightboxType] = useState<"image" | "video" | "document">("image");
+  const [lightboxMime, setLightboxMime] = useState<string>("application/octet-stream");
   const [imgError,     setImgError]     = useState(false);
   const { onOpen }  = useModal();
   const params      = useParams();
@@ -644,13 +656,12 @@ function ChatItemInner({
   const resolvedUrl = mediaKey ? (mediaBlobUrl ?? null) : fileUrl;
   const isDecrypting = !!fileUrl && !!mediaKey && !mediaBlobUrl;
 
-  const openMediaLightbox = (src: string, alt: string, mediaType: "image" | "video") => {
-    window.requestAnimationFrame(() => {
-      setLightboxSrc(src);
-      setLightboxAlt(alt);
-      setLightboxType(mediaType);
-      setLightboxOpen(true);
-    });
+  const openMediaLightbox = (src: string, alt: string, mediaType: "image" | "video" | "document", mime?: string) => {
+    setLightboxSrc(src);
+    setLightboxAlt(alt);
+    setLightboxType(mediaType);
+    if (mime) setLightboxMime(mime);
+    setLightboxOpen(true);
   };
 
   useEffect(() => {
@@ -724,14 +735,20 @@ function ChatItemInner({
   return (
     <>
       {lightboxOpen && lightboxSrc && (
-        <MediaLightbox src={lightboxSrc} alt={lightboxAlt} type={lightboxType} onClose={() => { setLightboxOpen(false); setLightboxSrc(null); }} />
+        <MediaLightbox
+          src={lightboxSrc}
+          alt={lightboxAlt}
+          type={lightboxType}
+          mimeType={lightboxMime}
+          onClose={() => { setLightboxOpen(false); setLightboxSrc(null); }}
+        />
       )}
 
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <motion.div 
+          <motion.div
             ref={messageRef}
-            id={`message-${id}`} 
+            id={`message-${id}`}
             drag={hasOpenableMedia ? false : "x"}
             dragConstraints={{ left: 0, right: 80 }}
             dragElastic={0.2}
@@ -862,7 +879,7 @@ function ChatItemInner({
                   isAudio && "px-3 py-2",
                 )}>
                   {replyTo && !deleted && (
-                    <div 
+                    <div
                       onClick={() => {
                         const el = document.getElementById(`message-${replyTo.id}`);
                         if (el) {
@@ -968,7 +985,7 @@ function ChatItemInner({
                     )}
                   </div>
                 )}
-                
+
                 {isImage && resolvedUrl && imgError && (
                   <div className={cn("flex flex-col items-center justify-center p-4 bg-black/20 rounded-xl border border-white/5", hasOnlyMedia ? "w-full max-w-[300px]" : "w-full max-w-[280px] mb-2")}>
                     <FileIcon className="h-8 w-8 text-zinc-600 mb-2" />
@@ -995,7 +1012,13 @@ function ChatItemInner({
                 {/* ── Document ── */}
                 {isDocument && resolvedUrl && (
                   <div className={cn(hasOnlyMedia ? "" : "mb-2")}>
-                    <DocCell url={resolvedUrl} fileName={fileName} fileSize={fileSize} mimeType={effectiveMime} />
+                    <DocCell
+                      url={resolvedUrl}
+                      fileName={fileName}
+                      fileSize={fileSize}
+                      mimeType={effectiveMime}
+                      onClick={() => openMediaLightbox(resolvedUrl, fileName ?? "Document", "document", effectiveMime)}
+                    />
                   </div>
                 )}
 
@@ -1058,7 +1081,7 @@ function ChatItemInner({
           {/* Quick Forward Button for Media */}
           {fileUrl && !deleted && !isEditing && (
             <div className="flex items-center opacity-0 group-hover:opacity-100 transition duration-200 shrink-0">
-              <button 
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpen("forwardMessage", { message: { id, content, fileUrl, fileName, mimeType, mediaKey, type, fileSize, thumbnailUrl }});
@@ -1074,7 +1097,7 @@ function ChatItemInner({
         </div>
       </motion.div>
       </ContextMenuTrigger>
-      
+
       <ContextMenuContent className="w-48 bg-black/90 border-white/10 text-zinc-300">
         <ContextMenuItem className="hover:bg-white/10 cursor-pointer" onClick={() => setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl })}>
           <Reply className="mr-2 h-4 w-4" /> Reply

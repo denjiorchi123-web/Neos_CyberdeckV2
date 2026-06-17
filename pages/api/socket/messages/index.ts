@@ -97,8 +97,9 @@ export default async function handler(
 
     const channelKey = `chat:${channelId}:messages`;
 
-    if (!res.socket.server.io) { ioHandler(req, res); }
-    res?.socket?.server?.io?.to(channelId as string).emit(channelKey, message);
+    const io = res?.socket?.server?.io || (global as any).nextIo;
+    if (!io) { ioHandler(req, res); }
+    (res?.socket?.server?.io || (global as any).nextIo)?.to(channelId as string).emit(channelKey, message);
 
     return res.status(200).json(message);
   } catch (error) {

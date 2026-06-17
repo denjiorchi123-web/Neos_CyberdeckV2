@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  
+
   // Registration fields
   const [newName, setNewName] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -27,15 +27,15 @@ export default function LoginPage() {
     try {
       setIsLoading(true);
       setError("");
-      
+
       // We first need to find the profile by identifier (name or email)
       // Since our auth API currently expects userId, we'll need an endpoint to verify by name/email
       // Or we can just try to find the profile on the server side in the auth API
-      await axios.post("/api/auth", { 
-        identifier, 
-        password 
+      await axios.post("/api/auth", {
+        identifier,
+        password
       });
-      
+
       router.push("/");
       router.refresh();
     } catch (error: any) {
@@ -51,14 +51,14 @@ export default function LoginPage() {
 
     try {
       setIsLoading(true);
-      const res = await axios.post("/api/profiles", { 
+      const res = await axios.post("/api/profiles", {
         name: newName,
         password: newPassword
       });
       // After registration, log them in
-      await axios.post("/api/auth", { 
-        identifier: res.data.name, 
-        password: newPassword 
+      await axios.post("/api/auth", {
+        identifier: res.data.name,
+        password: newPassword
       });
       router.push("/");
       router.refresh();
@@ -71,7 +71,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-start py-8 px-6 bg-[#1e1f22] font-sans overflow-y-auto">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md bg-[#313338] rounded-xl shadow-2xl overflow-hidden border border-white/5"
@@ -82,7 +82,7 @@ export default function LoginPage() {
               <ShieldCheck size={40} />
             </div>
           </div>
-          
+
           <div className="text-center mb-10">
             <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
               {isResetting ? "Reset Password" : isRegistering ? "Create Profile" : "Access Node"}
@@ -94,16 +94,38 @@ export default function LoginPage() {
 
           <AnimatePresence mode="wait">
             {isResetting ? (
-              <motion.form 
+              <motion.form
                 key="reset"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  alert("Password reset requested. Local Node Admin approval required on AirGapped OS.");
-                  setIsResetting(false);
-                }} 
+                  if (!identifier || !newPassword) return;
+
+                  try {
+                    setIsLoading(true);
+                    setError("");
+
+                    // Call the local reset API
+                    await axios.patch("/api/auth/reset", {
+                      identifier,
+                      newPassword
+                    });
+
+                    // Automatically log in with the new password
+                    await axios.post("/api/auth", {
+                      identifier,
+                      password: newPassword
+                    });
+
+                    router.push("/");
+                    router.refresh();
+                  } catch (error: any) {
+                    setError(error.response?.data || "Failed to reset password");
+                    setIsLoading(false);
+                  }
+                }}
                 className="space-y-6"
               >
                 <div className="space-y-4">
@@ -112,7 +134,7 @@ export default function LoginPage() {
                       <User size={14} />
                       Name or Email
                     </label>
-                    <input 
+                    <input
                       type="text"
                       autoFocus
                       disabled={isLoading}
@@ -127,7 +149,7 @@ export default function LoginPage() {
                       <Lock size={14} />
                       New Password
                     </label>
-                    <input 
+                    <input
                       type="password"
                       disabled={isLoading}
                       value={newPassword}
@@ -138,7 +160,13 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <button 
+                {error && (
+                  <p className="text-rose-500 text-xs font-bold uppercase tracking-tight text-center">
+                    {error}
+                  </p>
+                )}
+
+                <button
                   type="submit"
                   disabled={isLoading}
                   className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-600/50 text-white font-bold py-4 rounded-lg transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-x-2"
@@ -147,7 +175,7 @@ export default function LoginPage() {
                 </button>
 
                 <div className="text-center pt-2">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setIsResetting(false)}
                     className="text-zinc-500 hover:text-zinc-300 text-sm transition"
@@ -157,12 +185,12 @@ export default function LoginPage() {
                 </div>
               </motion.form>
             ) : !isRegistering ? (
-              <motion.form 
+              <motion.form
                 key="login"
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                onSubmit={onLogin} 
+                onSubmit={onLogin}
                 className="space-y-6"
               >
                 <div className="space-y-4">
@@ -171,7 +199,7 @@ export default function LoginPage() {
                       <User size={14} />
                       Name or Email
                     </label>
-                    <input 
+                    <input
                       type="text"
                       autoFocus
                       disabled={isLoading}
@@ -186,7 +214,7 @@ export default function LoginPage() {
                       <Lock size={14} />
                       Password
                     </label>
-                    <input 
+                    <input
                       type="password"
                       disabled={isLoading}
                       value={password}
@@ -195,7 +223,7 @@ export default function LoginPage() {
                       placeholder="••••••••"
                     />
                     <div className="flex justify-end mt-2">
-                      <button 
+                      <button
                         type="button"
                         onClick={() => setIsResetting(true)}
                         className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium transition"
@@ -212,7 +240,7 @@ export default function LoginPage() {
                   </p>
                 )}
 
-                <button 
+                <button
                   type="submit"
                   disabled={isLoading}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-600/50 text-white font-bold py-4 rounded-lg transition shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-x-2 group"
@@ -228,7 +256,7 @@ export default function LoginPage() {
                 </button>
 
                 <div className="text-center pt-2">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setIsRegistering(true)}
                     className="text-zinc-500 hover:text-zinc-300 text-sm transition flex items-center justify-center gap-x-2 mx-auto"
@@ -239,12 +267,12 @@ export default function LoginPage() {
                 </div>
               </motion.form>
             ) : (
-              <motion.form 
+              <motion.form
                 key="register"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                onSubmit={onRegister} 
+                onSubmit={onRegister}
                 className="space-y-6"
               >
                 <div className="space-y-4">
@@ -253,7 +281,7 @@ export default function LoginPage() {
                       <User size={14} />
                       Choose Name
                     </label>
-                    <input 
+                    <input
                       type="text"
                       autoFocus
                       disabled={isLoading}
@@ -268,7 +296,7 @@ export default function LoginPage() {
                       <Lock size={14} />
                       Choose Password
                     </label>
-                    <input 
+                    <input
                       type="password"
                       disabled={isLoading}
                       value={newPassword}
@@ -279,7 +307,7 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <button 
+                <button
                   type="submit"
                   disabled={isLoading}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 text-white font-bold py-4 rounded-lg transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-x-2"
@@ -288,7 +316,7 @@ export default function LoginPage() {
                 </button>
 
                 <div className="text-center pt-2">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setIsRegistering(false)}
                     className="text-zinc-500 hover:text-zinc-300 text-sm transition"
@@ -300,7 +328,7 @@ export default function LoginPage() {
             )}
           </AnimatePresence>
         </div>
-        
+
         <div className="bg-[#1e1f22] p-6 text-center border-t border-white/5">
           <div className="flex items-center justify-center gap-x-2 mb-2">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

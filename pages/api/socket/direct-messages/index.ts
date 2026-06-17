@@ -271,8 +271,9 @@ export default async function handler(
     await db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
 
     const channelKey = `chat:${conversationId}:messages`;
-    if (!res.socket.server.io) { ioHandler(req, res); }
-    res?.socket?.server?.io?.to(conversationId as string).emit(channelKey, message);
+    const io = res?.socket?.server?.io || (global as any).nextIo;
+    if (!io) { ioHandler(req, res); }
+    (res?.socket?.server?.io || (global as any).nextIo)?.to(conversationId as string).emit(channelKey, message);
 
     if (meshPeer?.ipAddress) {
       const meshContext = {

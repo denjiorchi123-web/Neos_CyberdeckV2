@@ -32,8 +32,6 @@ export function EmojiPicker({ onChange }: EmojiPickerProps) {
           type="button"
           aria-label="Open emoji picker"
           className="flex h-12 w-12 items-center justify-center rounded-full text-zinc-500 transition active:bg-zinc-300/70 dark:text-zinc-300 dark:active:bg-zinc-600/80"
-          style={{ touchAction: "manipulation" }}
-          onPointerDown={(event) => event.stopPropagation()}
         >
           <Smile className="h-6 w-6" />
         </button>
@@ -43,12 +41,12 @@ export function EmojiPicker({ onChange }: EmojiPickerProps) {
         sideOffset={12}
         side="top"
         align="end"
-        onPointerDown={(event) => event.stopPropagation()}
-        style={{ touchAction: "manipulation" }}
       >
         <Picker
           theme={resolvedTheme}
           data={data}
+          set="twitter"
+          backgroundImageFn={() => '/emoji-sheet.png'}
           previewPosition="none"
           skinTonePosition="none"
           onEmojiSelect={selectEmoji}

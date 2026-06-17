@@ -505,13 +505,26 @@ Fix:
 
     sqlite3 prisma/dev.db "SELECT id,userId,name,email FROM Profile WHERE lower(name)=lower('Trinity');"
 
-Problem: Kiosk touch is not scrolling.
+Problem: Kiosk touch is acting like a mouse / not swiping or scrolling.
 
 Fix:
 
-  - Confirm Chromium was launched by `deploy/scripts/start-kiosk.sh`.
-  - Confirm the command line contains `--touch-events=enabled`.
-  - Reboot the Pi if the touchscreen driver is not reporting touch.
+  - Raspberry Pi 5 (Wayland/Labwc) defaults to mouse emulation for the 7-inch touchscreen.
+  - You must disable mouse emulation to enable native swipe scrolling.
+  - Run the following commands on your Raspberry Pi:
+
+    mkdir -p ~/.config/labwc
+    cp /etc/xdg/labwc/rc.xml ~/.config/labwc/rc.xml || true
+
+    # Open the file:
+    nano ~/.config/labwc/rc.xml
+
+    # Find the <touch> or <device> section and look for mouse emulation.
+    # Alternatively, you can run this sed command to patch it if the tag exists:
+    # sed -i 's/<mouseEmulation>yes<\/mouseEmulation>/<mouseEmulation>no<\/mouseEmulation>/' ~/.config/labwc/rc.xml
+
+  - If you are running the older X11 desktop, go to Preferences -> Screen Configuration -> Right click display -> Touchscreen -> Change "Mouse Emulation" to "Multitouch".
+  - Reboot your Pi.
 
 Problem: HTTPS warning appears.
 

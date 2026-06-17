@@ -23,6 +23,7 @@ import { enqueue, drainQueue, QueuedMessage } from "@/lib/offline-queue";
 import { useReplyStore } from "@/hooks/use-reply-store";
 import { X, Reply, Camera, Video, FileIcon, Ban } from "lucide-react";
 import { usePreferences } from "@/components/providers/socket-provider";
+import { getMilitarySuggestion } from "@/lib/military-dictionary";
 
 interface ChatInputProps {
   apiUrl: string;
@@ -50,6 +51,9 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
     resolver: zodResolver(formSchema),
     defaultValues: { content: "" }
   });
+
+  const content = form.watch("content");
+  const suggestion = getMilitarySuggestion(content);
 
   const isLoading = form.formState.isSubmitting;
 
@@ -111,7 +115,7 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
       router.refresh();
     } catch (error: any) {
       console.error("[ChatInput] send failed:", error);
-      
+
       // If the server explicitly rejected the message (e.g. we were blocked),
       // do not queue it for offline retry, just discard it.
       if (error?.response?.status === 403) {
@@ -153,7 +157,7 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
     <div className="w-full shrink-0">
       {isBlocked ? (
         <div className="p-4 pb-6 flex justify-center">
-          <button 
+          <button
             onClick={onUnblock}
             disabled={isUnblocking}
             className="bg-zinc-200/90 hover:bg-zinc-300/90 dark:hover:bg-zinc-600/75 dark:bg-zinc-700/75 text-zinc-500 dark:text-zinc-400 text-sm px-6 py-3 rounded-full flex items-center justify-center w-fit shadow-sm transition cursor-pointer disabled:opacity-50"
@@ -209,18 +213,37 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
                   )}
                   <div className="relative w-full">
                     <ChatAttachmentMenu apiUrl={apiUrl} query={query} replyToId={replyingTo?.id} onSent={() => setReplyingTo(null)} />
+
+                    {/* Ghost text overlay for military auto-suggestion */}
+                    {suggestion && (
+                      <div className="absolute inset-0 pointer-events-none flex items-center px-14 overflow-hidden whitespace-pre font-sans text-sm">
+                        <span className="text-transparent">{content}</span>
+                        <span className="text-zinc-500/60 dark:text-zinc-400/60">
+                          {suggestion.slice(content.split(" ").pop()?.length || 0)}
+                        </span>
+                      </div>
+                    )}
+
                     <Input
                       placeholder={`${
                         type === "conversation" ? `Message ${name}` : type === "broadcast" ? `Broadcast to ${name}` : `Message #${name}`
                       }${!isConnected ? " (queued — server offline)" : ""}`}
                       disabled={isLoading}
-                      className="px-14 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200"
+                      className="px-14 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 font-sans text-sm"
                       {...field}
+                      onKeyDown={(e) => {
+                        if (suggestion && (e.key === "Tab" || e.key === "ArrowRight")) {
+                          e.preventDefault();
+                          const words = content.split(" ");
+                          words[words.length - 1] = suggestion;
+                          form.setValue("content", words.join(" ") + " ", { shouldValidate: true });
+                        }
+                      }}
                     />
                     <div className="absolute top-1/2 -translate-y-1/2 right-4">
                       <EmojiPicker
                         onChange={(emoji: string) =>
-                          field.onChange(`${field.value} ${emoji}`)
+                          form.setValue("content", `${field.value} ${emoji}`, { shouldValidate: true })
                         }
                       />
                     </div>

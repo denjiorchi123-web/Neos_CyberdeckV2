@@ -46,30 +46,18 @@ body {
 }
 
 .touch-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
   cursor: default;
   contain: layout paint;
 }
 
 .touch-scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.touch-scroll.touch-scroll-active,
-.touch-scroll:focus-visible {
-  scrollbar-width: thin;
-  scroll-behavior: smooth;
-}
-
-.touch-scroll.touch-scroll-active::-webkit-scrollbar,
-.touch-scroll:focus-visible::-webkit-scrollbar {
   display: block;
   width: 6px;
 }
 
-.touch-scroll.touch-scroll-active::-webkit-scrollbar-thumb,
-.touch-scroll:focus-visible::-webkit-scrollbar-thumb {
+.touch-scroll::-webkit-scrollbar-thumb {
   background: rgba(161, 161, 170, 0.55);
   border-radius: 999px;
 }
@@ -193,5 +181,6 @@ button,
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Inter", "Noto Color Emoji", sans-serif;
   }
 }

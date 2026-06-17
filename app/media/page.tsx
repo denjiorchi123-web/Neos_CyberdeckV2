@@ -5,6 +5,7 @@ import {
   Image as ImageIcon, Video, Music, FileText, Trash2, Share2,
   RefreshCw, Loader2, X, Check, ChevronDown, FolderOpen, ArrowLeft
 } from "lucide-react";
+import { FileViewer } from "@/components/file-viewer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -230,7 +231,7 @@ export default function MediaPage() {
   const isAudio = (f: MediaFile) => f.mimeType.startsWith("audio/");
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-zinc-200 font-mono">
+    <div className="h-full overflow-y-auto bg-[#0d1117] text-zinc-200 font-mono">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-6 py-3">
         <div className="flex items-center justify-between mb-3">
@@ -246,18 +247,18 @@ export default function MediaPage() {
           </button>
         </div>
         {/* Category tabs */}
-        <div className="touch-scroll-x flex gap-x-1 overflow-x-auto pb-1">
+        <div className="touch-scroll-x flex gap-x-2 overflow-x-auto pb-2 scrollbar-hide">
           {TABS.map(t => (
             <button
               key={t.id}
               onClick={() => setCategory(t.id)}
-              className={`flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition ${
+              className={`flex items-center gap-x-2 px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition ${
                 category === t.id
-                  ? "bg-indigo-600 text-white"
-                  : "text-zinc-500 hover:text-white hover:bg-zinc-800"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/80 active:bg-zinc-700"
               }`}
             >
-              <t.Icon className="h-3.5 w-3.5" />
+              <t.Icon className="h-4 w-4" />
               {t.label}
             </button>
           ))}
@@ -307,7 +308,11 @@ export default function MediaPage() {
           /* List view for videos, audio, documents, all */
           <div className="space-y-1">
             {files.map(f => (
-              <div key={f.id} className="flex items-center gap-x-3 px-3 py-3 rounded-xl hover:bg-zinc-800/60 group transition">
+              <div
+                key={f.id}
+                onClick={() => setLightbox(f)}
+                className="flex items-center gap-x-3 px-3 py-3 rounded-xl hover:bg-zinc-800/60 group transition cursor-pointer"
+              >
                 {/* Thumbnail / icon */}
                 <div className="h-12 w-12 rounded-lg overflow-hidden bg-zinc-800 shrink-0 flex items-center justify-center">
                   {isImage(f) ? (
@@ -357,14 +362,14 @@ export default function MediaPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-x-1 opacity-0 group-hover:opacity-100 transition shrink-0">
-                  <button onClick={() => setShareFile(f)} title="Share to channel"
-                    className="p-2 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-indigo-400 transition">
-                    <Share2 className="h-4 w-4" />
+                <div className="flex items-center gap-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0">
+                  <button onClick={(e) => { e.stopPropagation(); setShareFile(f); }} title="Share to channel"
+                    className="p-3 rounded-xl bg-zinc-800/80 md:bg-transparent hover:bg-zinc-700 text-zinc-300 md:text-zinc-400 hover:text-indigo-400 transition active:scale-95">
+                    <Share2 className="h-5 w-5" />
                   </button>
-                  <button onClick={() => deleteFile(f)} disabled={deleting === f.id} title="Delete"
-                    className="p-2 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-rose-400 transition disabled:opacity-40">
-                    {deleting === f.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  <button onClick={(e) => { e.stopPropagation(); deleteFile(f); }} disabled={deleting === f.id} title="Delete"
+                    className="p-3 rounded-xl bg-zinc-800/80 md:bg-transparent hover:bg-zinc-700 text-zinc-300 md:text-zinc-400 hover:text-rose-400 transition disabled:opacity-40 active:scale-95">
+                    {deleting === f.id ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trash2 className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
@@ -424,6 +429,16 @@ export default function MediaPage() {
               <p className="text-white text-sm font-semibold mb-4 truncate">{lightbox.name}</p>
               <audio src={lightbox.url} controls autoPlay className="w-full" />
             </div>
+          ) : lightbox.mimeType === "application/pdf" ? (
+             <iframe
+               src={lightbox.url.replace(/^https?:\/\/[^\/]+/, '')}
+               className="w-full h-full max-w-6xl max-h-[85vh] rounded-xl shadow-2xl bg-white"
+               onClick={e => e.stopPropagation()}
+             />
+          ) : !isImage(lightbox) ? (
+             <div className="w-full h-full max-w-6xl max-h-[85vh] p-4 flex items-center justify-center" onClick={e => e.stopPropagation()}>
+               <FileViewer url={lightbox.url.replace(/^https?:\/\/[^\/]+/, '')} name={lightbox.name} mimeType={lightbox.mimeType} />
+             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
