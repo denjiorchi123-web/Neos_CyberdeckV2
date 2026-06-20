@@ -41,8 +41,7 @@ export function triggerSystemInterrupt(event: string = "unknown", data: any = {}
   const escapedMsg = msgContent.replace(/"/g, '\\"');
 
   // Trigger our custom python tkinter notification card
-  const pythonEnv = "XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:0 XAUTHORITY=/home/nova/.Xauthority";
-  const pythonCmd = `sudo -u nova env WAYLAND_DISPLAY=wayland-1 ${pythonEnv} python3 /opt/cyberdeck/scripts/notify.py "${escapedName}" "${escapedMsg}" "${targetUrl}" > /tmp/notify.log 2>&1 || sudo -u nova env WAYLAND_DISPLAY=wayland-0 ${pythonEnv} python3 /opt/cyberdeck/scripts/notify.py "${escapedName}" "${escapedMsg}" "${targetUrl}" >> /tmp/notify.log 2>&1`;
+  const pythonCmd = `PID=\\$(pgrep -u nova chromium | head -n 1 || pgrep -u nova labwc | head -n 1 || echo ""); if [ -n "\\$PID" ]; then eval \\$(sudo cat /proc/\\$PID/environ | tr '\\\\0' '\\\\n' | grep -E '^(WAYLAND_DISPLAY|DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS)='); fi; export WAYLAND_DISPLAY DISPLAY XDG_RUNTIME_DIR XAUTHORITY DBUS_SESSION_BUS_ADDRESS; sudo -u nova -E python3 /opt/cyberdeck/scripts/notify.py "${escapedName}" "${escapedMsg}" "${targetUrl}" > /tmp/notify.log 2>&1`;
 
   exec(pythonCmd, (err) => {
     if (err) {
