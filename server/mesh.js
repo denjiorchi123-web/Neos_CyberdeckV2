@@ -104,6 +104,9 @@ const beaconSendSockets = new Map();
 const multicastMemberships = new Set();
 let outboxSyncRunning = false;
 let lastOutboxSyncAt = 0;
+// In-memory buffer for out-of-order media chunks: transferKey -> { chunks: Map<index, Buffer>, totalChunks, meta }
+const pendingMediaChunks = new Map();
+const MEDIA_CHUNK_BUFFER_TIMEOUT_MS = 60 * 1000; // evict stale transfers after 60s
 const VERIFIED_LAN_STATUS = "VERIFIED LAN";
 const PRIVATE_ROOT = path.join(process.cwd(), "private");
 const CYBERDECK_MEDIA_ROOT = process.env.CYBERDECK_MEDIA_ROOT || path.join(os.homedir(), "LAN_Chat_Media");
@@ -726,6 +729,37 @@ async function readFileSlice(filePath, start, length) {
   }
 }
 
+// Retry wrapper for Windows EPERM / EBUSY file locking issues
+async function writeFileWithRetry(filePath, data, flags = "w", maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await fs.promises.writeFile(filePath, data, { flag: flags });
+      return;
+    } catch (err) {
+      if ((err.code === "EPERM" || err.code === "EBUSY" || err.code === "EACCES") && attempt < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+async function appendFileWithRetry(filePath, data, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await fs.promises.appendFile(filePath, data);
+      return;
+    } catch (err) {
+      if ((err.code === "EPERM" || err.code === "EBUSY" || err.code === "EACCES") && attempt < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 function categoryFromMime(mimeType = "") {
   if (mimeType.startsWith("image/")) return "photos";
   if (mimeType.startsWith("video/")) return "videos";
@@ -822,22 +856,38 @@ async function sendMediaFile(ipAddress, context, fileUrl, options = {}) {
 
   for await (const chunk of fs.createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
     const buffer = Buffer.from(chunk);
-    await sendControl(ipAddress, {
-      type: "direct_media_chunk",
-      ...context,
-      fileUrl,
-      storageName: local.filename,
-      fileName: options.fileName || local.filename,
-      mimeType: options.mimeType || "application/octet-stream",
-      isThumbnail: Boolean(options.isThumbnail),
-      chunkIndex,
-      totalChunks,
-      totalSize: info.size,
-      fileSha256,
-      chunkSha256: sha256Buffer(buffer),
-      dataBase64: buffer.toString("base64"),
-    });
+    // Retry up to 3 times for transient connection errors
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await sendControl(ipAddress, {
+          type: "direct_media_chunk",
+          ...context,
+          fileUrl,
+          storageName: local.filename,
+          fileName: options.fileName || local.filename,
+          mimeType: options.mimeType || "application/octet-stream",
+          isThumbnail: Boolean(options.isThumbnail),
+          chunkIndex,
+          totalChunks,
+          totalSize: info.size,
+          fileSha256,
+          chunkSha256: sha256Buffer(buffer),
+          dataBase64: buffer.toString("base64"),
+        });
+        break; // success
+      } catch (err) {
+        if (attempt < 2 && (err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" || err.message?.includes("timeout"))) {
+          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+        } else {
+          throw err;
+        }
+      }
+    }
     chunkIndex += 1;
+    // Small inter-chunk delay to avoid overwhelming the receiver's TCP accept queue
+    if (chunkIndex < totalChunks) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
   }
 }
 
@@ -965,91 +1015,138 @@ async function receiveDirectMediaChunk(data, peerIp) {
     }
   }
 
-  if (chunkIndex === 0) {
-    if (fs.existsSync(tempPath)) {
-      const currentSize = (await fs.promises.stat(tempPath)).size;
-      if (currentSize >= chunk.length && chunk.length > 0) {
-        const existingChunk = await readFileSlice(tempPath, 0, chunk.length);
-        if (sha256Buffer(existingChunk) === chunkHash) {
-          // Retry from the sender started at chunk 0, but we already have it.
-        } else {
-          await fs.promises.writeFile(tempPath, chunk);
-        }
-      } else {
-        await fs.promises.writeFile(tempPath, chunk);
-      }
-    } else {
-      await fs.promises.writeFile(tempPath, chunk);
-    }
-  } else {
-    if (!fs.existsSync(tempPath)) {
-      console.error(`> [NodeMesh][MEDIA] Missing chunk 0 for ${storageName}; waiting for full retry`);
-      return;
-    }
-    const expectedSize = chunkIndex * MEDIA_CHUNK_BYTES;
-    const currentSize = (await fs.promises.stat(tempPath)).size;
-    if (currentSize > expectedSize) {
-      const existingChunk = await readFileSlice(tempPath, expectedSize, chunk.length);
-      if (existingChunk.length === chunk.length && sha256Buffer(existingChunk) === chunkHash) {
-        // Already have this chunk from an earlier interrupted transfer.
-      } else {
-        await fs.promises.unlink(tempPath).catch(() => {});
-        console.error(`> [NodeMesh][MEDIA] Existing partial ${storageName} failed chunk hash; restarting on next retry`);
-        return;
-      }
-    } else if (currentSize !== expectedSize) {
-      console.error(
-        `> [NodeMesh][MEDIA] Out-of-order chunk for ${storageName}: expected ${expectedSize} bytes, found ${currentSize}`,
-      );
-      return;
-    } else {
-      await fs.promises.appendFile(tempPath, chunk);
+  // --- Out-of-order chunk buffering ---
+  // Use a transfer key per (messageId, storageName) to buffer chunks arriving out of order.
+  const transferKey = `${data.messageId || "media"}::${storageName}`;
+  let transfer = pendingMediaChunks.get(transferKey);
+  if (!transfer) {
+    transfer = {
+      chunks: new Map(),
+      totalChunks,
+      advertisedFileHash,
+      tempPath,
+      finalPath,
+      uploadDir,
+      storageName,
+      fromUsername,
+      data,
+      createdAt: Date.now(),
+    };
+    pendingMediaChunks.set(transferKey, transfer);
+  }
+
+  // Evict stale transfers
+  for (const [key, t] of pendingMediaChunks.entries()) {
+    if (Date.now() - t.createdAt > MEDIA_CHUNK_BUFFER_TIMEOUT_MS) {
+      pendingMediaChunks.delete(key);
+      await fs.promises.unlink(t.tempPath).catch(() => {});
     }
   }
 
-  if (chunkIndex + 1 >= totalChunks) {
-    const expectedTotal = Number(data.totalSize);
-    if (Number.isFinite(expectedTotal)) {
-      const receivedSize = (await fs.promises.stat(tempPath)).size;
-      if (receivedSize !== expectedTotal) {
+  // Store this chunk in the buffer (skip if already have it)
+  if (!transfer.chunks.has(chunkIndex)) {
+    transfer.chunks.set(chunkIndex, chunk);
+  }
+
+  // Flush contiguous chunks to disk starting from chunk 0
+  // Determine current disk size of .part file
+  let diskSize = 0;
+  if (fs.existsSync(tempPath)) {
+    diskSize = (await fs.promises.stat(tempPath).catch(() => ({ size: 0 }))).size;
+  }
+  // Find how many chunks are already written to disk
+  let nextDiskChunk = diskSize > 0 ? Math.floor(diskSize / MEDIA_CHUNK_BYTES) : 0;
+  // If chunk 0 missing from disk, reset
+  if (diskSize === 0 && !transfer.chunks.has(0)) {
+    // Can't write yet — waiting for chunk 0
+    console.log(`> [NodeMesh][MEDIA] Buffered chunk ${chunkIndex}/${totalChunks - 1} for ${storageName} (waiting for chunk 0)`);
+    return;
+  }
+
+  // Special case: chunk 0 reset (sender retried from beginning)
+  if (chunkIndex === 0) {
+    if (diskSize > 0) {
+      // Check if existing chunk 0 matches
+      const existingChunk0 = await readFileSlice(tempPath, 0, chunk.length).catch(() => Buffer.alloc(0));
+      if (sha256Buffer(existingChunk0) !== chunkHash) {
+        // Sender restarted with different data — wipe the partial file and buffered chunks
         await fs.promises.unlink(tempPath).catch(() => {});
-        console.error(
-          `> [NodeMesh][MEDIA] Rejected incomplete ${storageName}: expected ${expectedTotal} bytes, received ${receivedSize}`,
-        );
-        return;
+        transfer.chunks.clear();
+        transfer.chunks.set(0, chunk);
+        diskSize = 0;
+        nextDiskChunk = 0;
+      } else {
+        // chunk 0 already on disk and matches
+        nextDiskChunk = Math.max(nextDiskChunk, 1);
       }
     }
-    if (advertisedFileHash) {
-      const actualHash = await sha256File(tempPath);
-      if (actualHash !== advertisedFileHash) {
-        await fs.promises.unlink(tempPath).catch(() => {});
-        console.error(`> [NodeMesh][MEDIA] Rejected corrupt ${storageName}: SHA-256 mismatch`);
-        return;
-      }
+  }
+
+  // Flush buffered chunks to disk in order
+  while (transfer.chunks.has(nextDiskChunk)) {
+    const chunkToWrite = transfer.chunks.get(nextDiskChunk);
+    transfer.chunks.delete(nextDiskChunk);
+    if (nextDiskChunk === 0 && diskSize === 0) {
+      await writeFileWithRetry(tempPath, chunkToWrite);
+    } else if (nextDiskChunk * MEDIA_CHUNK_BYTES === diskSize || nextDiskChunk === 0) {
+      await appendFileWithRetry(tempPath, chunkToWrite);
     }
-    await fs.promises.rename(tempPath, finalPath).catch(async () => {
-      await fs.promises.copyFile(tempPath, finalPath);
+    diskSize += chunkToWrite.length;
+    nextDiskChunk += 1;
+  }
+
+  // Check if transfer is complete
+  if (nextDiskChunk < totalChunks) {
+    // Not done yet
+    return;
+  }
+
+  // --- All chunks received and written --- finalize ---
+  const expectedTotal = Number(data.totalSize);
+  if (Number.isFinite(expectedTotal) && expectedTotal > 0) {
+    const receivedSize = (await fs.promises.stat(tempPath).catch(() => ({ size: -1 }))).size;
+    if (receivedSize !== expectedTotal) {
       await fs.promises.unlink(tempPath).catch(() => {});
-    });
-    await upsertReceivedFileIndex({
-      storageName,
-      fileName: data.fileName,
-      mimeType: data.mimeType,
-      totalSize: data.totalSize,
-      fromUsername,
-    });
-    if (typeof data.messageId === "string" && data.messageId) {
-      const stored = await db.directMessage.findUnique({
+      pendingMediaChunks.delete(transferKey);
+      console.error(
+        `> [NodeMesh][MEDIA] Rejected incomplete ${storageName}: expected ${expectedTotal} bytes, received ${receivedSize}`,
+      );
+      return;
+    }
+  }
+  if (advertisedFileHash) {
+    const actualHash = await sha256File(tempPath);
+    if (actualHash !== advertisedFileHash) {
+      await fs.promises.unlink(tempPath).catch(() => {});
+      pendingMediaChunks.delete(transferKey);
+      console.error(`> [NodeMesh][MEDIA] Rejected corrupt ${storageName}: SHA-256 mismatch`);
+      return;
+    }
+  }
+  await fs.promises.rename(tempPath, finalPath).catch(async () => {
+    await fs.promises.copyFile(tempPath, finalPath);
+    await fs.promises.unlink(tempPath).catch(() => {});
+  });
+  pendingMediaChunks.delete(transferKey);
+  await upsertReceivedFileIndex({
+    storageName,
+    fileName: data.fileName,
+    mimeType: data.mimeType,
+    totalSize: data.totalSize,
+    fromUsername,
+  });
+  if (typeof data.messageId === "string" && data.messageId) {
+    const stored = await db.directMessage
+      .findUnique({
         where: { id: data.messageId },
         include: { member: { include: { profile: true } } },
-      }).catch(() => null);
-      if (stored) {
-        emitToLocalSocket(stored.conversationId, `chat:${stored.conversationId}:messages:update`, stored);
-      }
+      })
+      .catch(() => null);
+    if (stored) {
+      emitToLocalSocket(stored.conversationId, `chat:${stored.conversationId}:messages:update`, stored);
     }
-    console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername} at ${finalPath}`);
-    console.log(`> [NodeMesh][MEDIA] Manual copy: cp ${JSON.stringify(finalPath)} ~/`);
   }
+  console.log(`> [NodeMesh][MEDIA] Stored ${storageName} from ${fromUsername} at ${finalPath}`);
 }
 
 async function receiveDirectMediaOffer(data, peerIp) {

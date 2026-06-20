@@ -10,13 +10,20 @@ export async function sendMeshControl(
 
   await new Promise<void>((resolve, reject) => {
     const socket = net.createConnection({ host, port: MESH_CONTROL_PORT });
-    const timeout = setTimeout(() => socket.destroy(new Error("Mesh control timeout")), 5000);
+    const timeout = setTimeout(() => {
+      socket.destroy(new Error("Mesh control timeout"));
+      reject(new Error("Mesh control timeout"));
+    }, 5000);
 
     socket.once("connect", () => socket.end(packet));
-    socket.once("error", reject);
+    socket.once("error", (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
     socket.once("close", (hadError) => {
       clearTimeout(timeout);
       if (!hadError) resolve();
+      else reject(new Error("Mesh control socket closed with error"));
     });
   });
 }

@@ -86,22 +86,40 @@ async function sendMeshMediaFile(
 
   for await (const chunk of createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
     const buffer = Buffer.from(chunk as Buffer);
-    await sendMeshControl(ipAddress, {
-      type: "direct_media_chunk",
-      ...context,
-      fileUrl,
-      storageName: local.filename,
-      fileName: options.fileName || local.filename,
-      mimeType: options.mimeType || "application/octet-stream",
-      isThumbnail: Boolean(options.isThumbnail),
-      chunkIndex,
-      totalChunks,
-      totalSize: info.size,
-      fileSha256,
-      chunkSha256: sha256Buffer(buffer),
-      dataBase64: buffer.toString("base64"),
-    });
+
+    // Retry up to 3 times for transient connection errors (ECONNREFUSED, ETIMEDOUT)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await sendMeshControl(ipAddress, {
+          type: "direct_media_chunk",
+          ...context,
+          fileUrl,
+          storageName: local.filename,
+          fileName: options.fileName || local.filename,
+          mimeType: options.mimeType || "application/octet-stream",
+          isThumbnail: Boolean(options.isThumbnail),
+          chunkIndex,
+          totalChunks,
+          totalSize: info.size,
+          fileSha256,
+          chunkSha256: sha256Buffer(buffer),
+          dataBase64: buffer.toString("base64"),
+        });
+        break; // success
+      } catch (err: any) {
+        if (attempt < 2 && (err?.code === "ECONNREFUSED" || err?.code === "ETIMEDOUT" || err?.message?.includes("timeout"))) {
+          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+        } else {
+          throw err;
+        }
+      }
+    }
+
     chunkIndex += 1;
+    // Small inter-chunk delay so the receiver's TCP accept queue isn't overwhelmed
+    if (chunkIndex < totalChunks) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
   }
 }
 
@@ -187,48 +205,54 @@ export default async function handler(
       return res.status(404).json({ message: "Member not found" });
 
     // Block Guard
-    const isBlocked = await db.blockedUser.findFirst({
-      where: {
-        OR: [
-          { blockerId: profile.id, blockedId: otherMember.profileId },
-          { blockerId: otherMember.profileId, blockedId: profile.id }
-        ]
-      }
-    });
+    const activeThreshold = new Date(Date.now() - 15 * 1000);
+
+    const [isBlocked, meshPeer, maxSeq, isOtherOnline] = await Promise.all([
+      db.blockedUser.findFirst({
+        where: {
+          OR: [
+            { blockerId: profile.id, blockedId: otherMember.profileId },
+            { blockerId: otherMember.profileId, blockedId: profile.id }
+          ]
+        }
+      }),
+      db.meshPeer.findFirst({
+        where: {
+          status: { in: ["TRUSTED", "ACCEPTED"] },
+          OR: [
+            { userId: otherMember.profile.id },
+            { publicName: otherMember.profile.name },
+          ],
+          ipAddress: { not: null },
+          lastSeen: { gte: activeThreshold },
+        },
+      }),
+      db.directMessage.aggregate({
+        where: { conversationId: conversationId as string },
+        _max: { seqId: true }
+      }),
+      (async () => {
+        try {
+          return await redis.sismember("presence:online", otherMember.profileId);
+        } catch (err) {
+          console.warn("Redis unavailable, defaulting to SENT status");
+          return false;
+        }
+      })()
+    ]);
 
     if (isBlocked) {
       return res.status(403).json({ error: "Message blocked by recipient preferences." });
     }
 
-    const activeThreshold = new Date(Date.now() - 15 * 1000);
-    const meshPeer = await db.meshPeer.findFirst({
-      where: {
-        status: { in: ["TRUSTED", "ACCEPTED"] },
-        OR: [
-          { userId: otherMember.profile.id },
-          { publicName: otherMember.profile.name },
-        ],
-        ipAddress: { not: null },
-        lastSeen: { gte: activeThreshold },
-      },
-    });
-
     // Check if recipient is online to set "DELIVERED" status.
     // Mesh messages must stay SENT until the peer ACKs them; otherwise a
     // mid-transfer cable cut can hide a failed media delivery from retry sync.
     let initialStatus = "SENT";
-    try {
-      const isOtherOnline = await redis.sismember("presence:online", otherMember.profileId);
-      if (isOtherOnline && !meshPeer?.ipAddress) initialStatus = "DELIVERED";
-    } catch (err) {
-      // Gracefully fallback if Redis is not installed (e.g. Windows)
-      console.warn("Redis unavailable, defaulting to SENT status");
+    if (isOtherOnline && !meshPeer?.ipAddress) {
+      initialStatus = "DELIVERED";
     }
 
-    const maxSeq = await db.directMessage.aggregate({
-      where: { conversationId: conversationId as string },
-      _max: { seqId: true }
-    });
     const nextSeq = (maxSeq._max.seqId ?? 0) + 1;
 
     const message = await db.directMessage.create({
