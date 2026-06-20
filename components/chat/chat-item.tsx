@@ -599,9 +599,20 @@ function ChatItemInner({
     pointerStartRef.current = null;
   };
 
-  const startLongPress = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "touch") return;
-    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+  const startLongPress = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    // Treat any touch start as valid. If pointer event, verify pointerType.
+    if ('pointerType' in event && event.pointerType !== "touch") return;
+    
+    let clientX, clientY;
+    if ('touches' in event && event.touches.length > 0) {
+      clientX = event.touches[0].clientX;
+      clientY = event.touches[0].clientY;
+    } else if ('clientX' in event) {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    } else return;
+
+    pointerStartRef.current = { x: clientX, y: clientY };
     longPressTimerRef.current = setTimeout(() => {
       if (navigator.vibrate) navigator.vibrate(50);
       setMobileMenuOpen(true);
@@ -609,11 +620,21 @@ function ChatItemInner({
     }, 550);
   };
 
-  const cancelLongPressOnMove = (event: React.PointerEvent<HTMLDivElement>) => {
+  const cancelLongPressOnMove = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const start = pointerStartRef.current;
     if (!start) return;
-    const dx = Math.abs(event.clientX - start.x);
-    const dy = Math.abs(event.clientY - start.y);
+    
+    let clientX, clientY;
+    if ('touches' in event && event.touches.length > 0) {
+      clientX = event.touches[0].clientX;
+      clientY = event.touches[0].clientY;
+    } else if ('clientX' in event) {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    } else return;
+
+    const dx = Math.abs(clientX - start.x);
+    const dy = Math.abs(clientY - start.y);
     if (dx > 12 || dy > 12) clearLongPress();
   };
 
@@ -763,6 +784,10 @@ function ChatItemInner({
             onPointerUp={clearLongPress}
             onPointerCancel={clearLongPress}
             onPointerLeave={clearLongPress}
+            onTouchStart={startLongPress}
+            onTouchMove={cancelLongPressOnMove}
+            onTouchEnd={clearLongPress}
+            onTouchCancel={clearLongPress}
             animate={controls}
             className={cn(
               "relative group flex items-start px-4 mb-4 w-full touch-pan-y chat-message-touch-target",
