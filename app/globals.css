@@ -83,6 +83,13 @@ button, a, [role="button"] {
 .chat-message-touch-target {
   touch-action: pan-y;
   -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.chat-message-touch-target * {
+  -webkit-user-drag: none;
 }
 
 .touch-scroll-x,
