@@ -21,34 +21,32 @@ export function triggerSystemInterrupt(event: string = "unknown", data: any = {}
   const soundCmd = `sudo -u nova env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus paplay /usr/share/sounds/freedesktop/stereo/message-new-instant.oga || sudo -u nova env XDG_RUNTIME_DIR=/run/user/1000 paplay /usr/share/sounds/freedesktop/stereo/message.oga || sudo -u nova env XDG_RUNTIME_DIR=/run/user/1000 aplay /usr/share/sounds/alsa/Front_Center.wav`;
   exec(soundCmd, () => {});
 
-  // Send an OS-level desktop notification
-  const notifyEnv = "XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0";
-  // Added -i message-new for native icon and --action="default=Open" -w to capture click
-  const notifyCmd = `sudo -u nova env WAYLAND_DISPLAY=wayland-1 ${notifyEnv} notify-send -i message-new "CyberDeck - ${title}" "${body}" -u critical -t 5000 --action="default=Open" -w || sudo -u nova env WAYLAND_DISPLAY=wayland-0 ${notifyEnv} notify-send -i message-new "CyberDeck - ${title}" "${body}" -u critical -t 5000 --action="default=Open" -w`;
-  
-  exec(notifyCmd, (err, stdout) => {
-    if (stdout && stdout.trim() === "default") {
-      console.log("[Interrupt] Notification clicked! Navigating to chat...");
-      let targetUrl = "/";
-      
-      const sId = data?.serverId || data?.member?.serverId;
-      const cId = data?.channelId;
-      const mId = data?.member?.id || data?.conversationId;
+  // Resolve targetUrl
+  let targetUrl = "/";
+  const sId = data?.serverId || data?.member?.serverId;
+  const cId = data?.channelId;
+  const mId = data?.member?.id || data?.conversationId;
 
-      if (sId && cId) {
-        targetUrl = `/servers/${sId}/channels/${cId}`;
-      } else if (sId && mId) {
-        targetUrl = `/servers/${sId}/conversations/${mId}`;
-      } else if (data?.chatId || data?.conversationId) {
-        targetUrl = `/chat/${data.chatId || data.conversationId}`;
-      }
+  if (sId && cId) {
+    targetUrl = `/servers/${sId}/channels/${cId}`;
+  } else if (sId && mId) {
+    targetUrl = `/servers/${sId}/conversations/${mId}`;
+  } else if (data?.chatId || data?.conversationId) {
+    targetUrl = `/chat/${data.chatId || data.conversationId}`;
+  }
 
-      // Emit IPC message to navigate the UI
-      fetch("http://127.0.0.1:3000/api/socket/internal-emit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: "ui:navigate", data: { url: targetUrl } })
-      }).catch(e => console.error("[Interrupt] Failed to emit UI navigation:", e));
+  // Escape arguments for command line execution
+  const msgContent = data?.content || data?.body || (isCall ? "Incoming Call" : "New Message");
+  const escapedName = fromName.replace(/"/g, '\\"');
+  const escapedMsg = msgContent.replace(/"/g, '\\"');
+
+  // Trigger our custom python tkinter notification card
+  const pythonEnv = "XDG_RUNTIME_DIR=/run/user/1000 DISPLAY=:0";
+  const pythonCmd = `sudo -u nova env WAYLAND_DISPLAY=wayland-1 ${pythonEnv} python3 /opt/cyberdeck/scripts/notify.py "${escapedName}" "${escapedMsg}" "${targetUrl}" || sudo -u nova env WAYLAND_DISPLAY=wayland-0 ${pythonEnv} python3 /opt/cyberdeck/scripts/notify.py "${escapedName}" "${escapedMsg}" "${targetUrl}"`;
+
+  exec(pythonCmd, (err) => {
+    if (err) {
+      console.error("[Interrupt] Failed to trigger python notification:", err);
     }
   });
 
