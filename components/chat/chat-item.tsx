@@ -596,9 +596,11 @@ function ChatItemInner({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    pointerStartRef.current = null;
   };
 
-  const handleTouchStart = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const startLongPress = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    // Treat any touch start as valid. If pointer event, verify pointerType.
     if ('pointerType' in event && event.pointerType !== "touch") return;
     
     let clientX, clientY;
@@ -618,7 +620,7 @@ function ChatItemInner({
     }, 550);
   };
 
-  const handleTouchMove = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const cancelLongPressOnMove = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const start = pointerStartRef.current;
     if (!start) return;
     
@@ -631,37 +633,17 @@ function ChatItemInner({
       clientY = event.clientY;
     } else return;
 
-    const dx = clientX - start.x;
+    const dx = Math.abs(clientX - start.x);
     const dy = Math.abs(clientY - start.y);
-    const absDx = Math.abs(dx);
-
-    if (absDx > 12 || dy > 12) clearLongPress();
-
-    // Custom Swipe-to-Reply Logic (Only drag right, ignore if mostly vertical)
-    if (dx > 0 && dy < 40 && !hasOpenableMedia) {
-      // Update animation frame without React re-render
-      controls.set({ x: Math.min(dx, 80) });
-    }
+    if (dx > 12 || dy > 12) clearLongPress();
   };
 
-  const handleTouchEnd = () => {
+  const onDragEnd = (event: any, info: any) => {
     clearLongPress();
-    pointerStartRef.current = null;
-    
-    // Check if we swiped right far enough to trigger reply
-    // Read the current 'x' value from framer-motion controls implicitly via DOM or internal state
-    // To be safe and simple, we check if the x transform is noticeably shifted
-    const node = messageRef.current;
-    if (node) {
-      const transform = window.getComputedStyle(node).transform;
-      if (transform !== "none") {
-        const matrix = new DOMMatrixReadOnly(transform);
-        if (matrix.m41 > 40) {
-          setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
-        }
-      }
+    // If dragged right more than 40px or flicked right with velocity
+    if (info.offset.x > 40 || info.velocity.x > 300) {
+      setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
     }
-    
     controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 25 } });
   };
 
@@ -792,15 +774,20 @@ function ChatItemInner({
           <motion.div
             ref={messageRef}
             id={`message-${id}`}
-            onPointerDown={handleTouchStart}
-            onPointerMove={handleTouchMove}
-            onPointerUp={handleTouchEnd}
-            onPointerCancel={handleTouchEnd}
-            onPointerLeave={handleTouchEnd}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onTouchCancel={handleTouchEnd}
+            drag={hasOpenableMedia ? false : "x"}
+            dragConstraints={{ left: 0, right: 80 }}
+            dragElastic={0.2}
+            dragDirectionLock
+            onDragEnd={onDragEnd}
+            onPointerDown={startLongPress}
+            onPointerMove={cancelLongPressOnMove}
+            onPointerUp={clearLongPress}
+            onPointerCancel={clearLongPress}
+            onPointerLeave={clearLongPress}
+            onTouchStart={startLongPress}
+            onTouchMove={cancelLongPressOnMove}
+            onTouchEnd={clearLongPress}
+            onTouchCancel={clearLongPress}
             animate={controls}
             className={cn(
               "relative group flex items-start px-4 mb-4 w-full touch-pan-y chat-message-touch-target",
