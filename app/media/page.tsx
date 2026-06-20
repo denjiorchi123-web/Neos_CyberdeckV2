@@ -231,7 +231,7 @@ export default function MediaPage() {
   const isAudio = (f: MediaFile) => f.mimeType.startsWith("audio/");
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0d1117] text-zinc-200 font-mono">
+    <div className="h-full overflow-y-auto bg-[#0d1117] text-zinc-200 font-mono touch-scroll chat-scroll-viewport" style={{ touchAction: "pan-y" }}>
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#0d1117]/95 backdrop-blur border-b border-zinc-800 px-6 py-3">
         <div className="flex items-center justify-between mb-3">
@@ -289,6 +289,7 @@ export default function MediaPage() {
                   onClick={() => setLightbox(f)}
                   onError={e => { (e.target as HTMLImageElement).src = f.url; }}
                   loading="lazy"
+                  draggable="false"
                 />
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-end p-2">
                   <p className="text-white text-[10px] truncate flex-1">{f.name}</p>
@@ -317,7 +318,7 @@ export default function MediaPage() {
                 <div className="h-12 w-12 rounded-lg overflow-hidden bg-zinc-800 shrink-0 flex items-center justify-center">
                   {isImage(f) ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={f.thumbnailUrl ?? f.url} alt="" className="w-full h-full object-cover" />
+                    <img src={f.thumbnailUrl ?? f.url} alt="" className="w-full h-full object-cover" draggable="false" />
                   ) : isVideo(f) ? (
                     <Video className="h-5 w-5 text-blue-400" />
                   ) : isAudio(f) ? (
@@ -446,6 +447,7 @@ export default function MediaPage() {
               alt={lightbox.name}
               className="max-w-full max-h-full rounded-xl shadow-2xl"
               onClick={e => e.stopPropagation()}
+              draggable="false"
             />
           )}
           <div className="absolute bottom-4 left-0 right-0 text-center text-white/60 text-xs">
