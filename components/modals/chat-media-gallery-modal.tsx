@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { format } from "date-fns";
-import { ArrowLeft, FileIcon, LinkIcon, Download, Loader2, X } from "lucide-react";
+import { ArrowLeft, FileIcon, LinkIcon, Download, Loader2, X, Headphones, Play } from "lucide-react";
 
 import {
   Dialog,
@@ -19,7 +19,7 @@ import Image from "next/image";
 
 // Reusable thumbnail for media gallery
 type GalleryPreview =
-  | { kind: "media"; url: string; name: string; mediaType: "image" | "video" }
+  | { kind: "media"; url: string; name: string; mediaType: "image" | "video" | "audio" }
   | { kind: "doc"; url: string; name: string }
   | { kind: "link"; url: string; name: string };
 
@@ -64,6 +64,57 @@ function GalleryMediaItem({ message, onPreview }: { message: any; onPreview: (pr
       style={{ touchAction: "manipulation" }}
     >
       <Image src={url} alt="Media" fill className="object-cover group-hover:scale-105 transition" />
+    </div>
+  );
+}
+
+function GalleryDocItem({ message, onPreview }: { message: any; onPreview: (preview: GalleryPreview) => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (message.mediaKey) {
+      storeMedia(message.fileUrl, message.mediaKey, message.mimeType || "application/octet-stream")
+        .then(decryptedUrl => { if (!cancelled) setUrl(decryptedUrl); })
+        .catch(() => { if (!cancelled) setUrl(message.fileUrl); });
+    } else {
+      setUrl(message.fileUrl);
+    }
+    return () => { cancelled = true; };
+  }, [message.fileUrl, message.mediaKey, message.mimeType]);
+
+  const isAudio = message.type === "audio";
+
+  return (
+    <div className="flex items-center p-3 bg-zinc-100 dark:bg-zinc-800/50 rounded-md gap-4">
+      <div className="h-10 w-10 bg-indigo-500/10 text-indigo-500 rounded flex items-center justify-center shrink-0">
+        {isAudio ? <Headphones className="h-5 w-5" /> : <FileIcon className="h-5 w-5" />}
+      </div>
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <p className="text-sm font-semibold truncate">{message.fileName || (isAudio ? "Audio" : "Document")}</p>
+        <p className="text-xs text-zinc-500">{format(new Date(message.createdAt), "MMM d, yyyy")}</p>
+      </div>
+      {isAudio ? (
+        <button
+          type="button"
+          onClick={() => url && onPreview({ kind: "media", url, name: message.fileName || "Audio", mediaType: "audio" })}
+          className="text-zinc-500 hover:text-indigo-500 transition cursor-pointer p-2"
+          disabled={!url}
+          style={{ touchAction: "manipulation" }}
+        >
+          <Play className="h-5 w-5" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => url && onPreview({ kind: "doc", url, name: message.fileName || "Document" })}
+          className="text-zinc-500 hover:text-indigo-500 transition cursor-pointer p-2"
+          disabled={!url}
+          style={{ touchAction: "manipulation" }}
+        >
+          <Download className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 }
@@ -153,9 +204,21 @@ export function ChatMediaGalleryModal() {
                   autoPlay
                   playsInline
                   preload="metadata"
-                  className="h-full max-h-full w-full max-w-full bg-black object-contain"
-                  style={{ touchAction: "manipulation" }}
+                  className="h-full max-h-full w-full max-w-full bg-black object-contain pointer-events-auto"
+                  style={{ touchAction: "manipulation", userSelect: "auto" }}
                 />
+              ) : preview.kind === "media" && preview.mediaType === "audio" ? (
+                <div className="flex flex-col items-center justify-center gap-4 text-white">
+                  <Headphones className="h-16 w-16 text-indigo-300" />
+                  <p className="text-sm font-bold">{preview.name}</p>
+                  <audio
+                    src={preview.url}
+                    controls
+                    autoPlay
+                    className="pointer-events-auto w-[280px]"
+                    style={{ userSelect: "auto" }}
+                  />
+                </div>
               ) : preview.kind === "media" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={preview.url} alt={preview.name} className="max-h-full max-w-full object-contain" />
@@ -216,23 +279,7 @@ export function ChatMediaGalleryModal() {
                   ) : (
                     <div className="space-y-3">
                       {docMessages.map(msg => (
-                        <div key={msg.id} className="flex items-center p-3 bg-zinc-100 dark:bg-zinc-800/50 rounded-md gap-4">
-                          <div className="h-10 w-10 bg-indigo-500/10 text-indigo-500 rounded flex items-center justify-center shrink-0">
-                            <FileIcon className="h-5 w-5" />
-                          </div>
-                          <div className="flex flex-col flex-1 overflow-hidden">
-                            <p className="text-sm font-semibold truncate">{msg.fileName || "Document"}</p>
-                            <p className="text-xs text-zinc-500">{format(new Date(msg.createdAt), "MMM d, yyyy")}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setPreview({ kind: "doc", url: msg.fileUrl, name: msg.fileName || "Document" })}
-                            className="text-zinc-500 hover:text-indigo-500 transition cursor-pointer p-2"
-                            style={{ touchAction: "manipulation" }}
-                          >
-                            <Download className="h-5 w-5" />
-                          </button>
-                        </div>
+                        <GalleryDocItem key={msg.id} message={msg} onPreview={setPreview} />
                       ))}
                     </div>
                   )}

@@ -35,7 +35,7 @@ if (process.platform === "win32" && process.env.CYBERDECK_SKIP_ELEVATION !== "1"
     console.log("> Requesting Administrator privileges (UAC prompt)…");
     spawn("powershell", ["-NoProfile", "-Command", psCmd], { stdio: "inherit" })
       .on("exit", () => process.exit(0));
-    return; // stop the non-elevated process
+    process.exit(0); // stop the non-elevated process
   }
 
   // Now we are elevated. Ensure Firewall rules exist for CyberDeck ports.
@@ -90,15 +90,27 @@ if (cluster.isPrimary && !dev && process.env.CYBERDECK_CLUSTER === "1") {
   const handle = app.getRequestHandler();
 
   app.prepare().then(() => {
+    // 1. Secure HTTPS Server for LAN Peers (Port 3000)
     createServer(options, (req, res) => {
       const parsedUrl = parse(req.url, true);
       handle(req, res, parsedUrl);
     }).listen(3000, "0.0.0.0", (err) => {
       if (err) throw err;
       if (!cluster.isWorker) {
-        console.log("> CyberDeck Single-Core Dev Node: https://localhost:3000");
+        console.log("> CyberDeck Secure LAN Node: https://0.0.0.0:3000");
       } else {
         console.log(`> CyberDeck Worker Core [${process.pid}] online.`);
+      }
+    });
+
+    // 2. Unencrypted HTTP Server strictly for local Tauri wrapper (Port 3001)
+    http.createServer((req, res) => {
+      const parsedUrl = parse(req.url, true);
+      handle(req, res, parsedUrl);
+    }).listen(3001, "127.0.0.1", (err) => {
+      if (err) throw err;
+      if (!cluster.isWorker) {
+        console.log("> CyberDeck Local Tauri Loopback: http://127.0.0.1:3001");
       }
     });
   });

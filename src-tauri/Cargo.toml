@@ -1,0 +1,21 @@
+[package]
+name = "cyberdeck"
+version = "0.1.0"
+description = "CyberDeck Kiosk Wrapper"
+authors = ["CyberDeck"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.59"
+
+[build-dependencies]
+tauri-build = { version = "1.5.0", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1.5.0", features = [] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+

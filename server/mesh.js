@@ -911,7 +911,7 @@ async function receiveDirectMediaChunk(data, peerIp) {
 
   const fromNodeId = typeof data.fromNodeId === "string" ? data.fromNodeId.trim() : "";
   const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
-  const fromUsername = typeof data.fromUsername === "string" ? fromUsername.trim() : "";
+  const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
   const toUsername = typeof data.toUsername === "string" ? data.toUsername.trim() : "";
   if (!fromUsername || toUsername !== session.username) {
     console.error("> [NodeMesh][MEDIA] Rejected direct_media_chunk: identity mismatch");

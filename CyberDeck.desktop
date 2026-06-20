@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=CyberDeck
+Comment=Air-Gapped LAN Messenger
+Exec=chromium-browser --app=http://127.0.0.1:3001/launcher --touch-events=enabled --ignore-certificate-errors --fast --fast-start
+Icon=/opt/cyberdeck/public/icon.png
+Terminal=false
+Type=Application
+Categories=Network;

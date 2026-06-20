@@ -11,7 +11,6 @@ import { IncomingCallOverlay } from "@/components/incoming-call-overlay";
 import { OutgoingCallOverlay } from "@/components/outgoing-call-overlay";
 
 import type { Metadata } from "next";
-// Removed next/font/google import due to offline build requirement
 
 const openSans = {
   className: "font-sans antialiased"
@@ -24,6 +23,19 @@ const mono = {
 export const metadata: Metadata = {
   title: "CyberDeck",
   description: "CyberDeck air-gapped LAN messenger.",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -50,8 +62,6 @@ export default function RootLayout({
             <QueryProvider>
               <ModalProvider />
               <CallProvider>
-              {/* Global incoming/outgoing call UI — must live inside CallProvider so it
-                  shares the call state regardless of which page the user is on. */}
                 <IncomingCallOverlay />
                 <OutgoingCallOverlay />
                 {children}

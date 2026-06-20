@@ -211,9 +211,6 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     socket.on("call:timeout", onCallTimeout);
 
     return () => {
-      // Remove ONLY the handlers this effect registered. A blanket socket.off("call:start")
-      // would clobber listeners registered by other components (this was the actual bug
-      // behind the zombie ringtone).
       socket.off("call:start", onCallStart);
       socket.off("call:end", onCallEnd);
       socket.off("call:decline", onCallDecline);
@@ -221,6 +218,38 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       socket.off("call:timeout", onCallTimeout);
     };
   }, [socket]);
+
+  // Cold-Boot Wakeup: Hardware interrupt launched UI directly to this URL
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("incomingCall") === "1" && !chatIdRef.current) {
+      const pCallId = params.get("callId");
+      if (pCallId && endedCallIdsRef.current.has(pCallId)) return;
+      
+      callIdRef.current = pCallId;
+      chatIdRef.current = params.get("chatId");
+      callTypeRef.current = (params.get("callType") || "audio") as CallType;
+      
+      setChatId(params.get("chatId"));
+      setCallType(callTypeRef.current);
+      setRemotePeer({ id: "unknown", name: params.get("callerName") || "Incoming Call" });
+      setStatus("RINGING");
+      
+      playRingtone();
+      
+      if (autoMissTimeoutRef.current) clearTimeout(autoMissTimeoutRef.current);
+      autoMissTimeoutRef.current = setTimeout(() => {
+        if (callIdRef.current === pCallId) {
+          markCallEnded(pCallId);
+          resetCall();
+        }
+      }, 45000);
+      
+      // Clear URL params so refresh doesn't trigger it again
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   // Scenario #13 — BroadcastChannel for cross-tab dismiss.
   // When the user accepts or declines in one tab, the other tabs of the same user listen

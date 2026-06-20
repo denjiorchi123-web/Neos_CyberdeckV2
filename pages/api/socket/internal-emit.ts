@@ -19,6 +19,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponseS
     return res.status(400).json({ error: "Missing event" });
   }
 
+  // --- SYSTEM INTERRUPT INJECTION ---
+  if (
+    event === "webrtc:offer" || 
+    event === "webrtc:call" ||
+    event === "call:start" ||
+    event.endsWith(":messages")
+  ) {
+    try {
+      const { triggerSystemInterrupt } = require("@/lib/system-interrupt");
+      triggerSystemInterrupt(event, data);
+    } catch (err) {
+      console.error("[SocketIPC] Failed to execute hardware interrupt:", err);
+    }
+  }
+  // ----------------------------------
+
   let io = (global as any).nextIo || res.socket?.server?.io;
 
   if (!io) {

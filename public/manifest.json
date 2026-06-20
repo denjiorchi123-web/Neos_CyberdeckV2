@@ -1,0 +1,17 @@
+{
+  "name": "CyberDeck",
+  "short_name": "CyberDeck",
+  "description": "CyberDeck Air-Gapped LAN Messenger",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#313338",
+  "theme_color": "#313338",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

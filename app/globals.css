@@ -183,4 +183,8 @@ button,
     @apply bg-background text-foreground;
     font-family: "Inter", "Noto Color Emoji", sans-serif;
   }
+  img, video {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
 }
