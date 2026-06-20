@@ -140,6 +140,7 @@ export function ChatMessages({
         ref={chatRef}
         tabIndex={0}
         className="touch-scroll chat-scroll-viewport flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+        style={{ touchAction: "pan-y" }}
       >
         {hasNextPage && (
           <div className="flex justify-center">

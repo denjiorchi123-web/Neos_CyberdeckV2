@@ -589,62 +589,162 @@ function ChatItemInner({
   const controls = useAnimation();
   const messageRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const gestureStateRef = useRef<{
+    startX: number;
+    startY: number;
+    isSwiping: boolean;
+    isScrolling: boolean;
+    lastX: number;
+    lastY: number;
+    dx: number;
+  } | null>(null);
 
   const clearLongPress = () => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    pointerStartRef.current = null;
   };
 
-  const startLongPress = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    // Treat any touch start as valid. If pointer event, verify pointerType.
-    if ('pointerType' in event && event.pointerType !== "touch") return;
-    
-    let clientX, clientY;
-    if ('touches' in event && event.touches.length > 0) {
-      clientX = event.touches[0].clientX;
-      clientY = event.touches[0].clientY;
-    } else if ('clientX' in event) {
-      clientX = event.clientX;
-      clientY = event.clientY;
-    } else return;
-
-    pointerStartRef.current = { x: clientX, y: clientY };
-    longPressTimerRef.current = setTimeout(() => {
-      if (navigator.vibrate) navigator.vibrate(50);
-      setMobileMenuOpen(true);
-      clearLongPress();
-    }, 550);
-  };
-
-  const cancelLongPressOnMove = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    const start = pointerStartRef.current;
-    if (!start) return;
-    
-    let clientX, clientY;
-    if ('touches' in event && event.touches.length > 0) {
-      clientX = event.touches[0].clientX;
-      clientY = event.touches[0].clientY;
-    } else if ('clientX' in event) {
-      clientX = event.clientX;
-      clientY = event.clientY;
-    } else return;
-
-    const dx = Math.abs(clientX - start.x);
-    const dy = Math.abs(clientY - start.y);
-    if (dx > 12 || dy > 12) clearLongPress();
-  };
-
-  const onDragEnd = (event: any, info: any) => {
+  const handleStart = (clientX: number, clientY: number, isTouch: boolean) => {
     clearLongPress();
-    // If dragged right more than 40px or flicked right with velocity
-    if (info.offset.x > 40 || info.velocity.x > 300) {
-      setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
+    
+    gestureStateRef.current = {
+      startX: clientX,
+      startY: clientY,
+      isSwiping: false,
+      isScrolling: false,
+      lastX: clientX,
+      lastY: clientY,
+      dx: 0
+    };
+
+    if (isTouch) {
+      longPressTimerRef.current = setTimeout(() => {
+        if (navigator.vibrate) {
+          try {
+            navigator.vibrate(50);
+          } catch (e) {}
+        }
+        setMobileMenuOpen(true);
+        clearLongPress();
+      }, 550);
     }
+  };
+
+  const handleMove = (clientX: number, clientY: number, preventDefaultFn: () => void) => {
+    const state = gestureStateRef.current;
+    if (!state) return;
+
+    const dx = clientX - state.startX;
+    const dy = clientY - state.startY;
+    state.lastX = clientX;
+    state.lastY = clientY;
+    state.dx = dx;
+
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    if (absDx > 12 || absDy > 12) {
+      clearLongPress();
+    }
+
+    if (!state.isSwiping && !state.isScrolling) {
+      if (absDx > 12 || absDy > 12) {
+        if (absDx > absDy && dx > 0) {
+          state.isSwiping = true;
+        } else {
+          state.isScrolling = true;
+        }
+      }
+    }
+
+    if (state.isSwiping) {
+      preventDefaultFn();
+      if (!hasOpenableMedia) {
+        controls.set({ x: Math.max(0, Math.min(dx, 80)) });
+      }
+    }
+  };
+
+  const handleEnd = () => {
+    clearLongPress();
+    const state = gestureStateRef.current;
+    if (state) {
+      if (state.isSwiping && state.dx > 40 && !hasOpenableMedia) {
+        setReplyingTo({
+          id,
+          content: content || fileName || "Attachment",
+          memberName: member.profile.name,
+          fileUrl,
+          fileName,
+          mimeType,
+          type,
+          thumbnailUrl
+        });
+      }
+    }
+    gestureStateRef.current = null;
     controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 25 } });
+  };
+
+  const onTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length > 0) {
+      const touch = event.touches[0];
+      handleStart(touch.clientX, touch.clientY, true);
+    }
+  };
+
+  const onTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const state = gestureStateRef.current;
+    if (!state) return;
+    if (event.touches.length > 0) {
+      const touch = event.touches[0];
+      handleMove(touch.clientX, touch.clientY, () => {
+        if (event.cancelable) {
+          event.preventDefault();
+        }
+      });
+    }
+  };
+
+  const onTouchEnd = () => {
+    handleEnd();
+  };
+
+  const onTouchCancel = () => {
+    handleEnd();
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") {
+      if (gestureStateRef.current) return;
+      handleStart(event.clientX, event.clientY, true);
+    } else if (event.pointerType === "mouse") {
+      handleStart(event.clientX, event.clientY, false);
+    }
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = gestureStateRef.current;
+    if (!state) return;
+    handleMove(event.clientX, event.clientY, () => {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+    });
+  };
+
+  const onPointerUp = () => {
+    handleEnd();
+  };
+
+  const onPointerCancel = () => {
+    handleEnd();
+  };
+
+  const onPointerLeave = () => {
+    handleEnd();
   };
 
   const effectiveMime = mimeType || "";
@@ -774,20 +874,15 @@ function ChatItemInner({
           <motion.div
             ref={messageRef}
             id={`message-${id}`}
-            drag={hasOpenableMedia ? false : "x"}
-            dragConstraints={{ left: 0, right: 80 }}
-            dragElastic={0.2}
-            dragDirectionLock
-            onDragEnd={onDragEnd}
-            onPointerDown={startLongPress}
-            onPointerMove={cancelLongPressOnMove}
-            onPointerUp={clearLongPress}
-            onPointerCancel={clearLongPress}
-            onPointerLeave={clearLongPress}
-            onTouchStart={startLongPress}
-            onTouchMove={cancelLongPressOnMove}
-            onTouchEnd={clearLongPress}
-            onTouchCancel={clearLongPress}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            onPointerLeave={onPointerLeave}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchCancel}
             animate={controls}
             className={cn(
               "relative group flex items-start px-4 mb-4 w-full touch-pan-y chat-message-touch-target",

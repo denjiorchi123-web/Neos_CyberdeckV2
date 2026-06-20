@@ -2,7 +2,7 @@
 Version=1.0
 Name=CyberDeck
 Comment=Air-Gapped LAN Messenger
-Exec=chromium-browser --app=http://127.0.0.1:3001/launcher --touch-events=enabled --ignore-certificate-errors --fast --fast-start
+Exec=chromium-browser --kiosk "http://127.0.0.1:3001/launcher" --ozone-platform=wayland --enable-features=UseOzonePlatform --touch-events=enabled --enable-multitouch --enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-pinch --overscroll-history-navigation=0 --ignore-certificate-errors --password-store=basic --fast --fast-start
 Icon=/opt/cyberdeck/public/icon.png
 Terminal=false
 Type=Application
