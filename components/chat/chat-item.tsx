@@ -596,11 +596,9 @@ function ChatItemInner({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    pointerStartRef.current = null;
   };
 
-  const startLongPress = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    // Treat any touch start as valid. If pointer event, verify pointerType.
+  const handleTouchStart = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if ('pointerType' in event && event.pointerType !== "touch") return;
     
     let clientX, clientY;
@@ -620,7 +618,7 @@ function ChatItemInner({
     }, 550);
   };
 
-  const cancelLongPressOnMove = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchMove = (event: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const start = pointerStartRef.current;
     if (!start) return;
     
@@ -633,9 +631,38 @@ function ChatItemInner({
       clientY = event.clientY;
     } else return;
 
-    const dx = Math.abs(clientX - start.x);
+    const dx = clientX - start.x;
     const dy = Math.abs(clientY - start.y);
-    if (dx > 12 || dy > 12) clearLongPress();
+    const absDx = Math.abs(dx);
+
+    if (absDx > 12 || dy > 12) clearLongPress();
+
+    // Custom Swipe-to-Reply Logic (Only drag right, ignore if mostly vertical)
+    if (dx > 0 && dy < 40 && !hasOpenableMedia) {
+      // Update animation frame without React re-render
+      controls.set({ x: Math.min(dx, 80) });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    clearLongPress();
+    pointerStartRef.current = null;
+    
+    // Check if we swiped right far enough to trigger reply
+    // Read the current 'x' value from framer-motion controls implicitly via DOM or internal state
+    // To be safe and simple, we check if the x transform is noticeably shifted
+    const node = messageRef.current;
+    if (node) {
+      const transform = window.getComputedStyle(node).transform;
+      if (transform !== "none") {
+        const matrix = new DOMMatrixReadOnly(transform);
+        if (matrix.m41 > 40) {
+          setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
+        }
+      }
+    }
+    
+    controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 25 } });
   };
 
   const effectiveMime = mimeType || "";
@@ -765,15 +792,15 @@ function ChatItemInner({
           <motion.div
             ref={messageRef}
             id={`message-${id}`}
-            onPointerDown={startLongPress}
-            onPointerMove={cancelLongPressOnMove}
-            onPointerUp={clearLongPress}
-            onPointerCancel={clearLongPress}
-            onPointerLeave={clearLongPress}
-            onTouchStart={startLongPress}
-            onTouchMove={cancelLongPressOnMove}
-            onTouchEnd={clearLongPress}
-            onTouchCancel={clearLongPress}
+            onPointerDown={handleTouchStart}
+            onPointerMove={handleTouchMove}
+            onPointerUp={handleTouchEnd}
+            onPointerCancel={handleTouchEnd}
+            onPointerLeave={handleTouchEnd}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
             animate={controls}
             className={cn(
               "relative group flex items-start px-4 mb-4 w-full touch-pan-y chat-message-touch-target",
