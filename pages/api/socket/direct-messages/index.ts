@@ -267,8 +267,8 @@ export default async function handler(
       }
     });
 
-    // Force WAL flush to disk immediately so power pulls don't lose the message!
-    await db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
+    // Flush WAL to disk in the background so it doesn't block the main thread
+    db.$executeRawUnsafe("PRAGMA wal_checkpoint(FULL);").catch(() => {});
 
     const channelKey = `chat:${conversationId}:messages`;
     const io = res?.socket?.server?.io || (global as any).nextIo;
