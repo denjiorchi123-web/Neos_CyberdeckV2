@@ -12,7 +12,7 @@ def navigate_to_chat(url):
         # Emit IPC message to navigate the UI
         data = json.dumps({"event": "ui:navigate", "data": {"url": url}}).encode("utf-8")
         req = urllib.request.Request(
-            "http://127.0.0.1:3000/api/socket/internal-emit",
+            "http://127.0.0.1:3001/api/socket/internal-emit",
             data=data,
             headers={"Content-Type": "application/json"}
         )

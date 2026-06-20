@@ -41,7 +41,7 @@ export function triggerSystemInterrupt(event: string = "unknown", data: any = {}
   const escapedMsg = msgContent.replace(/"/g, '\\"');
 
   // Trigger our custom python tkinter notification card
-  const pythonCmd = `PID=\\$(pgrep -u nova chromium | head -n 1 || pgrep -u nova labwc | head -n 1 || echo ""); if [ -n "\\$PID" ]; then eval \\$(cat /proc/\\$PID/environ | tr '\\\\0' '\\\\n' | grep -E '^(WAYLAND_DISPLAY|DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS)='); fi; export WAYLAND_DISPLAY DISPLAY XDG_RUNTIME_DIR XAUTHORITY DBUS_SESSION_BUS_ADDRESS; CMD="python3 /opt/cyberdeck/scripts/notify.py \\"${escapedName}\\" \\"${escapedMsg}\\" \\"${targetUrl}\\""; if [ \\$(id -u) -eq 0 ]; then CMD="sudo -u nova -E \\$CMD"; fi; eval \\$CMD > /tmp/notify.log 2>&1`;
+  const pythonCmd = `PID=\\$(pgrep -u nova chromium-browser | head -n 1 || pgrep -u nova chromium | head -n 1 || pgrep -u nova labwc | head -n 1 || pgrep -u nova wayfire | head -n 1 || echo ""); if [ -n "\\$PID" ]; then eval \\$(cat /proc/\\$PID/environ | tr '\\\\0' '\\\\n' | grep -E '^(WAYLAND_DISPLAY|DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY|DBUS_SESSION_BUS_ADDRESS)='); fi; export WAYLAND_DISPLAY DISPLAY XDG_RUNTIME_DIR XAUTHORITY DBUS_SESSION_BUS_ADDRESS; CMD="python3 /opt/cyberdeck/scripts/notify.py \\"${escapedName}\\" \\"${escapedMsg}\\" \\"${targetUrl}\\""; if [ \\$(id -u) -eq 0 ]; then CMD="sudo -u nova -E \\$CMD"; fi; eval \\$CMD > /tmp/notify.log 2>&1`;
 
   exec(pythonCmd, (err) => {
     if (err) {
