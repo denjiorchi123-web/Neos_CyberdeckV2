@@ -1559,19 +1559,33 @@ async function emitRoutedCallSignal(event, payload, fromUsername, fromUserId, pe
     });
   }
 
-  if (event === "call:accepted" || event === "call:declined" || event === "call:busy") {
-    // These route specifically to the target user (the caller waiting)
-    emitToLocalSocket(localPayload.targetId, event, {
-      ...localPayload,
-      callerId: localPayload.callerId,
-    });
-    return;
+  const targetUserRoom = route.localUserId
+    ? `user:${route.localUserId}`
+    : (localPayload.targetUserId ? `user:${localPayload.targetUserId}` : null);
+
+  const isCallControlEvent =
+    event === "call:accept" ||
+    event === "call:accepted" ||
+    event === "call:decline" ||
+    event === "call:declined" ||
+    event === "call:end" ||
+    event === "call:timeout" ||
+    event === "call:busy";
+
+  if (isCallControlEvent) {
+    // Emit to the conversation room (for active call tabs)
+    emitToLocalSocket(localPayload.chatId, event, localPayload);
+    // Also emit to the user's specific room (for ringing/modal overlays)
+    if (targetUserRoom) {
+      emitToLocalSocket(targetUserRoom, event, localPayload);
+    }
   } else if (event === "call:ping" || event === "call:pong") {
     // Diagnostic pings, point-to-point only
-    emitToLocalSocket(`user:${route.localUserId}`, event, localPayload);
+    if (targetUserRoom) {
+      emitToLocalSocket(targetUserRoom, event, localPayload);
+    }
   } else {
-    // End/signal/candidate broadcast to the entire call room
-    // The UI handles deduplication and routing
+    // WebRTC connection signals (offer, answer, candidates)
     emitToLocalSocket(localPayload.chatId, event, localPayload);
   }
 }
