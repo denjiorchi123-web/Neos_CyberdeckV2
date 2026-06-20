@@ -30,9 +30,18 @@ export function triggerSystemInterrupt(event: string = "unknown", data: any = {}
     if (stdout && stdout.trim() === "default") {
       console.log("[Interrupt] Notification clicked! Navigating to chat...");
       let targetUrl = "/";
-      if (data?.serverId && data?.channelId) targetUrl = `/servers/${data.serverId}/channels/${data.channelId}`;
-      else if (data?.serverId && data?.conversationId) targetUrl = `/servers/${data.serverId}/conversations/${data.conversationId}`;
-      else if (data?.chatId || data?.conversationId) targetUrl = `/chat/${data.chatId || data.conversationId}`;
+      
+      const sId = data?.serverId || data?.member?.serverId;
+      const cId = data?.channelId;
+      const mId = data?.member?.id || data?.conversationId;
+
+      if (sId && cId) {
+        targetUrl = `/servers/${sId}/channels/${cId}`;
+      } else if (sId && mId) {
+        targetUrl = `/servers/${sId}/conversations/${mId}`;
+      } else if (data?.chatId || data?.conversationId) {
+        targetUrl = `/chat/${data.chatId || data.conversationId}`;
+      }
 
       // Emit IPC message to navigate the UI
       fetch("http://127.0.0.1:3000/api/socket/internal-emit", {
