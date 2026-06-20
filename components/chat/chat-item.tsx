@@ -638,15 +638,6 @@ function ChatItemInner({
     if (dx > 12 || dy > 12) clearLongPress();
   };
 
-  const onDragEnd = (event: any, info: any) => {
-    clearLongPress();
-    // If dragged right more than 40px or flicked right with velocity
-    if (info.offset.x > 40 || info.velocity.x > 300) {
-      setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl });
-    }
-    controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 25 } });
-  };
-
   const effectiveMime = mimeType || "";
   const fileExt       = (fileName || fileUrl || "").split("?")[0].split(".").pop()?.toLowerCase() ?? "";
   const isImage    = (effectiveMime.startsWith("image/")  || ["png","jpg","jpeg","gif","webp","heic","heif"].includes(fileExt)) && !!fileUrl;
@@ -774,11 +765,6 @@ function ChatItemInner({
           <motion.div
             ref={messageRef}
             id={`message-${id}`}
-            drag={hasOpenableMedia ? false : "x"}
-            dragConstraints={{ left: 0, right: 80 }}
-            dragElastic={0.2}
-            dragDirectionLock
-            onDragEnd={onDragEnd}
             onPointerDown={startLongPress}
             onPointerMove={cancelLongPressOnMove}
             onPointerUp={clearLongPress}
