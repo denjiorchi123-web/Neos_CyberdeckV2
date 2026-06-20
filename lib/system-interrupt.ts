@@ -23,8 +23,25 @@ export function triggerSystemInterrupt(event: string = "unknown", data: any = {}
 
   // Send an OS-level desktop notification
   const notifyEnv = "XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DISPLAY=:0";
-  const notifyCmd = `sudo -u nova env WAYLAND_DISPLAY=wayland-1 ${notifyEnv} notify-send "CyberDeck - ${title}" "${body}" -u critical -t 5000 || sudo -u nova env WAYLAND_DISPLAY=wayland-0 ${notifyEnv} notify-send "CyberDeck - ${title}" "${body}" -u critical -t 5000`;
-  exec(notifyCmd, () => {});
+  // Added -i message-new for native icon and --action="default=Open" -w to capture click
+  const notifyCmd = `sudo -u nova env WAYLAND_DISPLAY=wayland-1 ${notifyEnv} notify-send -i message-new "CyberDeck - ${title}" "${body}" -u critical -t 5000 --action="default=Open" -w || sudo -u nova env WAYLAND_DISPLAY=wayland-0 ${notifyEnv} notify-send -i message-new "CyberDeck - ${title}" "${body}" -u critical -t 5000 --action="default=Open" -w`;
+  
+  exec(notifyCmd, (err, stdout) => {
+    if (stdout && stdout.trim() === "default") {
+      console.log("[Interrupt] Notification clicked! Navigating to chat...");
+      let targetUrl = "/";
+      if (data?.serverId && data?.channelId) targetUrl = `/servers/${data.serverId}/channels/${data.channelId}`;
+      else if (data?.serverId && data?.conversationId) targetUrl = `/servers/${data.serverId}/conversations/${data.conversationId}`;
+      else if (data?.chatId || data?.conversationId) targetUrl = `/chat/${data.chatId || data.conversationId}`;
+
+      // Emit IPC message to navigate the UI
+      fetch("http://127.0.0.1:3000/api/socket/internal-emit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "ui:navigate", data: { url: targetUrl } })
+      }).catch(e => console.error("[Interrupt] Failed to emit UI navigation:", e));
+    }
+  });
 
   // Only force-launch the UI full-screen if it's an incoming CALL!
   if (isCall) {

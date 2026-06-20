@@ -33,6 +33,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -567,6 +574,7 @@ function ChatItemInner({
   const [lightboxType, setLightboxType] = useState<"image" | "video" | "document">("image");
   const [lightboxMime, setLightboxMime] = useState<string>("application/octet-stream");
   const [imgError,     setImgError]     = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { onOpen }  = useModal();
   const params      = useParams();
   const router      = useRouter();
@@ -595,12 +603,8 @@ function ChatItemInner({
     if (event.pointerType !== "touch") return;
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
     longPressTimerRef.current = setTimeout(() => {
-      messageRef.current?.dispatchEvent(new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX: event.clientX,
-        clientY: event.clientY,
-      }));
+      if (navigator.vibrate) navigator.vibrate(50);
+      setMobileMenuOpen(true);
       clearLongPress();
     }, 550);
   };
@@ -767,6 +771,43 @@ function ChatItemInner({
             )}
             style={{ touchAction: "pan-y" }}
           >
+            <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <div className="absolute top-1/2 left-1/2 w-0 h-0" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-48 bg-[#10131b]/95 border-indigo-500/30 text-zinc-300 z-50">
+                <DropdownMenuItem className="hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white" onClick={() => setReplyingTo({ id, content: content || fileName || "Attachment", memberName: member.profile.name, fileUrl, fileName, mimeType, type, thumbnailUrl })}>
+                  <Reply className="mr-2 h-4 w-4" /> Reply
+                </DropdownMenuItem>
+                <DropdownMenuItem className="hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white" onClick={() => onOpen("forwardMessage", { message: { id, content, fileUrl, fileName, mimeType, mediaKey, type, fileSize, thumbnailUrl } })}>
+                  <Forward className="mr-2 h-4 w-4" /> Forward
+                </DropdownMenuItem>
+                <DropdownMenuItem className="hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white" onClick={onShare}>
+                  <Share2 className="mr-2 h-4 w-4" /> Share
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-white/10" />
+                <DropdownMenuItem className="hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white" onClick={onPin}>
+                  {isPinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+                  {isPinned ? "Unpin" : "Pin"}
+                </DropdownMenuItem>
+                {(canDelete || canEdit) && (
+                  <>
+                    <DropdownMenuSeparator className="bg-white/10" />
+                    {canEdit && (
+                      <DropdownMenuItem className="hover:bg-white/10 cursor-pointer focus:bg-white/10 focus:text-white" onClick={() => setIsEditing(true)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
+                    )}
+                    {canDelete && (
+                      <DropdownMenuItem className="hover:bg-rose-500 hover:text-white cursor-pointer text-rose-500 focus:bg-rose-500 focus:text-white" onClick={() => onOpen("deleteMessage", { apiUrl: `${socketUrl}/${id}`, query: socketQuery })}>
+                        <Trash className="mr-2 h-4 w-4" /> Delete
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
             <div className={cn("flex max-w-[80%] gap-x-3", isOwner ? "flex-row-reverse" : "flex-row")}>
           {!isOwner && (
             <div

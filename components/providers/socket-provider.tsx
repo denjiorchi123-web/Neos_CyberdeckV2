@@ -180,6 +180,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       openPairingRequest(data);
     });
 
+    s.on("mesh:peer-update", (peer: any) => {
+      console.log("[SocketProvider] Received mesh:peer-update global event:", peer);
+    });
+
+    s.on("ui:navigate", (data: { url: string }) => {
+      console.log("[SocketProvider] Received ui:navigate command:", data?.url);
+      if (data?.url) router.push(data.url);
+    });
+
     s.on("chat:refresh-list", () => {
       router.refresh();
     });
