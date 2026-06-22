@@ -84,7 +84,7 @@ install_tauri_deps() {
     echo ""
     echo "[4] Installing Tauri Compilation Dependencies..."
     sudo apt update
-    sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libsoup2.4-dev
+    sudo apt install -y libwebkit2gtk-4.1-dev libwebkit2gtk-4.0-dev libjavascriptcoregtk-4.0-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libsoup2.4-dev
 
     echo "Installing Rust Toolchain..."
     if ! command -v cargo &> /dev/null; then

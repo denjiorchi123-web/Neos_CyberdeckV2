@@ -117,7 +117,7 @@ sudo systemctl restart cyberdeck-web.service || true
 
 # 6. Install Tauri Development Dependencies & Rust
 echo -e "\n[6/8] Installing Tauri dependencies & Rust Toolchain..."
-sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libsoup2.4-dev
+sudo apt install -y libwebkit2gtk-4.1-dev libwebkit2gtk-4.0-dev libjavascriptcoregtk-4.0-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libsoup2.4-dev
 
 if ! command -v cargo &> /dev/null; then
     echo "Installing Rust compiler..."
