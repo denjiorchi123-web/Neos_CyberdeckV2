@@ -92,7 +92,7 @@ echo -e "\n[5/8] Creating background system services for database, Next.js, and 
 sudo cp "$PROJECT_DIR/deploy/systemd/redis-cyberdeck.service" /etc/systemd/system/redis-cyberdeck.service
 sudo systemctl daemon-reload
 sudo systemctl enable redis-cyberdeck.service
-sudo systemctl restart redis-cyberdeck.service
+sudo systemctl restart redis-cyberdeck.service || true
 
 # Create cyberdeck system user if not exists
 sudo useradd --system --create-home --home /home/cyberdeck --shell /usr/sbin/nologin cyberdeck 2>/dev/null || true
@@ -105,7 +105,7 @@ sudo chown -R $USER:$USER "$PROJECT_DIR/node_modules" 2>/dev/null || true
 sudo cp "$PROJECT_DIR/deploy/systemd/cyberdeck-web.service" /etc/systemd/system/cyberdeck-web.service
 sudo systemctl daemon-reload
 sudo systemctl enable cyberdeck-web.service
-sudo systemctl restart cyberdeck-web.service
+sudo systemctl restart cyberdeck-web.service || true
 
 # 6. Install Tauri Development Dependencies & Rust
 echo -e "\n[6/8] Installing Tauri dependencies & Rust Toolchain..."
