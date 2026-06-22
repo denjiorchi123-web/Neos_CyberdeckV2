@@ -146,6 +146,7 @@ EOF
 mkdir -p "$HOME/Desktop"
 cp "$PROJECT_DIR/CyberDeck.desktop" "$HOME/Desktop/"
 chmod +x "$HOME/Desktop/CyberDeck.desktop"
+gio set "$HOME/Desktop/CyberDeck.desktop" metadata::trusted yes 2>/dev/null || true
 
 echo "=========================================================="
 echo " SETUP COMPLETED SUCCESSFULLY!                            "

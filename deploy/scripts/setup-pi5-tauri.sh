@@ -130,6 +130,7 @@ EOF
     mkdir -p "$HOME/Desktop"
     cp /opt/cyberdeck/CyberDeck.desktop "$HOME/Desktop/"
     chmod +x "$HOME/Desktop/CyberDeck.desktop"
+    gio set "$HOME/Desktop/CyberDeck.desktop" metadata::trusted yes 2>/dev/null || true
 
     echo "Desktop shortcut created at ~/Desktop/CyberDeck.desktop."
 }
