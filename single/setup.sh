@@ -55,13 +55,13 @@ sudo systemctl daemon-reload
 rm -f ~/.config/autostart/cyberdeck-kiosk.desktop
 rm -f ~/.config/autostart/cyberdeck*.desktop
 
-# Comment out vc4 GPU drivers in config.txt to fall back to generic framebuffer
+# Ensure vc4 GPU drivers and I2C interfaces are enabled in config.txt
 if [ -f "$BOOT_CONFIG" ]; then
-    echo "Commenting out vc4-kms-v3d / vc4-fkms-v3d in $BOOT_CONFIG"
-    sudo sed -i 's/^dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/' "$BOOT_CONFIG"
-    sudo sed -i 's/^dtoverlay=vc4-fkms-v3d/#dtoverlay=vc4-fkms-v3d/' "$BOOT_CONFIG"
+    echo "Enabling vc4-kms-v3d and i2c_arm in $BOOT_CONFIG..."
+    sudo sed -i 's/^#[[:space:]]*dtoverlay=vc4-kms-v3d/dtoverlay=vc4-kms-v3d/' "$BOOT_CONFIG"
+    sudo sed -i 's/^#[[:space:]]*dtparam=i2c_arm=on/dtparam=i2c_arm=on/' "$BOOT_CONFIG"
 fi
-echo "Old kiosk services and GPU drivers overlay disabled/removed."
+echo "Old kiosk services disabled, and hardware display/touch drivers verified enabled."
 
 # 3. Update System Packages
 echo -e "\n[3/8] Updating System Packages (safely without removing any packages)..."

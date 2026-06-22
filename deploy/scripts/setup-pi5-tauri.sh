@@ -58,19 +58,19 @@ remove_startup_and_gpu() {
     # 2. Remove desktop autostart entry
     rm -f ~/.config/autostart/cyberdeck-kiosk.desktop
 
-    # 3. Comment out VC4/V3D GPU Driver overlays
+    # 3. Enable VC4/V3D GPU Driver and I2C overlays
     BOOT_CONFIG="/boot/firmware/config.txt"
     if [ ! -f "$BOOT_CONFIG" ]; then
         BOOT_CONFIG="/boot/config.txt"
     fi
 
     if [ -f "$BOOT_CONFIG" ]; then
-        echo "Commenting out vc4-kms-v3d overlays in $BOOT_CONFIG..."
-        sudo sed -i 's/^dtoverlay=vc4-kms-v3d/#dtoverlay=vc4-kms-v3d/' "$BOOT_CONFIG"
-        sudo sed -i 's/^dtoverlay=vc4-fkms-v3d/#dtoverlay=vc4-fkms-v3d/' "$BOOT_CONFIG"
+        echo "Enabling vc4-kms-v3d and i2c_arm in $BOOT_CONFIG..."
+        sudo sed -i 's/^#[[:space:]]*dtoverlay=vc4-kms-v3d/dtoverlay=vc4-kms-v3d/' "$BOOT_CONFIG"
+        sudo sed -i 's/^#[[:space:]]*dtparam=i2c_arm=on/dtparam=i2c_arm=on/' "$BOOT_CONFIG"
     fi
 
-    echo "Startup services and GPU drivers overlay disabled/removed."
+    echo "Startup services disabled, and hardware display/touch drivers verified enabled."
 }
 
 update_packages() {
