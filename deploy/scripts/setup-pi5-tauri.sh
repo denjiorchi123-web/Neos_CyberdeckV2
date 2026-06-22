@@ -147,6 +147,24 @@ EOF
     chmod +x "$HOME/Desktop/CyberDeck.desktop"
     gio set "$HOME/Desktop/CyberDeck.desktop" metadata::trusted yes 2>/dev/null || true
 
+    # Disable double-click run warnings globally in PCManFM-Qt (modern Wayland desktop)
+    for CONF_FILE in "$HOME/.config/pcmanfm-qt/lxqt-pcmanfm.conf" "$HOME/.config/pcmanfm-qt/default/settings.conf"; do
+        if [ -f "$CONF_FILE" ]; then
+            if grep -q "AskBeforeRunning" "$CONF_FILE"; then
+                sed -i 's/AskBeforeRunning=true/AskBeforeRunning=false/' "$CONF_FILE"
+            else
+                sed -i '/\[Behaviour\]/a AskBeforeRunning=false' "$CONF_FILE" 2>/dev/null || sed -i '/\[Behavior\]/a AskBeforeRunning=false' "$CONF_FILE" 2>/dev/null || echo -e "\n[Behaviour]\nAskBeforeRunning=false" >> "$CONF_FILE"
+            fi
+        fi
+    done
+
+    # Disable double-click warnings globally in PCManFM (older X11 desktop)
+    LIBFM_CONF="$HOME/.config/libfm/libfm.conf"
+    if [ -f "$LIBFM_CONF" ]; then
+        sed -i 's/quick_exec=0/quick_exec=1/' "$LIBFM_CONF"
+        sed -i 's/quick_exec=2/quick_exec=1/' "$LIBFM_CONF"
+    fi
+
     echo "Desktop shortcut created at ~/Desktop/CyberDeck.desktop."
 }
 
