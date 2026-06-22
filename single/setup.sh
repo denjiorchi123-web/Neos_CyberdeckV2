@@ -8,6 +8,9 @@ set -eu
 
 PROJECT_DIR="/opt/cyberdeck"
 
+# Ensure the compiling user owns the directory at the start of the script to prevent EACCES errors
+sudo chown -R $USER:$USER "$PROJECT_DIR"
+
 echo "=========================================================="
 echo "    STARTING NATIVE TAURI & SYSTEM CONFIGURATION SCRIPT   "
 echo "=========================================================="
@@ -96,10 +99,15 @@ sudo systemctl restart redis-cyberdeck.service || true
 
 # Create cyberdeck system user if not exists
 sudo useradd --system --create-home --home /home/cyberdeck --shell /usr/sbin/nologin cyberdeck 2>/dev/null || true
-sudo chown -R cyberdeck:cyberdeck "$PROJECT_DIR"
-sudo chown -R $USER:$USER "$PROJECT_DIR/src-tauri"
-sudo chown -R $USER:$USER "$PROJECT_DIR/.git"
-sudo chown -R $USER:$USER "$PROJECT_DIR/node_modules" 2>/dev/null || true
+sudo usermod -a -G cyberdeck $USER 2>/dev/null || true
+
+# Set up runtime write access for the cyberdeck daemon user
+sudo mkdir -p "$PROJECT_DIR/prisma" "$PROJECT_DIR/public"
+sudo chown -R cyberdeck:cyberdeck "$PROJECT_DIR/prisma" "$PROJECT_DIR/public"
+sudo chmod -R 775 "$PROJECT_DIR/prisma" "$PROJECT_DIR/public"
+if [ -f "$PROJECT_DIR/prisma/dev.db" ]; then
+    sudo chmod 664 "$PROJECT_DIR/prisma/dev.db"
+fi
 
 # Install and run Next.js Web Server Service
 sudo cp "$PROJECT_DIR/deploy/systemd/cyberdeck-web.service" /etc/systemd/system/cyberdeck-web.service
