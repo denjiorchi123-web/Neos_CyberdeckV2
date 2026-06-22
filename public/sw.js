@@ -2,7 +2,9 @@
 // Caches the app shell for instant reloads and queues failed POST requests.
 // Background Sync replays queued sends when the network comes back.
 
-const CACHE_VER   = "cyberdeck-v1";
+// Bump this whenever attachment/UI behavior changes so kiosk browsers do not
+// keep serving an old JavaScript bundle with obsolete file-type filters.
+const CACHE_VER   = "cyberdeck-v3-any-file";
 const SHELL_PATHS = ["/", "/favicon.ico"];
 
 // ── Install: pre-cache app shell ──────────────────────────────────────────────
@@ -49,16 +51,15 @@ self.addEventListener("fetch", (event) => {
     url.pathname.match(/\.(js|css|woff2?|ico|png|svg)$/)
   ) {
     event.respondWith(
-      caches.match(event.request).then(cached => {
-        if (cached) return cached;
-        return fetch(event.request).then(response => {
+      fetch(event.request)
+        .then(response => {
           if (response.ok) {
             const clone = response.clone();
             caches.open(CACHE_VER).then(c => c.put(event.request, clone));
           }
           return response;
-        });
-      })
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }

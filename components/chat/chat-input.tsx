@@ -96,7 +96,19 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
   // ── Service Worker registration ────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+    let reloadingForUpdate = false;
+    const onControllerChange = () => {
+      if (reloadingForUpdate) return;
+      reloadingForUpdate = true;
+      window.location.reload();
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => {});
 
     // Listen for DRAIN_OUTBOX message from SW background sync
     const onMsg = (e: MessageEvent) => {
@@ -105,7 +117,10 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
       }
     };
     navigator.serviceWorker.addEventListener("message", onMsg);
-    return () => navigator.serviceWorker.removeEventListener("message", onMsg);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", onMsg);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    };
   }, []);
 
   // ── Submit ─────────────────────────────────────────────────────────────────
