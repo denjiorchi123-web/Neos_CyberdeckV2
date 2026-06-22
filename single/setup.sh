@@ -117,7 +117,22 @@ sudo systemctl restart cyberdeck-web.service || true
 
 # 6. Install Tauri Development Dependencies & Rust
 echo -e "\n[6/8] Installing Tauri dependencies & Rust Toolchain..."
+
+# Check if libwebkit2gtk-4.0-dev is available, if not, add Debian Bookworm (stable) repo temporarily
+if ! apt-cache show libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+    echo "libwebkit2gtk-4.0-dev not found in active repositories. Temporarily enabling Debian Bookworm compat source..."
+    echo "deb http://deb.debian.org/debian bookworm main" | sudo tee /etc/apt/sources.list.d/bookworm-compat.list
+    sudo apt update
+fi
+
 sudo apt install -y libwebkit2gtk-4.1-dev libwebkit2gtk-4.0-dev libjavascriptcoregtk-4.0-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libsoup2.4-dev
+
+# Clean up Bookworm compat source if it was added
+if [ -f /etc/apt/sources.list.d/bookworm-compat.list ]; then
+    echo "Cleaning up Debian Bookworm compat source..."
+    sudo rm -f /etc/apt/sources.list.d/bookworm-compat.list
+    sudo apt update
+fi
 
 if ! command -v cargo &> /dev/null; then
     echo "Installing Rust compiler..."
