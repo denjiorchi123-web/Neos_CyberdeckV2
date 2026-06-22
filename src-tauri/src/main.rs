@@ -12,6 +12,7 @@ fn main() {
                 tauri::WindowUrl::External("http://127.0.0.1:3001/launcher".parse().unwrap())
             )
             .title("CyberDeck")
+            .fullscreen(true)
             .build()?;
             Ok(())
         })
