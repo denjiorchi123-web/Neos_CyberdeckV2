@@ -97,6 +97,9 @@ sudo systemctl restart redis-cyberdeck.service
 # Create cyberdeck system user if not exists
 sudo useradd --system --create-home --home /home/cyberdeck --shell /usr/sbin/nologin cyberdeck 2>/dev/null || true
 sudo chown -R cyberdeck:cyberdeck "$PROJECT_DIR"
+sudo chown -R $USER:$USER "$PROJECT_DIR/src-tauri"
+sudo chown -R $USER:$USER "$PROJECT_DIR/.git"
+sudo chown -R $USER:$USER "$PROJECT_DIR/node_modules" 2>/dev/null || true
 
 # Install and run Next.js Web Server Service
 sudo cp "$PROJECT_DIR/deploy/systemd/cyberdeck-web.service" /etc/systemd/system/cyberdeck-web.service
