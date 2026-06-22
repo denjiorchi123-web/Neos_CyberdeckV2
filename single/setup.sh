@@ -161,7 +161,7 @@ cat > "$PROJECT_DIR/CyberDeck.desktop" << 'EOF'
 Version=1.0
 Name=CyberDeck
 Comment=Native Tauri LAN Messenger
-Exec=/opt/cyberdeck/src-tauri/target/release/cyberdeck
+Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 /opt/cyberdeck/src-tauri/target/release/cyberdeck
 Icon=/usr/share/pixmaps/cyberdeck.png
 Terminal=false
 Type=Application
