@@ -317,6 +317,7 @@ function MediaLightbox({ src, alt, type = "image", mimeType = "application/octet
           e.stopPropagation();
           try {
             const res = await fetch(src);
+            if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
             const blob = await res.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -519,6 +520,7 @@ function DocCell({ url, fileName, fileSize, mimeType, onClick }: {
     try {
       // Fetching and converting to blob bypasses the Android/Windows "No Internet" download manager bug
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
       const blob = await res.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -831,18 +833,49 @@ function ChatItemInner({
 
   const onShare = async () => {
     const textToShare = content || fileName || "Attachment";
+
+    // Share the actual bytes when the OS/browser supports file sharing. This
+    // works for generic documents and custom extensions as well as media, and
+    // also ensures encrypted attachments are shared in their decrypted form.
+    if (navigator.share && navigator.canShare && resolvedUrl && fileName) {
+      try {
+        const response = await fetch(resolvedUrl, { credentials: "include" });
+        if (!response.ok) throw new Error(`Could not read file (${response.status})`);
+        const blob = await response.blob();
+        const sharedFile = new File(
+          [blob],
+          fileName,
+          { type: effectiveMime || blob.type || "application/octet-stream" }
+        );
+
+        if (navigator.canShare({ files: [sharedFile] })) {
+          await navigator.share({
+            title: fileName,
+            text: textToShare,
+            files: [sharedFile],
+          });
+          return;
+        }
+      } catch (error: any) {
+        if (error?.name === "AbortError") return;
+        console.warn("File sharing unavailable; falling back to link/text sharing", error);
+      }
+    }
+
     if (navigator.share) {
       try {
         await navigator.share({
           title: "Share Message",
           text: textToShare,
-          url: resolvedUrl || undefined
+          // A decrypted blob URL is local to this page and cannot be shared as
+          // a useful link. The file-sharing path above handles that case.
+          url: mediaKey ? undefined : (resolvedUrl || undefined),
         });
-      } catch (err) {
-        console.error(err);
+      } catch (error: any) {
+        if (error?.name !== "AbortError") console.error(error);
       }
     } else {
-      navigator.clipboard.writeText(textToShare);
+      await navigator.clipboard.writeText(textToShare);
       alert("Message copied to clipboard!");
     }
   };

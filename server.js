@@ -22,23 +22,26 @@ const { startMeshDiscovery } = require("./server/mesh");
 // ── Windows: self-elevate to Administrator ───────────────────────────────────
 // Network config (netsh) requires admin rights. If not elevated, re-launch
 // via PowerShell Start-Process -Verb RunAs which triggers a UAC prompt once.
-if (process.platform === "win32" && process.env.CYBERDECK_SKIP_ELEVATION !== "1") {
-  let elevated = false;
-  try { execSync("net session", { stdio: "pipe" }); elevated = true; } catch {}
-  if (!elevated) {
-    const nodeBin  = process.execPath.replace(/\\/g, "\\\\");
-    const script   = path.resolve(__dirname, "server.js").replace(/\\/g, "\\\\");
-    const projDir  = __dirname.replace(/\\/g, "\\\\");
-    const psCmd    =
-      `Start-Process '${nodeBin}' -Verb RunAs ` +
-      `-ArgumentList '"${script}"' -WorkingDirectory '${projDir}'`;
-    console.log("> Requesting Administrator privileges (UAC prompt)…");
-    spawn("powershell", ["-NoProfile", "-Command", psCmd], { stdio: "inherit" })
-      .on("exit", () => process.exit(0));
-    process.exit(0); // stop the non-elevated process
-  }
+let isElevated = false;
+if (process.platform === "win32") {
+  try { execSync("net session", { stdio: "pipe" }); isElevated = true; } catch {}
+}
 
-  // Now we are elevated. Ensure Firewall rules exist for CyberDeck ports.
+if (process.platform === "win32" && !isElevated && process.env.CYBERDECK_SKIP_ELEVATION !== "1") {
+  const nodeBin  = process.execPath.replace(/\\/g, "\\\\");
+  const script   = path.resolve(__dirname, "server.js").replace(/\\/g, "\\\\");
+  const projDir  = __dirname.replace(/\\/g, "\\\\");
+  const psCmd    =
+    `Start-Process '${nodeBin}' -Verb RunAs ` +
+    `-ArgumentList '"${script}"' -WorkingDirectory '${projDir}'`;
+  console.log("> Requesting Administrator privileges (UAC prompt)…");
+  spawn("powershell", ["-NoProfile", "-Command", psCmd], { stdio: "inherit" })
+    .on("exit", () => process.exit(0));
+  process.exit(0); // stop the non-elevated process
+}
+
+// Ensure Firewall rules exist for CyberDeck ports if we have admin rights.
+if (process.platform === "win32" && isElevated) {
   try {
     const rules = [
       { name: "CyberDeck Port 3000 TCP", port: 3000, proto: "TCP" },

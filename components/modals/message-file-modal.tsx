@@ -111,10 +111,10 @@ export function MessageFileModal() {
       <DialogContent className="bg-white text-black p-0 overflow-hidden">
         <DialogHeader className="pt-8 px-6">
           <DialogTitle className="text-2xl text-center font-bold">
-            Add an attachment
+            Add any file
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500">
-            Send a file as a message.
+            Send any file type as a message.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>

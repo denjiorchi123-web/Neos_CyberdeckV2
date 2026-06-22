@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useMemo,
   useRef,
+  useTransition,
 } from "react";
 import { io as ClientIO } from "socket.io-client";
 import { useModal } from "@/hooks/use-modal-store";
@@ -70,6 +71,7 @@ export const usePreferences = () => useContext(PreferencesContext);
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { onOpen } = useModal();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [socket,      setSocket]      = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
@@ -190,7 +192,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     s.on("chat:refresh-list", () => {
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     });
 
     setSocket(s);

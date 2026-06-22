@@ -83,7 +83,7 @@ export function ChatAttachmentMenu({ apiUrl, query, replyToId, onSent }: ChatAtt
 
   const options = [
     {
-      label: "Document",
+      label: "Any file",
       icon: <FileText className="h-6 w-6 text-white" />,
       color: "bg-indigo-500",
       onClick: () => {

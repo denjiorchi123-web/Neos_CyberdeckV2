@@ -1,6 +1,8 @@
 import net from "net";
 import { MESH_CONTROL_PORT, signedControlMessage } from "@/lib/mesh-identity";
 
+const MESH_CONTROL_TIMEOUT_MS = Number(process.env.MESH_CONTROL_TIMEOUT_MS || 30_000);
+
 export async function sendMeshControl(
   ip: string,
   payload: Record<string, unknown>,
@@ -10,20 +12,49 @@ export async function sendMeshControl(
 
   await new Promise<void>((resolve, reject) => {
     const socket = net.createConnection({ host, port: MESH_CONTROL_PORT });
-    const timeout = setTimeout(() => {
-      socket.destroy(new Error("Mesh control timeout"));
-      reject(new Error("Mesh control timeout"));
-    }, 5000);
+    let response = "";
+    let settled = false;
 
+    const settle = (error?: Error & { code?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const timeout = setTimeout(() => {
+      const error = new Error(`Mesh control timeout to ${host}:${MESH_CONTROL_PORT}`) as Error & { code?: string };
+      error.code = "ETIMEDOUT";
+      settle(error);
+      socket.destroy();
+    }, MESH_CONTROL_TIMEOUT_MS);
+
+    socket.setNoDelay(true);
     socket.once("connect", () => socket.end(packet));
-    socket.once("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
+    socket.on("data", (chunk) => {
+      if (response.length < 4096) response += chunk.toString("utf8");
     });
+    socket.once("end", () => {
+      const reply = response.trim();
+      if (reply.startsWith("ERR")) {
+        const error = new Error(reply.slice(3).trim() || "Mesh peer rejected the control packet") as Error & { code?: string };
+        error.code = "EREMOTE";
+        settle(error);
+      } else {
+        settle();
+      }
+    });
+    socket.once("error", settle);
     socket.once("close", (hadError) => {
-      clearTimeout(timeout);
-      if (!hadError) resolve();
-      else reject(new Error("Mesh control socket closed with error"));
+      if (!settled && hadError) {
+        const error = new Error(`Mesh control socket to ${host}:${MESH_CONTROL_PORT} closed with error`) as Error & { code?: string };
+        error.code = "ECONNRESET";
+        settle(error);
+      } else if (!settled) {
+        // Compatibility with older peers that close without an explicit reply.
+        settle();
+      }
     });
   });
 }

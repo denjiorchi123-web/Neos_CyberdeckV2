@@ -26,6 +26,7 @@ export function ExportChatModal() {
       const url = `/api/export-chat?chatId=${chatId}&isDirect=${isDirect}`;
       
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
       const blob = await res.blob();
       
       const downloadUrl = window.URL.createObjectURL(blob);

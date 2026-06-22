@@ -29,29 +29,30 @@ export default async function handler(
     if (!content)
       return res.status(400).json({ error: "Content Missing" });
 
-    const server = await db.server.findFirst({
-      where: {
-        id: serverId as string,
-        members: {
-          some: {
-            profileId: profile.id
+    const [server, channel] = await Promise.all([
+      db.server.findFirst({
+        where: {
+          id: serverId as string,
+          members: {
+            some: {
+              profileId: profile.id
+            }
           }
+        },
+        include: {
+          members: true
         }
-      },
-      include: {
-        members: true
-      }
-    });
+      }),
+      db.channel.findFirst({
+        where: {
+          id: channelId as string,
+          serverId: serverId as string
+        }
+      })
+    ]);
 
     if (!server)
       return res.status(404).json({ message: "Server not found" });
-
-    const channel = await db.channel.findFirst({
-      where: {
-        id: channelId as string,
-        serverId: serverId as string
-      }
-    });
 
     if (!channel)
       return res.status(404).json({ message: "Channel not found" });

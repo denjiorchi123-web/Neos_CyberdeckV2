@@ -34,12 +34,14 @@ export function FileUpload({
   endpoint
 }: FileUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileType = value?.split(".").pop()?.split("?")[0]?.toLowerCase();
   const isImageValue = !!fileType && ["png", "jpg", "jpeg", "gif", "webp"].includes(fileType);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
+    setUploadError(null);
     setIsUploading(true);
     try {
       const formData = new FormData();
@@ -50,42 +52,44 @@ export function FileUpload({
         body: formData,
       });
 
-      const data = await response.json();
-      if (data.url) {
-        onChange(data.url);
-        onUploadComplete?.(data);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) {
+        throw new Error(data.error || `Upload failed (${response.status})`);
       }
-    } catch (error) {
+
+      onChange(data.url);
+      onUploadComplete?.(data);
+    } catch (error: any) {
       console.error("Upload failed:", error);
+      setUploadError(error?.message || "Upload failed");
     } finally {
       setIsUploading(false);
     }
   }, [onChange, onUploadComplete]);
 
   const imageTypes = { "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp"] };
-  const videoTypes = { "video/*": [".mp4", ".webm", ".ogg", ".mkv", ".mov"] };
-  const audioTypes = { "audio/*": [".mp3", ".wav", ".m4a", ".flac", ".ogg"] };
 
-  // serverImage = avatar / server icon (small); messageFile = chat attachment (FAT32-bounded)
+  // Avatars stay image-only. Chat attachments intentionally omit `accept`,
+  // which tells the browser and react-dropzone to allow every file type.
   const isAvatar = endpoint === "serverImage" || endpoint === "communityImage" || endpoint === "channelImage";
-  const accept = isAvatar
-    ? imageTypes
-    : {
-        ...imageTypes,
-        ...videoTypes,
-        ...audioTypes,
-        "application/pdf": [".pdf"],
-        "application/zip": [".zip"],
-        "application/x-tar": [".tar"],
-        "application/gzip": [".gz"],
-        "text/plain": [".txt"],
-        "application/octet-stream": [],
-      };
+  const accept = isAvatar ? imageTypes : undefined;
 
   const maxSize = isAvatar ? SERVER_IMAGE_MAX_SIZE : MESSAGE_FILE_MAX_SIZE;
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected: (rejections) => {
+      const tooLarge = rejections.some((rejection) =>
+        rejection.errors.some((error) => error.code === "file-too-large")
+      );
+      setUploadError(
+        tooLarge
+          ? `File is larger than ${formatMaxSize(maxSize)}`
+          : isAvatar
+            ? "Choose a supported image file"
+            : "This file could not be selected"
+      );
+    },
     accept,
     maxFiles: 1,
     maxSize,
@@ -153,8 +157,11 @@ export function FileUpload({
           <p className="text-xs text-zinc-500">
             {isAvatar
               ? `Image (max ${formatMaxSize(SERVER_IMAGE_MAX_SIZE)})`
-              : `Any file (max ${formatMaxSize(MESSAGE_FILE_MAX_SIZE)})`}
+              : `Any file type (max ${formatMaxSize(MESSAGE_FILE_MAX_SIZE)})`}
           </p>
+          {uploadError && (
+            <p className="text-xs text-rose-500 max-w-xs break-words">{uploadError}</p>
+          )}
         </div>
       )}
     </div>

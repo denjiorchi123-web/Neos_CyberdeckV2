@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
@@ -48,6 +48,7 @@ import { useDragScroll } from "@/hooks/use-drag-scroll";
 export function UnifiedChatList({ chats }: UnifiedChatListProps) {
   const router = useRouter();
   const params = useParams();
+  const [isPending, startTransition] = useTransition();
   const { onOpen } = useModal();
   const { onlineUsers } = usePresence();
   const { socket } = useSocket();
@@ -64,7 +65,9 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
       } else {
         await axios.post("/api/archive", { chatId: chat.id });
       }
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e) {
       console.error(e);
     }
@@ -77,7 +80,9 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
       } else {
         await axios.post("/api/pin", { chatId: chat.id });
       }
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (e) {
       console.error(e);
     }
@@ -123,7 +128,11 @@ export function UnifiedChatList({ chats }: UnifiedChatListProps) {
     const onAny = (eventName: string) => {
       if (!eventName.match(/^chat:.+:messages$/)) return;
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = setTimeout(() => router.refresh(), 250);
+      refreshTimerRef.current = setTimeout(() => {
+        startTransition(() => {
+          router.refresh();
+        });
+      }, 250);
     };
 
     socket.onAny(onAny);

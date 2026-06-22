@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -39,6 +39,7 @@ const formSchema = z.object({
 
 export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInputProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const { socket, isConnected } = useSocket() as { socket: any; isConnected: boolean };
   const { blockedUsers, refreshPreferences } = usePreferences();
   const draining = useRef(false);
@@ -85,7 +86,9 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
     }).then(({ sent, failed }) => {
       if (sent > 0) {
         console.log(`[ChatInput] Offline queue drained: ${sent} sent, ${failed} deferred`);
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
       }
     }).finally(() => { draining.current = false; });
   }, [router]);
@@ -109,33 +112,44 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       const url = qs.stringifyUrl({ url: apiUrl, query });
+      const content = values.content;
+      const replyToId = replyingTo?.id;
+
       form.reset();
-      await axios.post(url, { content: values.content, replyToId: replyingTo?.id });
       setReplyingTo(null);
-      router.refresh();
+
+      axios.post(url, { content, replyToId })
+        .then(() => {
+          startTransition(() => {
+            router.refresh();
+          });
+        })
+        .catch(async (error: any) => {
+          console.error("[ChatInput] send failed:", error);
+
+          // If the server explicitly rejected the message (e.g. we were blocked),
+          // do not queue it for offline retry, just discard it.
+          if (error?.response?.status === 403) {
+            return;
+          }
+
+          // Fallback: queue even on unexpected send error
+          await enqueue({
+            id:         uuidv4(),
+            apiUrl,
+            query,
+            content,
+            replyToId,
+            queuedAt:   Date.now(),
+            retryCount: 0,
+          });
+          if ("serviceWorker" in navigator) {
+            const reg = await navigator.serviceWorker.ready;
+            if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
+          }
+        });
     } catch (error: any) {
-      console.error("[ChatInput] send failed:", error);
-
-      // If the server explicitly rejected the message (e.g. we were blocked),
-      // do not queue it for offline retry, just discard it.
-      if (error?.response?.status === 403) {
-        return;
-      }
-
-      // Fallback: queue even on unexpected send error
-      await enqueue({
-        id:         uuidv4(),
-        apiUrl,
-        query,
-        content:    values.content,
-        replyToId:  replyingTo?.id,
-        queuedAt:   Date.now(),
-        retryCount: 0,
-      });
-      if ("serviceWorker" in navigator) {
-        const reg = await navigator.serviceWorker.ready;
-        if ("sync" in reg) await (reg as any).sync.register("cyberdeck-outbox");
-      }
+      console.error("[ChatInput] submit error:", error);
     }
   };
 
@@ -145,7 +159,9 @@ export function ChatInput({ apiUrl, query, name, type, otherProfileId }: ChatInp
       setIsUnblocking(true);
       await axios.delete(`/api/block-user?profileId=${otherProfileId}`);
       refreshPreferences();
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
     } catch (error) {
       console.error(error);
     } finally {

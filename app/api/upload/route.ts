@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createWriteStream, mkdirSync, renameSync } from "fs";
 import { unlink, stat } from "fs/promises";
-import { join } from "path";
+import { basename, extname, join } from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { v4 as uuidv4 } from "uuid";
@@ -38,6 +38,15 @@ interface ParseResult {
   mimeType: string;
   serverId: string;
   mediaKey: string | null;
+}
+
+function storedExtension(filename: string) {
+  const extension = extname(basename(filename))
+    .slice(1)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 32);
+  return extension || "bin";
 }
 
 /**
@@ -87,7 +96,7 @@ function streamUploadToDisk(
       }
 
       const originalName = info.filename || "upload.bin";
-      const ext = (originalName.split(".").pop() || "bin").toLowerCase();
+      const ext = storedExtension(originalName);
       const savedName = `${uuidv4()}.${ext}`;
       const savedPath = join(uploadDir, savedName);
 
@@ -172,7 +181,19 @@ export async function POST(req: NextRequest) {
     const storageDir = storageDirForMime(mimeType);
     mkdirSync(storageDir, { recursive: true });
     const finalPath = join(storageDir, savedName);
-    if (finalPath !== savedPath) renameSync(savedPath, finalPath);
+    if (finalPath !== savedPath) {
+      try {
+        renameSync(savedPath, finalPath);
+      } catch (err: any) {
+        if (err.code === "EXDEV") {
+          const { copyFileSync, unlinkSync } = await import("fs");
+          copyFileSync(savedPath, finalPath);
+          unlinkSync(savedPath);
+        } else {
+          throw err;
+        }
+      }
+    }
 
     // Thumbnail generation for images — sharp reads from disk via streaming,
     // so even multi-hundred-MB images don't blow up RAM.

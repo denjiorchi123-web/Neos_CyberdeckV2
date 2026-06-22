@@ -31,7 +31,7 @@ const DEFAULT_ACCEPT = {
 
 export function EncryptedFileUpload({
   onUploadComplete,
-  accept = DEFAULT_ACCEPT,
+  accept,
   maxSize = MESSAGE_FILE_MAX_SIZE,
 }: EncryptedFileUploadProps) {
   const [progressText, setProgressText] = useState<string | null>(null);

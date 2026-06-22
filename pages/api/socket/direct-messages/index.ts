@@ -1,154 +1,11 @@
 import ioHandler from "@/pages/api/socket/io";
 import { NextApiRequest } from "next";
-import { createReadStream, existsSync } from "fs";
-import { stat } from "fs/promises";
-import { basename } from "path";
-import { createHash } from "crypto";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
 import { publicProfileSelect } from "@/lib/public-profile-select";
-import { getLocalNodeId } from "@/lib/mesh-identity";
-import { sendMeshControl } from "@/lib/mesh-control";
-import { resolveStoredFilePath } from "@/lib/media-dirs";
-
-const MEDIA_CHUNK_BYTES = 96 * 1024;
-
-async function sha256File(filePath: string) {
-  const hash = createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    createReadStream(filePath)
-      .on("data", (chunk) => hash.update(chunk))
-      .once("error", reject)
-      .once("end", resolve);
-  });
-  return hash.digest("hex");
-}
-
-function sha256Buffer(buffer: Buffer) {
-  return createHash("sha256").update(buffer).digest("hex");
-}
-
-function localUploadForUrl(fileUrl?: string | null) {
-  if (!fileUrl || !fileUrl.startsWith("/api/files/")) return null;
-  const filename = basename(fileUrl);
-  if (!filename || filename.includes("..")) return null;
-  return {
-    filename,
-    path: resolveStoredFilePath(filename),
-  };
-}
-
-async function sendMeshMediaFile(
-  ipAddress: string,
-  context: {
-    fromNodeId: string;
-    fromUserId: string;
-    fromUsername: string;
-    toUsername: string;
-    messageId: string;
-  },
-  fileUrl?: string | null,
-  options: {
-    fileName?: string | null;
-    mimeType?: string | null;
-    isThumbnail?: boolean;
-  } = {},
-) {
-  const local = localUploadForUrl(fileUrl);
-  if (!local || !existsSync(local.path)) return;
-
-  const info = await stat(local.path);
-  const totalChunks = Math.max(1, Math.ceil(info.size / MEDIA_CHUNK_BYTES));
-  const fileSha256 = await sha256File(local.path);
-  if (info.size === 0) {
-    await sendMeshControl(ipAddress, {
-      type: "direct_media_chunk",
-      ...context,
-      fileUrl,
-      storageName: local.filename,
-      fileName: options.fileName || local.filename,
-      mimeType: options.mimeType || "application/octet-stream",
-      isThumbnail: Boolean(options.isThumbnail),
-      chunkIndex: 0,
-      totalChunks,
-      totalSize: 0,
-      fileSha256,
-      chunkSha256: sha256Buffer(Buffer.alloc(0)),
-      dataBase64: "",
-    });
-    return;
-  }
-
-  let chunkIndex = 0;
-
-  for await (const chunk of createReadStream(local.path, { highWaterMark: MEDIA_CHUNK_BYTES })) {
-    const buffer = Buffer.from(chunk as Buffer);
-
-    // Retry up to 3 times for transient connection errors (ECONNREFUSED, ETIMEDOUT)
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await sendMeshControl(ipAddress, {
-          type: "direct_media_chunk",
-          ...context,
-          fileUrl,
-          storageName: local.filename,
-          fileName: options.fileName || local.filename,
-          mimeType: options.mimeType || "application/octet-stream",
-          isThumbnail: Boolean(options.isThumbnail),
-          chunkIndex,
-          totalChunks,
-          totalSize: info.size,
-          fileSha256,
-          chunkSha256: sha256Buffer(buffer),
-          dataBase64: buffer.toString("base64"),
-        });
-        break; // success
-      } catch (err: any) {
-        if (attempt < 2 && (err?.code === "ECONNREFUSED" || err?.code === "ETIMEDOUT" || err?.message?.includes("timeout"))) {
-          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
-        } else {
-          throw err;
-        }
-      }
-    }
-
-    chunkIndex += 1;
-    // Small inter-chunk delay so the receiver's TCP accept queue isn't overwhelmed
-    if (chunkIndex < totalChunks) {
-      await new Promise((r) => setTimeout(r, 20));
-    }
-  }
-}
-
-async function sendMeshMediaForMessage(
-  ipAddress: string,
-  context: {
-    fromNodeId: string;
-    fromUserId: string;
-    fromUsername: string;
-    toUsername: string;
-    messageId: string;
-  },
-  message: {
-    fileUrl?: string | null;
-    thumbnailUrl?: string | null;
-    fileName?: string | null;
-    mimeType?: string | null;
-  },
-) {
-  await sendMeshMediaFile(ipAddress, context, message.fileUrl, {
-    fileName: message.fileName,
-    mimeType: message.mimeType,
-  });
-  await sendMeshMediaFile(ipAddress, context, message.thumbnailUrl, {
-    fileName: message.fileName ? `Thumbnail for ${message.fileName}` : undefined,
-    mimeType: "image/jpeg",
-    isThumbnail: true,
-  });
-}
 
 export default async function handler(
   req: NextApiRequest,
@@ -299,50 +156,9 @@ export default async function handler(
     if (!io) { ioHandler(req, res); }
     (res?.socket?.server?.io || (global as any).nextIo)?.to(conversationId as string).emit(channelKey, message);
 
-    if (meshPeer?.ipAddress) {
-      const meshContext = {
-        fromNodeId: getLocalNodeId(),
-        fromUserId: profile.id,
-        fromUsername: profile.name,
-        toUsername: otherMember.profile.name,
-        messageId: message.id,
-      };
-
-      (async () => {
-        await sendMeshMediaForMessage(meshPeer.ipAddress!, meshContext, {
-          fileUrl: message.fileUrl,
-          thumbnailUrl: (message as any).thumbnailUrl,
-          fileName: (message as any).fileName,
-          mimeType: (message as any).mimeType,
-        });
-
-        await sendMeshControl(meshPeer.ipAddress!, {
-          type: "direct_message_sync",
-          fromNodeId: meshContext.fromNodeId,
-          fromUserId: meshContext.fromUserId,
-          fromUsername: meshContext.fromUsername,
-          toUserId: otherMember.profile.id,
-          toUsername: meshContext.toUsername,
-          message: {
-            id: message.id,
-            content: message.content,
-            type: message.type,
-            fileUrl: message.fileUrl,
-            fileName: (message as any).fileName,
-            fileSize: (message as any).fileSize,
-            mimeType: (message as any).mimeType,
-            thumbnailUrl: (message as any).thumbnailUrl,
-            mediaKey: (message as any).mediaKey,
-            createdAt: message.createdAt.toISOString(),
-            seqId: message.seqId,
-            fromUsername: profile.name,
-            toUsername: otherMember.profile.name,
-          },
-        });
-      })().catch((error) => {
-        console.error("[DIRECT_MESSAGES_MESH_SYNC]", error);
-      });
-    }
+    // The native mesh outbox is the single delivery owner. Sending here as
+    // well races the UDP-triggered outbox and can make several writers append
+    // the same attachment chunks to one partial file.
 
     return res.status(200).json(message);
   } catch (error) {

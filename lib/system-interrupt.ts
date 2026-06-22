@@ -10,6 +10,7 @@ const NOVA_ENV = {
 };
 
 export function triggerSystemInterrupt(event: string = "unknown", data: any = {}) {
+  if (process.platform === "win32") return;
   const now = Date.now();
   // Prevent spamming interrupts (cooldown of 2 seconds)
   if (now - lastInterrupt < 2000) return;

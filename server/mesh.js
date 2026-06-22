@@ -92,7 +92,9 @@ const MAX_HELLO_CLOCK_SKEW_MS = Number(
 );
 const MAX_PACKET_BYTES = Number(process.env.MESH_MAX_PACKET_BYTES || 1024 * 1024);
 const MEDIA_CHUNK_BYTES = Number(process.env.MESH_MEDIA_CHUNK_BYTES || 96 * 1024);
-const OUTBOX_SYNC_INTERVAL_MS = Number(process.env.MESH_OUTBOX_SYNC_INTERVAL_MS || 10 * 1000);
+const CONTROL_TIMEOUT_MS = Number(process.env.MESH_CONTROL_TIMEOUT_MS || 30 * 1000);
+const OUTBOX_SYNC_INTERVAL_MS = Number(process.env.MESH_OUTBOX_SYNC_INTERVAL_MS || 2 * 1000);
+const MEDIA_REPAIR_INTERVAL_MS = Number(process.env.MESH_MEDIA_REPAIR_INTERVAL_MS || 60 * 1000);
 const AUTH_FAIL_WINDOW_MS = 60 * 1000;
 const AUTH_FAIL_LIMIT = 5;
 const AUTH_RATE_LIMIT_MS = 10 * 60 * 1000;
@@ -104,6 +106,7 @@ const beaconSendSockets = new Map();
 const multicastMemberships = new Set();
 let outboxSyncRunning = false;
 let lastOutboxSyncAt = 0;
+const lastMediaRepairAtByPeer = new Map();
 // In-memory buffer for out-of-order media chunks: transferKey -> { chunks: Map<index, Buffer>, totalChunks, meta }
 const pendingMediaChunks = new Map();
 const MEDIA_CHUNK_BUFFER_TIMEOUT_MS = 60 * 1000; // evict stale transfers after 60s
@@ -376,14 +379,49 @@ async function sendControl(ip, payload) {
 
   await new Promise((resolve, reject) => {
     const socket = net.createConnection({ host: normalizeIp(ip), port: CONTROL_PORT });
-    const timeout = setTimeout(() => socket.destroy(new Error("Mesh control timeout")), 5000);
+    let response = "";
+    let settled = false;
 
-    socket.once("connect", () => socket.end(packet));
-    socket.once("error", reject);
-    socket.once("close", (hadError) => {
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
-      if (!hadError) resolve();
-      else reject(new Error("Socket closed with error"));
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const timeout = setTimeout(() => {
+      const error = new Error(`Mesh control timeout to ${normalizeIp(ip)}:${CONTROL_PORT}`);
+      error.code = "ETIMEDOUT";
+      settle(error);
+      socket.destroy();
+    }, CONTROL_TIMEOUT_MS);
+
+    socket.setNoDelay(true);
+    socket.once("connect", () => socket.end(packet));
+    socket.on("data", (chunk) => {
+      if (response.length < 4096) response += chunk.toString("utf8");
+    });
+    socket.once("end", () => {
+      const reply = response.trim();
+      if (reply.startsWith("ERR")) {
+        const error = new Error(reply.slice(3).trim() || "Mesh peer rejected the control packet");
+        error.code = "EREMOTE";
+        settle(error);
+      } else {
+        settle();
+      }
+    });
+    socket.once("error", settle);
+    socket.once("close", (hadError) => {
+      if (!settled && hadError) {
+        const error = new Error(`Mesh control socket to ${normalizeIp(ip)}:${CONTROL_PORT} closed with error`);
+        error.code = "ECONNRESET";
+        settle(error);
+      } else if (!settled) {
+        // Compatibility with older peers that close without an explicit reply.
+        settle();
+      }
     });
   });
 }
@@ -1187,7 +1225,7 @@ async function receiveDirectMediaOffer(data, peerIp) {
   }
   if (hasValidFile) return;
 
-  await sendControl(peerIp, {
+  sendControl(peerIp, {
     type: "direct_media_request",
     fromNodeId: getMac(),
     fromUserId: session.profileId,
@@ -1245,7 +1283,7 @@ async function receiveDirectMediaRequest(data, peerIp) {
     toUsername: fromUsername,
     messageId: message.id,
   };
-  await sendMediaForMessage(peerIp, context, message).catch((error) => {
+  sendMediaForMessage(peerIp, context, message).catch((error) => {
     console.error(`> [NodeMesh][MEDIA] Failed to repair media ${message.id}: ${error.message}`);
   });
 }
@@ -1402,7 +1440,7 @@ async function receiveDirectMessageSync(data, peerIp) {
   emitToLocalSocket(found.conversation.id, `chat:${found.conversation.id}:messages`, stored);
   emitToLocalSocket(null, "chat:refresh-list", null);
   redisClient?.del(`cache:chat:${found.conversation.id}:messages`).catch(() => {});
-  await sendControl(peerIp, {
+  sendControl(peerIp, {
     type: "direct_message_ack",
     messageId: message.id,
     fromNodeId: getMac(),
@@ -1490,6 +1528,11 @@ async function syncPendingDirectMessages(peerUsername, peerIp) {
       break;
     }
   }
+
+  const repairKey = `${peerUsername}::${normalizeIp(peerIp)}`;
+  const lastRepairAt = lastMediaRepairAtByPeer.get(repairKey) || 0;
+  if (Date.now() - lastRepairAt < MEDIA_REPAIR_INTERVAL_MS) return;
+  lastMediaRepairAtByPeer.set(repairKey, Date.now());
 
   const mediaMessages = await db.directMessage.findMany({
     where: {
@@ -1988,29 +2031,59 @@ async function receiveConnectionResponse(data, peerIp) {
 }
 
 function startControlServer() {
-  const server = net.createServer((socket) => {
+  // Clients half-close after sending one packet, then wait for our explicit
+  // OK/ERR reply. Without allowHalfOpen Node closes the writable side before
+  // the async packet handler can acknowledge it.
+  const server = net.createServer({ allowHalfOpen: true }, (socket) => {
     let raw = "";
-    socket.setTimeout(5000);
+    let packetTooLarge = false;
+    const peerIp = normalizeIp(socket.remoteAddress);
+
+    socket.setTimeout(CONTROL_TIMEOUT_MS, () => {
+      socket.destroy(new Error("Mesh control receive timeout"));
+    });
+    socket.on("error", (error) => {
+      if (error.code !== "ECONNRESET") {
+        console.warn(`> [NodeMesh] Control socket error from ${peerIp || "unknown"}: ${error.message}`);
+      }
+    });
     socket.on("data", (chunk) => {
       raw += chunk.toString("utf8");
-      if (raw.length > MAX_PACKET_BYTES) socket.destroy();
+      if (Buffer.byteLength(raw, "utf8") > MAX_PACKET_BYTES) {
+        packetTooLarge = true;
+        socket.destroy(new Error("Mesh control packet too large"));
+      }
     });
     socket.on("end", async () => {
+      let reply = "OK\n";
       try {
-        const sourceIp = normalizeIp(socket.remoteAddress);
-        const data = verify(JSON.parse(raw.trim()), sourceIp);
-        if (!data) return;
-        if (data.type === "connection_request") await receiveConnectionRequest(data, socket.remoteAddress);
-        if (data.type === "connection_response") await receiveConnectionResponse(data, socket.remoteAddress);
-        if (data.type === "direct_message_sync") await receiveDirectMessageSync(data, socket.remoteAddress);
-        if (data.type === "direct_media_chunk") await receiveDirectMediaChunk(data, socket.remoteAddress);
-        if (data.type === "direct_media_offer") await receiveDirectMediaOffer(data, socket.remoteAddress);
-        if (data.type === "direct_media_request") await receiveDirectMediaRequest(data, socket.remoteAddress);
+        if (packetTooLarge) throw new Error("Control packet exceeded the configured limit");
+        const data = verify(JSON.parse(raw.trim()), peerIp);
+        if (!data) throw new Error("Control packet authentication failed");
+
+        if (data.type === "connection_request") await receiveConnectionRequest(data, peerIp);
+        else if (data.type === "connection_response") await receiveConnectionResponse(data, peerIp);
+        else if (data.type === "direct_message_sync") await receiveDirectMessageSync(data, peerIp);
+        else if (data.type === "direct_media_chunk") await receiveDirectMediaChunk(data, peerIp);
+        else if (data.type === "direct_media_offer") await receiveDirectMediaOffer(data, peerIp);
+        else if (data.type === "direct_media_request") await receiveDirectMediaRequest(data, peerIp);
         if (data.type === "direct_message_ack") await receiveDirectMessageAck(data);
-        if (data.type === "call_signal") await receiveCallSignal(data, socket.remoteAddress);
-        socket.end("OK\n");
+        else if (data.type === "call_signal") await receiveCallSignal(data, peerIp);
+        else if (![
+          "connection_request",
+          "connection_response",
+          "direct_message_sync",
+          "direct_media_chunk",
+          "direct_media_offer",
+          "direct_media_request",
+        ].includes(data.type)) {
+          throw new Error(`Unsupported control packet type: ${String(data.type || "unknown")}`);
+        }
       } catch (error) {
         console.error("> [NodeMesh] Rejected control packet:", error.message, "RAW_LEN:", raw.length, "RAW_START:", raw.substring(0, 100), "RAW_END:", raw.slice(-100));
+        reply = `ERR ${String(error.message || "Control packet rejected").replace(/[\r\n]+/g, " ").slice(0, 240)}\n`;
+      } finally {
+        if (!socket.destroyed) socket.end(reply);
       }
     });
   });
@@ -2280,9 +2353,9 @@ function startMeshDiscovery() {
       }
 
       if (TRUSTED_STATUSES.has(peer.status)) {
-        syncPendingDirectMessages(username, sourceIp).catch((error) => {
-          console.error(`> [NodeMesh][SYNC] Pending sync failed for ${username}: ${error.message}`);
-        });
+        // One serialized outbox owns all message and attachment delivery. A
+        // second transfer per HELLO used to race the API sender and corrupt the
+        // receiver's partial file.
         syncPendingDirectMessagesForOnlinePeers().catch((error) => {
           console.error(`> [NodeMesh][SYNC] Outbox sweep failed: ${error.message}`);
         });
