@@ -2266,8 +2266,8 @@ function startMeshDiscovery() {
   let beaconTick = 0;
 
   udp.on("message", async (msg, rinfo) => {
+    const sourceIp = normalizeIp(rinfo.address);
     try {
-      const sourceIp = normalizeIp(rinfo.address);
       const str = msg.toString("utf8");
       console.log(`> [NodeMesh][UDP] Received UDP packet from ${sourceIp}, len: ${msg.length}`);
 
@@ -2362,6 +2362,7 @@ function startMeshDiscovery() {
       }
     } catch (error) {
       trackAuthFail(sourceIp, "bad_udp_packet", {}, null);
+      console.warn(`> [NodeMesh][UDP] Ignored malformed packet from ${sourceIp}: ${error.message}`);
     }
   });
 
