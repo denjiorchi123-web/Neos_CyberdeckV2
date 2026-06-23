@@ -1,8 +1,10 @@
 import "server-only";
 
 import { db } from "@/lib/db";
+import { ensureProfileWorkspace } from "@/lib/profile-workspace";
 
 type MeshContactInput = {
+  localProfileId: string;
   userId?: string | null;
   username?: string | null;
   macAddress: string;
@@ -45,23 +47,13 @@ export async function ensureAcceptedMeshContact(input: MeshContactInput) {
   const username = cleanName(input.username);
   const userId = contactUserId(input.userId, input.macAddress);
 
-  let defaultServer = await db.server.findFirst({
-    where: { inviteCode: "cyberdeck-default" },
+  const localProfile = await db.profile.findUnique({
+    where: { id: input.localProfileId },
+    select: { id: true, userId: true, name: true },
   });
-  if (!defaultServer) {
-    // Find a local profile to own the server
-    const anyLocalProfile = await db.profile.findFirst();
-    if (!anyLocalProfile) throw new Error("No local profile exists to own the default server");
-    
-    defaultServer = await db.server.create({
-      data: {
-        name: "CyberDeck Main",
-        imageUrl: "",
-        inviteCode: "cyberdeck-default",
-        profileId: anyLocalProfile.id,
-      }
-    });
-  }
+  if (!localProfile) throw new Error("Local profile does not exist");
+
+  const defaultServer = await ensureProfileWorkspace(localProfile as any);
 
   let profile = await findReusableContactProfile(userId, username);
   if (!profile) {

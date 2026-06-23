@@ -569,6 +569,94 @@ function contactEmail(userId) {
   return `${String(userId).replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
 }
 
+const LEGACY_CHAT_SERVER_CODE = "cyberdeck-default";
+const PERSONAL_CHAT_SERVER_PREFIX = "cyberdeck-dm-";
+
+async function ensureProfileChatServer(localProfileId) {
+  const localProfile = await db.profile.findUnique({
+    where: { id: localProfileId },
+    select: { id: true, userId: true, name: true },
+  });
+  if (!localProfile) throw new Error("Local profile does not exist");
+
+  let server = await db.server.findFirst({
+    where: {
+      profileId: localProfileId,
+      OR: [
+        { inviteCode: LEGACY_CHAT_SERVER_CODE },
+        { inviteCode: { startsWith: PERSONAL_CHAT_SERVER_PREFIX } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (!server) {
+    server = await db.server.create({
+      data: {
+        name: `${localProfile.name}'s Chats`,
+        imageUrl: "",
+        inviteCode: `${PERSONAL_CHAT_SERVER_PREFIX}${localProfileId}`,
+        profileId: localProfileId,
+        members: {
+          create: { profileId: localProfileId, role: "ADMIN" },
+        },
+      },
+    });
+  } else {
+    const member = await db.member.findFirst({
+      where: { profileId: localProfileId, serverId: server.id },
+      select: { id: true },
+    });
+    if (!member) {
+      await db.member.create({
+        data: { profileId: localProfileId, serverId: server.id, role: "ADMIN" },
+      });
+    }
+  }
+
+  if (server.inviteCode !== LEGACY_CHAT_SERVER_CODE) {
+    const legacyServer = await db.server.findFirst({
+      where: {
+        inviteCode: LEGACY_CHAT_SERVER_CODE,
+        profileId: { not: localProfileId },
+      },
+      select: { id: true },
+    });
+    if (legacyServer) {
+      const legacyMember = await db.member.findFirst({
+        where: {
+          profileId: localProfileId,
+          serverId: legacyServer.id,
+          role: "GUEST",
+        },
+        select: {
+          id: true,
+          _count: {
+            select: {
+              messages: true,
+              directMessages: true,
+              conversationsInitiated: true,
+              conversationsReceived: true,
+            },
+          },
+        },
+      });
+      const count = legacyMember?._count;
+      const isUnusedAutomaticMembership = count &&
+        count.messages === 0 &&
+        count.directMessages === 0 &&
+        count.conversationsInitiated === 0 &&
+        count.conversationsReceived === 0;
+      const isUserCreatedProfile = /^user_[a-f0-9]{20}$/i.test(localProfile.userId);
+      if (legacyMember && (isUserCreatedProfile || isUnusedAutomaticMembership)) {
+        await db.member.delete({ where: { id: legacyMember.id } });
+      }
+    }
+  }
+
+  return server;
+}
+
 async function findReusableContactProfile(userId, username) {
   const exact = await db.profile.findUnique({ where: { userId } });
   if (exact) return exact;
@@ -586,11 +674,10 @@ async function findReusableContactProfile(userId, username) {
   return sameName.find((profile) => !String(profile.email || "").endsWith("@mesh.local")) || sameName[0];
 }
 
-async function ensureAcceptedMeshContact({ userId, username, macAddress, deviceName }) {
+async function ensureAcceptedMeshContact({ localProfileId, userId, username, macAddress, deviceName }) {
   const name = cleanContactName(username);
   const resolvedUserId = contactUserId(userId, macAddress);
-  const defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
-  if (!defaultServer) throw new Error("Default chat server is missing");
+  const defaultServer = await ensureProfileChatServer(localProfileId);
 
   let profile = await findReusableContactProfile(resolvedUserId, name);
   if (!profile) {
@@ -672,7 +759,9 @@ async function ensureDirectConversationForAcceptedPeer(localProfileId, remoteMem
 }
 
 async function findDirectConversationByNames(firstName, secondName) {
-  const server = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
+  const session = getMeshSession();
+  if (!session?.profileId) return null;
+  const server = await ensureProfileChatServer(session.profileId);
   if (!server) return null;
 
   const profiles = await db.profile.findMany({
@@ -968,7 +1057,6 @@ async function upsertReceivedFileIndex({ storageName, fileName, mimeType, totalS
   if (session && fromUsername) {
     const found = await findDirectConversationByNames(fromUsername, session.username);
     if (found) {
-      uploaderId = found.firstMember.profileId;
       serverId = found.firstMember.serverId;
     }
   }
@@ -1329,11 +1417,7 @@ async function receiveDirectMessageSync(data, peerIp) {
   ) {
     console.log(`> [NodeMesh][SYNC] Auto-creating unknown contact and conversation for ${fromUsername} (found: ${!!found}, trustedPeer: ${!!trustedPeer}, trustedStatus: ${trustedPeer?.status}, trustedPublicName: ${trustedPeer?.publicName}, trustedUserId: ${trustedPeer?.userId}, fromUserId: ${fromUserId})`);
 
-    const defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
-    if (!defaultServer) {
-       console.error("> [NodeMesh][SYNC] Cannot auto-create unknown contact without default server");
-       return;
-    }
+    const defaultServer = await ensureProfileChatServer(session.profileId);
 
     const userId = fromUserId || `mesh_${fromNodeId || Date.now()}`;
     const email = `${userId.replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
@@ -1941,6 +2025,7 @@ async function receiveConnectionResponse(data, peerIp) {
       return;
     }
     const contact = await ensureAcceptedMeshContact({
+      localProfileId: session.profileId,
       userId: fromUserId,
       username: fromUsername,
       macAddress: data.fromNodeId,
@@ -2243,21 +2328,8 @@ function joinMulticastGroups(udp) {
 }
 
 async function ensureDefaultServer() {
-  let defaultServer = await db.server.findFirst({ where: { inviteCode: "cyberdeck-default" } });
-  if (!defaultServer) {
-    const anyLocalProfile = await db.profile.findFirst();
-    if (anyLocalProfile) {
-      await db.server.create({
-        data: {
-          name: "CyberDeck Main",
-          imageUrl: "",
-          inviteCode: "cyberdeck-default",
-          profileId: anyLocalProfile.id,
-        }
-      });
-      console.log("> [NodeMesh] Auto-created cyberdeck-default server on startup.");
-    }
-  }
+  const session = getMeshSession();
+  if (session?.profileId) await ensureProfileChatServer(session.profileId);
 }
 
 function startMeshDiscovery() {

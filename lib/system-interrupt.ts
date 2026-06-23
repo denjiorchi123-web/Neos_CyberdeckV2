@@ -111,6 +111,7 @@ export function triggerSystemInterrupt(event: string = "unknown", data: any = {}
           const launchArgs = [
             "-u", "nova", "-E", "chromium",
             "--kiosk", `https://127.0.0.1:3000/launcher${urlParams}`,
+            "--user-data-dir=/home/nova/.cyberdeck-kiosk", "--no-first-run", "--no-default-browser-check",
             "--ozone-platform=wayland", "--enable-features=UseOzonePlatform",
             "--touch-events=enabled", "--enable-multitouch", "--enable-gpu-rasterization",
             "--enable-zero-copy", "--disable-pinch", "--overscroll-history-navigation=0",

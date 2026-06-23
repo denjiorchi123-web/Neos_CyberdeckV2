@@ -6,6 +6,7 @@ import { Readable } from "stream";
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { ensureDirs, resolveStoredFilePath } from "@/lib/media-dirs";
+import { canAccessStoredFile } from "@/lib/file-access";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,10 @@ export async function GET(
   const filename = basename(params.filename);
   if (!filename || filename.includes("..")) {
     return new NextResponse("Bad Request", { status: 400 });
+  }
+
+  if (!(await canAccessStoredFile(profile.id, filename))) {
+    return new NextResponse("Not Found", { status: 404 });
   }
 
   ensureDirs();

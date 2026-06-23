@@ -2,7 +2,7 @@
 Version=1.0
 Name=CyberDeck
 Comment=Air-Gapped LAN Messenger
-Exec=/usr/bin/chromium --kiosk "https://127.0.0.1:3000/launcher" --force-device-scale-factor=0.75 --ozone-platform=wayland --enable-features=UseOzonePlatform --touch-events=enabled --enable-multitouch --enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-pinch --overscroll-history-navigation=0 --ignore-certificate-errors --password-store=basic --fast --fast-start
+Exec=/usr/bin/chromium --kiosk "https://127.0.0.1:3000/launcher" --user-data-dir=/home/nova/.cyberdeck-kiosk --no-first-run --no-default-browser-check --force-device-scale-factor=0.75 --ozone-platform=wayland --enable-features=UseOzonePlatform --touch-events=enabled --enable-multitouch --enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-pinch --overscroll-history-navigation=0 --ignore-certificate-errors --password-store=basic --fast --fast-start
 Icon=/usr/share/pixmaps/cyberdeck.png
 Terminal=false
 Type=Application

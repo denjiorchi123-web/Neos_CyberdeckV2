@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import * as crypto from "crypto";
 import { db } from "@/lib/db";
+import { currentProfile } from "@/lib/current-profile";
+import { ensureProfileWorkspace } from "@/lib/profile-workspace";
+import { profileServerIds } from "@/lib/file-access";
 
 /**
  * Basic PBKDF2 hashing to avoid external dependencies like bcryptjs
@@ -47,7 +50,21 @@ function dedupeProfilesForDisplay<T extends { name: string; email?: string | nul
  */
 export async function GET() {
   try {
+    const current = await currentProfile();
+    if (!current) return new NextResponse("Unauthorized", { status: 401 });
+    const serverIds = await profileServerIds(current.id);
+
     const profiles = await db.profile.findMany({
+      where: {
+        OR: [
+          { id: current.id },
+          {
+            members: {
+              some: { serverId: { in: serverIds } },
+            },
+          },
+        ],
+      },
       select: {
         id: true,
         userId: true,
@@ -109,20 +126,7 @@ export async function POST(req: Request) {
 
     const profile = { id, userId, name: finalName, imageUrl: finalImageUrl, email: finalEmail };
 
-    // Auto-join the default server if it exists
-    const defaultServer = await db.server.findFirst({
-      where: { inviteCode: "cyberdeck-default" }
-    });
-
-    if (defaultServer) {
-      await db.member.create({
-        data: {
-          profileId: id,
-          serverId: defaultServer.id,
-          role: "GUEST"
-        }
-      });
-    }
+    await ensureProfileWorkspace(profile as any);
 
     return NextResponse.json(profile);
   } catch (error) {

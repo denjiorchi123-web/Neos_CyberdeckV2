@@ -204,6 +204,7 @@ export async function respondToConnectionRequest(
 
   if (action === "ACCEPTED") {
     const contact = await ensureAcceptedMeshContact({
+      localProfileId: profile.id,
       userId: peer.userId,
       username: peer.publicName || peer.displayName,
       macAddress: request.fromNodeId,

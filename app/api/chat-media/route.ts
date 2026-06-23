@@ -28,6 +28,18 @@ export async function GET(req: Request) {
     let messages = [];
 
     if (isDirect) {
+      const conversation = await db.conversation.findFirst({
+        where: {
+          id: chatId,
+          OR: [
+            { memberOne: { profileId: profile.id } },
+            { memberTwo: { profileId: profile.id } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!conversation) return new NextResponse("Not Found", { status: 404 });
+
       messages = await db.directMessage.findMany({
         where: {
           conversationId: chatId,
@@ -47,6 +59,15 @@ export async function GET(req: Request) {
         }
       });
     } else {
+      const channel = await db.channel.findFirst({
+        where: {
+          id: chatId,
+          server: { members: { some: { profileId: profile.id } } },
+        },
+        select: { id: true },
+      });
+      if (!channel) return new NextResponse("Not Found", { status: 404 });
+
       messages = await db.message.findMany({
         where: {
           channelId: chatId,

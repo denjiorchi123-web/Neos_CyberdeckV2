@@ -32,8 +32,8 @@ export default async function ChannelIdPage({
 
 
 
-  const channel = await db.channel.findUnique({
-    where: { id: channelId }
+  const channel = await db.channel.findFirst({
+    where: { id: channelId, serverId }
   });
 
   const server = await db.server.findUnique({

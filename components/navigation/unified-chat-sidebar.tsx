@@ -10,6 +10,11 @@ import { UnifiedChatList } from "./unified-chat-list";
 import { UnifiedChatHeaderAction } from "./unified-chat-header-action";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { NavigationUserControl } from "./navigation-user-control";
+import {
+  findProfileChatServer,
+  LEGACY_CHAT_SERVER_CODE,
+  PERSONAL_CHAT_SERVER_PREFIX,
+} from "@/lib/profile-workspace";
 
 export async function UnifiedChatSidebar() {
   const profile = await currentProfile();
@@ -42,12 +47,12 @@ export async function UnifiedChatSidebar() {
   const mutedChatIds = new Set(mutedChats.map(m => m.chatId));
 
   // Get 1-on-1s (Direct Messages)
-  const defaultServer = await db.server.findFirst({
-    where: { inviteCode: "cyberdeck-default" },
-    include: { members: { where: { profileId: profile.id } } }
-  });
-  
-  const currentMember = defaultServer?.members[0];
+  const defaultServer = await findProfileChatServer(profile.id);
+  const currentMember = defaultServer
+    ? await db.member.findFirst({
+        where: { serverId: defaultServer.id, profileId: profile.id },
+      })
+    : null;
   let dmChats: any[] = [];
 
   if (defaultServer && currentMember) {
@@ -117,7 +122,10 @@ export async function UnifiedChatSidebar() {
   const servers = await db.server.findMany({
     where: {
       members: { some: { profileId: profile.id } },
-      NOT: { inviteCode: "cyberdeck-default" }
+      NOT: [
+        { inviteCode: LEGACY_CHAT_SERVER_CODE },
+        { inviteCode: { startsWith: PERSONAL_CHAT_SERVER_PREFIX } },
+      ]
     },
     include: {
       members: true,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentProfile } from "@/lib/current-profile";
 import { log } from "@/lib/logger";
+import { findAccessibleFile } from "@/lib/file-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,12 +18,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "fileId and channelId required" }, { status: 400 });
   }
 
-  const file = await db.fileIndex.findUnique({ where: { id: fileId } });
+  const file = await findAccessibleFile(profile.id, fileId);
   if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
+  const channel = await db.channel.findFirst({
+    where: {
+      id: channelId,
+      server: { members: { some: { profileId: profile.id } } },
+    },
+    select: { serverId: true },
+  });
+  if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+
   const member = await db.member.findFirst({
-    where: { profileId: profile.id },
-    include: { server: { include: { channels: true } } },
+    where: { profileId: profile.id, serverId: channel.serverId },
   });
   if (!member) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
@@ -58,7 +67,13 @@ export async function GET() {
   if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const members = await db.member.findMany({
-    where: { profileId: profile.id },
+    where: {
+      profileId: profile.id,
+      OR: [
+        { server: { profileId: profile.id } },
+        { server: { inviteCode: { not: "cyberdeck-default" } } },
+      ],
+    },
     include: {
       server: {
         include: {

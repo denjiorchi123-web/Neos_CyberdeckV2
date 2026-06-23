@@ -20,6 +20,18 @@ export async function GET(req: Request) {
     if (!conversationId)
       return new NextResponse("Conversation ID Missing", { status: 400 });
 
+    const conversation = await db.conversation.findFirst({
+      where: {
+        id: conversationId,
+        OR: [
+          { memberOne: { profileId: profile.id } },
+          { memberTwo: { profileId: profile.id } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!conversation) return new NextResponse("Not Found", { status: 404 });
+
     // ── Check if the chat was cleared ─────────────────────────
     const clearedChat = await db.clearedChat.findUnique({
       where: { profileId_chatId: { profileId: profile.id, chatId: conversationId } }

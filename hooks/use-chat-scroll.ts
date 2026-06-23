@@ -7,6 +7,7 @@ type ChatScrollProps = {
   loadMore: () => void;
   count: number;
   isLoadingMore?: boolean;
+  scrollKey: string;
 };
 
 export const useChatScroll = ({
@@ -15,7 +16,8 @@ export const useChatScroll = ({
   shouldLoadMore,
   loadMore,
   count,
-  isLoadingMore = false
+  isLoadingMore = false,
+  scrollKey,
 }: ChatScrollProps) => {
   const hasInitialized = useRef(false);
   const pendingHistoryLoad = useRef(false);
@@ -56,17 +58,27 @@ export const useChatScroll = ({
   }, [count, isLoadingMore]);
 
   const scrollToBottom = useCallback((smooth = true) => {
-    bottomRef?.current?.scrollIntoView({
+    const topDiv = chatRef?.current;
+    if (!topDiv) return;
+    topDiv.scrollTo({
+      top: topDiv.scrollHeight,
       behavior: smooth ? "smooth" : "auto",
-      block: "end"
     });
-  }, [bottomRef]);
+  }, [chatRef]);
+
+  useLayoutEffect(() => {
+    hasInitialized.current = false;
+    pendingHistoryLoad.current = false;
+    previousCount.current = 0;
+    previousScrollHeight.current = 0;
+    setIsScrolledUp(false);
+  }, [scrollKey]);
 
   useLayoutEffect(() => {
     const bottomDiv = bottomRef?.current;
     const topDiv = chatRef?.current;
 
-    if (!topDiv) return;
+    if (!topDiv || count === 0) return;
 
     if (pendingHistoryLoad.current && previousScrollHeight.current > 0) {
       const heightDelta = topDiv.scrollHeight - previousScrollHeight.current;
@@ -79,18 +91,23 @@ export const useChatScroll = ({
 
     if (bottomDiv) {
       const didAddMessages = count > previousCount.current;
-      // When a new message comes in, if we are scrolled up, do NOT auto-scroll
-      // unless it's the initial load.
-      if (!hasInitialized.current || !isScrolledUp) {
-        bottomDiv.scrollIntoView({
-          behavior: hasInitialized.current && didAddMessages ? "smooth" : "auto",
-          block: "end"
+      if (!hasInitialized.current) {
+        // scrollIntoView can move an outer page instead of the chat viewport in
+        // Chromium kiosk mode. Set the viewport directly, then repeat after the
+        // browser's next layout pass so refresh always opens on the latest item.
+        topDiv.scrollTop = topDiv.scrollHeight;
+        requestAnimationFrame(() => {
+          const viewport = chatRef.current;
+          if (viewport) viewport.scrollTop = viewport.scrollHeight;
         });
+        setIsScrolledUp(false);
+      } else if (!isScrolledUp && didAddMessages) {
+        topDiv.scrollTo({ top: topDiv.scrollHeight, behavior: "smooth" });
       }
       hasInitialized.current = true;
       previousCount.current = count;
     }
-  }, [bottomRef, chatRef, count, isScrolledUp]);
+  }, [bottomRef, chatRef, count, isScrolledUp, scrollKey]);
 
   return { isScrolledUp, scrollToBottom };
 };

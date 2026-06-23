@@ -107,7 +107,8 @@ export function ChatMessages({
     loadMore: fetchNextPage,
     shouldLoadMore: !isFetchingNextPage && !!hasNextPage,
     count: messageCount,
-    isLoadingMore: isFetchingNextPage
+    isLoadingMore: isFetchingNextPage,
+    scrollKey: chatId,
   });
 
   if (status === "loading")

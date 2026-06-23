@@ -5,6 +5,7 @@ import { MessageSquare } from "lucide-react";
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
 import { DMList } from "./dm-list";
+import { findProfileChatServer } from "@/lib/profile-workspace";
 
 export async function DMListSidebar() {
   const profile = await currentProfile();
@@ -12,9 +13,7 @@ export async function DMListSidebar() {
   if (!profile) return redirect("/sign-in");
 
   // Get the default server to find members
-  const defaultServer = await db.server.findFirst({
-    where: { inviteCode: "cyberdeck-default" }
-  });
+  const defaultServer = await findProfileChatServer(profile.id);
 
   if (!defaultServer) {
     return (

@@ -5,8 +5,7 @@ import { currentProfile } from "@/lib/current-profile";
 import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
 import { UnifiedChatSidebar } from "@/components/navigation/unified-chat-sidebar";
 import { ChatResizableLayout } from "@/components/navigation/chat-resizable-layout";
-
-import { db } from "@/lib/db";
+import { ensureProfileWorkspace } from "@/lib/profile-workspace";
 
 export default async function MainLayout({
   children
@@ -19,28 +18,7 @@ export default async function MainLayout({
     return redirect("/sign-in");
   }
 
-  const defaultServer = await db.server.findFirst({
-    where: { inviteCode: "cyberdeck-default" },
-    include: { members: { where: { profileId: profile.id } } }
-  });
-
-  if (defaultServer && defaultServer.members.length === 0) {
-    try {
-      await db.member.create({
-        data: {
-          profileId: profile.id,
-          serverId: defaultServer.id,
-          role: "GUEST"
-        }
-      });
-    } catch (error: any) {
-      if (error?.code === "P2002" || error?.code === "P2003") {
-        console.log("[MAIN_LAYOUT] Swallowing concurrent member creation error:", error.code);
-      } else {
-        throw error;
-      }
-    }
-  }
+  await ensureProfileWorkspace(profile);
 
   return (
     <ChatResizableLayout

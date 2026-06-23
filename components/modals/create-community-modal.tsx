@@ -53,7 +53,10 @@ export function CreateCommunityModal() {
     if (isModalOpen) {
       axios.get("/api/servers").then(res => {
         // Filter out the default server, keep only user-created groups
-        const groups = res.data.filter((s: any) => s.inviteCode !== "cyberdeck-default");
+        const groups = res.data.filter((s: any) =>
+          s.inviteCode !== "cyberdeck-default" &&
+          !s.inviteCode?.startsWith("cyberdeck-dm-")
+        );
         setServers(groups);
       }).catch(() => {});
     } else {

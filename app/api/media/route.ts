@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentProfile } from "@/lib/current-profile";
 import { ensureDirs } from "@/lib/media-dirs";
+import { profileServerIds } from "@/lib/file-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,14 @@ export async function GET(req: NextRequest) {
 
   const category = req.nextUrl.searchParams.get("category") ?? "all";
 
+  const serverIds = await profileServerIds(profile.id);
   const allFiles = await db.fileIndex.findMany({
+    where: {
+      OR: [
+        { uploaderId: profile.id },
+        { serverId: { in: serverIds } },
+      ],
+    },
     orderBy: { createdAt: "desc" },
   });
 

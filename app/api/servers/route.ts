@@ -50,7 +50,11 @@ export async function GET(req: Request) {
           some: {
             profileId: profile.id
           }
-        }
+        },
+        OR: [
+          { profileId: profile.id },
+          { inviteCode: { not: "cyberdeck-default" } },
+        ],
       }
     });
 

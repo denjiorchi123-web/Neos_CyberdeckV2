@@ -16,7 +16,9 @@ export async function DELETE(
   const profile = await currentProfile();
   if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const file = await db.fileIndex.findUnique({ where: { id: params.id } });
+  const file = await db.fileIndex.findFirst({
+    where: { id: params.id, uploaderId: profile.id },
+  });
   if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   ensureDirs();

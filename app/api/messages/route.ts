@@ -20,6 +20,15 @@ export async function GET(req: Request) {
     if (!channelId)
       return new NextResponse("Channel ID Missing", { status: 400 });
 
+    const channel = await db.channel.findFirst({
+      where: {
+        id: channelId,
+        server: { members: { some: { profileId: profile.id } } },
+      },
+      select: { id: true },
+    });
+    if (!channel) return new NextResponse("Not Found", { status: 404 });
+
     // ── Check if the chat was cleared ─────────────────────────
     const clearedChat = await db.clearedChat.findUnique({
       where: { profileId_chatId: { profileId: profile.id, chatId: channelId } }

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import * as crypto from "crypto";
 import { db } from "@/lib/db";
 import { clearMeshSession, persistMeshSession } from "@/lib/mesh-session";
+import { ensureProfileWorkspace } from "@/lib/profile-workspace";
 
 /**
  * Basic PBKDF2 hashing to avoid external dependencies like bcryptjs
@@ -53,10 +54,14 @@ export async function POST(req: Request) {
       return new NextResponse("Invalid password", { status: 401 });
     }
 
+    await ensureProfileWorkspace(profile);
+
     const cookieStore = cookies();
+    const expires = new Date(Date.now() + 60 * 60 * 24 * 30 * 1000);
     cookieStore.set("cyberdeck-user-id", profile.userId, {
       path: "/",
       maxAge: 60 * 60 * 24 * 30, // 30 days
+      expires,
       httpOnly: true,
       sameSite: "lax",
     });

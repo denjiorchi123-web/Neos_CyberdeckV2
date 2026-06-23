@@ -43,9 +43,15 @@ export default async function MemberIdPage({
 
   if (!currentMember) return redirect("/");
 
+  const targetMember = await db.member.findFirst({
+    where: { id: memberId, serverId },
+    select: { id: true },
+  });
+  if (!targetMember) return redirect("/");
+
   const conversation = await getOrCreateConversation(
     currentMember.id,
-    memberId
+    targetMember.id
   );
 
   if (!conversation) return redirect(`/servers/${serverId}`);
