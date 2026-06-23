@@ -175,7 +175,7 @@ export async function sendConnectionRequestToIp(
       securityStatus: VERIFIED_LAN_STATUS,
       message: message || `${profile.name} wants to connect`,
       expiresAt: expiresAt.getTime(),
-    });
+    }, 6_000);
   } catch (error) {
     // The UI must only show requests acknowledged by the remote mesh daemon.
     await db.$transaction([

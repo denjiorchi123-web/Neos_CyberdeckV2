@@ -6,6 +6,7 @@ const MESH_CONTROL_TIMEOUT_MS = Number(process.env.MESH_CONTROL_TIMEOUT_MS || 30
 export async function sendMeshControl(
   ip: string,
   payload: Record<string, unknown>,
+  timeoutMs = MESH_CONTROL_TIMEOUT_MS,
 ): Promise<void> {
   const host = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
   const packet = JSON.stringify(signedControlMessage(payload)) + "\n";
@@ -28,7 +29,7 @@ export async function sendMeshControl(
       error.code = "ETIMEDOUT";
       settle(error);
       socket.destroy();
-    }, MESH_CONTROL_TIMEOUT_MS);
+    }, timeoutMs);
 
     socket.setNoDelay(true);
     socket.once("connect", () => socket.end(packet));
