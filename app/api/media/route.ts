@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   }));
 
   return NextResponse.json(
-    { files, profileId: profile.id },
+    { files, profileId: profile.id, profileName: profile.name },
     {
       headers: {
         "Cache-Control": "private, no-store, max-age=0",

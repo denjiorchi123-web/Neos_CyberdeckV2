@@ -177,6 +177,8 @@ export default function MediaPage() {
   const [shareFile,  setShareFile]  = useState<MediaFile | null>(null);
   const [lightbox,   setLightbox]   = useState<MediaFile | null>(null);
   const [toast,      setToast]      = useState<string | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const loadSequence = useRef(0);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -189,24 +191,60 @@ export default function MediaPage() {
   };
 
   const load = useCallback(async (cat: Category) => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setFiles([]);
     try {
-      const res  = await fetch(`/api/media?category=${cat}&profile_refresh=${Date.now()}`, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (!res.ok) throw new Error("Media request failed");
-      const data = await res.json();
-      setFiles(data.files ?? []);
+      const nonce = Date.now();
+      const [identityRes, mediaRes] = await Promise.all([
+        fetch(`/api/auth/me?media_identity=${nonce}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+        }),
+        fetch(`/api/media?category=${cat}&profile_refresh=${nonce}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+        }),
+      ]);
+      if (!identityRes.ok || !mediaRes.ok) throw new Error("Media request failed");
+
+      const [identity, data] = await Promise.all([identityRes.json(), mediaRes.json()]);
+      if (!identity?.id || data.profileId !== identity.id) {
+        throw new Error("Profile changed while loading media");
+      }
+      if (sequence !== loadSequence.current) return;
+
+      setProfileName(data.profileName || identity.name || "");
+      setFiles(Array.isArray(data.files) ? data.files : []);
     } catch {
-      setFiles([]);
+      if (sequence === loadSequence.current) {
+        setProfileName("");
+        setFiles([]);
+      }
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(category); }, [category, load]);
+  useEffect(() => {
+    load(category);
+    return () => { loadSequence.current += 1; };
+  }, [category, load]);
+
+  useEffect(() => {
+    const refreshRestoredPage = (event: PageTransitionEvent) => {
+      if (event.persisted) load(category);
+    };
+    const refreshVisiblePage = () => {
+      if (document.visibilityState === "visible") load(category);
+    };
+    window.addEventListener("pageshow", refreshRestoredPage);
+    document.addEventListener("visibilitychange", refreshVisiblePage);
+    return () => {
+      window.removeEventListener("pageshow", refreshRestoredPage);
+      document.removeEventListener("visibilitychange", refreshVisiblePage);
+    };
+  }, [category, load]);
 
   useEffect(() => {
     if (!lightbox) return;
@@ -245,7 +283,14 @@ export default function MediaPage() {
               <ArrowLeft className="h-4 w-4" />
               <span className="text-xs font-bold uppercase tracking-wider">Back</span>
             </button>
-            <span className="text-sm text-zinc-400 uppercase tracking-widest">Media Library</span>
+            <div>
+              <span className="text-sm text-zinc-400 uppercase tracking-widest">Media Library</span>
+              {profileName && (
+                <p className="text-[10px] text-zinc-600 normal-case tracking-normal mt-0.5">
+                  Personal files for {profileName}
+                </p>
+              )}
+            </div>
           </div>
           <button onClick={() => load(category)} className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-white">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />

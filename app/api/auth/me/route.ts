@@ -38,7 +38,12 @@ export async function GET() {
       securityQuestion: livePrefs?.securityQuestion || null,
     };
 
-    return NextResponse.json(responseData);
+    return NextResponse.json(responseData, {
+      headers: {
+        "Cache-Control": "private, no-store, max-age=0",
+        "Vary": "Cookie",
+      },
+    });
   } catch (error) {
     console.error("[AUTH_ME_GET]", error);
     return new NextResponse("Internal Error", { status: 500 });

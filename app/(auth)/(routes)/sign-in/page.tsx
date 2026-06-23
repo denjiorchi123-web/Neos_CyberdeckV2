@@ -1,10 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2, Lock, User, ShieldCheck, ArrowRight, UserPlus } from "lucide-react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
+
+async function enterAuthenticatedProfile() {
+  if ("caches" in window) {
+    const cacheNames = await caches.keys().catch(() => []);
+    await Promise.all(cacheNames.map((name) => caches.delete(name))).catch(() => {});
+  }
+  window.location.replace(`/?profile_refresh=${Date.now()}`);
+}
 
 export default function LoginPage() {
   const [identifier, setIdentifier] = useState("");
@@ -17,8 +24,6 @@ export default function LoginPage() {
   // Registration fields
   const [newName, setNewName] = useState("");
   const [newPassword, setNewPassword] = useState("");
-
-  const router = useRouter();
 
   const onLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,8 +41,7 @@ export default function LoginPage() {
         password
       });
 
-      router.push("/");
-      router.refresh();
+      await enterAuthenticatedProfile();
     } catch (error: any) {
       setError(error.response?.data || "Invalid credentials");
     } finally {
@@ -60,8 +64,7 @@ export default function LoginPage() {
         identifier: res.data.name,
         password: newPassword
       });
-      router.push("/");
-      router.refresh();
+      await enterAuthenticatedProfile();
     } catch (error: any) {
       setError(error.response?.data || "Registration failed");
     } finally {
@@ -119,8 +122,7 @@ export default function LoginPage() {
                       password: newPassword
                     });
 
-                    router.push("/");
-                    router.refresh();
+                    await enterAuthenticatedProfile();
                   } catch (error: any) {
                     setError(error.response?.data || "Failed to reset password");
                     setIsLoading(false);

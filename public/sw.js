@@ -4,7 +4,7 @@
 
 // Bump this whenever attachment/UI behavior changes so kiosk browsers do not
 // keep serving an old JavaScript bundle with obsolete file-type filters.
-const CACHE_VER   = "cyberdeck-v3-any-file";
+const CACHE_VER   = "cyberdeck-v4-profile-media-isolation";
 const SHELL_PATHS = ["/", "/favicon.ico"];
 
 // ── Install: pre-cache app shell ──────────────────────────────────────────────
@@ -28,6 +28,13 @@ self.addEventListener("activate", (event) => {
 // ── Fetch: network-first for API/socket, cache-first for static assets ───────
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
+
+  // Never reuse profile-scoped API or React server-component responses across
+  // logins. These requests must always be answered by the active session.
+  if (url.pathname.startsWith("/api/") || url.searchParams.has("_rsc")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
 
   // Never intercept Socket.IO or API socket routes — they must hit the network
   if (url.pathname.startsWith("/api/socket") || url.pathname.startsWith("/socket.io")) {
