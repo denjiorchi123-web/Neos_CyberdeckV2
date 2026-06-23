@@ -1,0 +1,3 @@
+Cmnd_Alias CYBERDECK_NETCONFIG = /usr/local/sbin/cyberdeck-netconfig *
+nova ALL=(root) NOPASSWD: CYBERDECK_NETCONFIG
+cyberdeck ALL=(root) NOPASSWD: CYBERDECK_NETCONFIG

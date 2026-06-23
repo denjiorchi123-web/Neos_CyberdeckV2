@@ -109,6 +109,14 @@ install_tauri_deps() {
     fi
 }
 
+install_network_helper() {
+    echo ""
+    echo "Installing OS-level Ethernet configuration helper..."
+    sudo install -o root -g root -m 0755 /opt/cyberdeck/deploy/scripts/cyberdeck-netconfig.sh /usr/local/sbin/cyberdeck-netconfig
+    sudo install -o root -g root -m 0440 /opt/cyberdeck/deploy/sudo/cyberdeck-netconfig /etc/sudoers.d/cyberdeck-netconfig
+    sudo visudo -cf /etc/sudoers.d/cyberdeck-netconfig
+}
+
 compile_tauri() {
     echo ""
     echo "[5] Compiling Tauri Application..."
@@ -174,6 +182,7 @@ enable_wifi
 remove_startup_and_gpu
 update_packages
 install_tauri_deps
+install_network_helper
 compile_tauri
 setup_shortcut
 

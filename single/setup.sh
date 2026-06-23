@@ -101,6 +101,11 @@ sudo systemctl restart redis-cyberdeck.service || true
 sudo useradd --system --create-home --home /home/cyberdeck --shell /usr/sbin/nologin cyberdeck 2>/dev/null || true
 sudo usermod -a -G cyberdeck $USER 2>/dev/null || true
 
+# Install the root-owned, validation-only network helper used by the UI.
+sudo install -o root -g root -m 0755 "$PROJECT_DIR/deploy/scripts/cyberdeck-netconfig.sh" /usr/local/sbin/cyberdeck-netconfig
+sudo install -o root -g root -m 0440 "$PROJECT_DIR/deploy/sudo/cyberdeck-netconfig" /etc/sudoers.d/cyberdeck-netconfig
+sudo visudo -cf /etc/sudoers.d/cyberdeck-netconfig
+
 # Set up runtime write access for the cyberdeck daemon user
 sudo mkdir -p "$PROJECT_DIR/prisma" "$PROJECT_DIR/public"
 sudo chown -R cyberdeck:cyberdeck "$PROJECT_DIR/prisma" "$PROJECT_DIR/public"
