@@ -37,6 +37,7 @@ export default function LauncherPage() {
   const [manualIp, setManualIp]   = useState("");
   const [manualBusy, setManualBusy] = useState(false);
   const [manualError, setManualError] = useState("");
+  const [scanStatus, setScanStatus] = useState("");
 
   // Pairing Handshake states
   const [pairingPeer, setPairingPeer] = useState<any>(null);
@@ -47,9 +48,27 @@ export default function LauncherPage() {
   const router = useRouter();
 
   const fetchPeers = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setRefresh(true);
+    if (showSpinner) {
+      setRefresh(true);
+      setScanStatus("Scanning the LAN now...");
+    }
     try {
-      const res  = await fetch("/api/peers", { cache: "no-store" });
+      if (showSpinner) {
+        const scanRes = await fetch("/api/peers/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+          cache: "no-store",
+        });
+        if (!scanRes.ok) {
+          const scanBody = await scanRes.json().catch(() => ({}));
+          throw new Error(scanBody.error || "Could not start the backend LAN scan");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 900));
+      }
+
+      const res  = await fetch(`/api/peers?refresh=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not read discovered peers");
       const data = (await res.json()) as LauncherResponse;
       
       if (data.lanReady === false && (!data.peers || data.peers.length === 0)) {
@@ -59,13 +78,20 @@ export default function LauncherPage() {
       
       setPeers(data.peers || []);
       if (data.self?.hostname) setSelfName(data.self.hostname.toUpperCase());
-    } catch {
-      // Quietly swallow — empty list is the right UX
+      if (showSpinner) {
+        setScanStatus(data.peers?.length
+          ? `${data.peers.length} peer${data.peers.length === 1 ? "" : "s"} found`
+          : "Scan complete - no online peers found");
+      }
+    } catch (error) {
+      if (showSpinner) {
+        setScanStatus(error instanceof Error ? error.message : "LAN scan failed");
+      }
     } finally {
       setLoading(false);
       setRefresh(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchPeers();
@@ -176,7 +202,9 @@ export default function LauncherPage() {
 
       const body = await res.json();
       setPairingRequestId(body.requestId);
-      setPairingStatus("Request sent. Waiting for the peer to accept...");
+      setPairingStatus(body.discovered
+        ? "Peer found and backend delivery confirmed. Waiting for acceptance..."
+        : "Backend delivery confirmed at the static IP. Waiting for acceptance...");
     } catch (err: any) {
       const message = err.message || "Could not reach that peer IP.";
       setManualError(message);
@@ -263,9 +291,11 @@ export default function LauncherPage() {
               Discovered peers
             </h2>
             <button
+              type="button"
               onClick={() => fetchPeers(true)}
               disabled={refreshing}
-              className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 normal-case tracking-normal"
+              aria-label="Refresh discovered peers"
+              className="min-h-11 min-w-[104px] px-3 rounded-xl border border-zinc-800 bg-zinc-900/70 text-xs text-zinc-300 hover:text-white active:bg-zinc-700 flex items-center justify-center gap-2 normal-case tracking-normal touch-manipulation disabled:opacity-60"
             >
               <RefreshCw
                 className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
@@ -273,6 +303,12 @@ export default function LauncherPage() {
               Refresh
             </button>
           </div>
+
+          {scanStatus && (
+            <p role="status" aria-live="polite" className="text-[11px] text-zinc-500 normal-case tracking-normal text-right">
+              {scanStatus}
+            </p>
+          )}
 
           {loading ? (
             <div className="flex items-center justify-center p-8 text-zinc-500 text-sm">

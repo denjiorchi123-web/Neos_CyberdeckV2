@@ -103,20 +103,34 @@ export async function sendConnectionRequest(
   ]);
   await recordProfileRequestOwner(profile, requestId, peerNodeId);
 
-  await sendMeshControl(peer.ipAddress, {
-    type: "connection_request",
-    requestId,
-    fromNodeId: localNodeId,
-    fromUserId: profile.id,
-    fromUsername: profile.name,
-    fromHostname: os.hostname(),
-    fromPublicName: profile.name,
-    fromDeviceName: os.hostname(),
-    fromIp: getLocalIp(),
-    securityStatus: VERIFIED_LAN_STATUS,
-    message: message || `${profile.name} wants to connect`,
-    expiresAt: expiresAt.getTime(),
-  });
+  try {
+    await sendMeshControl(peer.ipAddress, {
+      type: "connection_request",
+      requestId,
+      fromNodeId: localNodeId,
+      fromUserId: profile.id,
+      fromUsername: profile.name,
+      fromHostname: os.hostname(),
+      fromPublicName: profile.name,
+      fromDeviceName: os.hostname(),
+      fromIp: getLocalIp(),
+      securityStatus: VERIFIED_LAN_STATUS,
+      message: message || `${profile.name} wants to connect`,
+      expiresAt: expiresAt.getTime(),
+    });
+  } catch (error) {
+    await db.$transaction([
+      db.meshEvent.deleteMany({
+        where: { entityType: "connection_request", entityId: requestId },
+      }),
+      db.connectionRequest.deleteMany({ where: { requestId } }),
+      db.meshPeer.update({
+        where: { macAddress: peerNodeId },
+        data: { status: peer.status },
+      }),
+    ]).catch(() => {});
+    throw error;
+  }
 
   return { requestId, expiresAt };
 }
@@ -147,20 +161,31 @@ export async function sendConnectionRequestToIp(
   });
   await recordProfileRequestOwner(profile, requestId, temporaryPeerNodeId);
 
-  await sendMeshControl(peerIp, {
-    type: "connection_request",
-    requestId,
-    fromNodeId: localNodeId,
-    fromUserId: profile.id,
-    fromUsername: profile.name,
-    fromHostname: os.hostname(),
-    fromPublicName: profile.name,
-    fromDeviceName: os.hostname(),
-    fromIp: getLocalIp(),
-    securityStatus: VERIFIED_LAN_STATUS,
-    message: message || `${profile.name} wants to connect`,
-    expiresAt: expiresAt.getTime(),
-  });
+  try {
+    await sendMeshControl(peerIp, {
+      type: "connection_request",
+      requestId,
+      fromNodeId: localNodeId,
+      fromUserId: profile.id,
+      fromUsername: profile.name,
+      fromHostname: os.hostname(),
+      fromPublicName: profile.name,
+      fromDeviceName: os.hostname(),
+      fromIp: getLocalIp(),
+      securityStatus: VERIFIED_LAN_STATUS,
+      message: message || `${profile.name} wants to connect`,
+      expiresAt: expiresAt.getTime(),
+    });
+  } catch (error) {
+    // The UI must only show requests acknowledged by the remote mesh daemon.
+    await db.$transaction([
+      db.meshEvent.deleteMany({
+        where: { entityType: "connection_request", entityId: requestId },
+      }),
+      db.connectionRequest.deleteMany({ where: { requestId } }),
+    ]).catch(() => {});
+    throw error;
+  }
 
   return { requestId, expiresAt, targetIp: peerIp };
 }

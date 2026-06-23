@@ -2477,6 +2477,29 @@ function startMeshDiscovery() {
     }
   }
 
+  // Let the launcher request a real scan from this long-running mesh process.
+  if (redisClient) {
+    const discoverySubscriber = redisClient.duplicate();
+    discoverySubscriber.subscribe("mesh:discovery:refresh").catch((error) => {
+      console.error(`> [NodeMesh] Discovery refresh subscription failed: ${error.message}`);
+    });
+    discoverySubscriber.on("message", (_channel, rawCommand) => {
+      let targetIp = "";
+      try {
+        const command = JSON.parse(rawCommand || "{}");
+        targetIp = normalizeIp(typeof command.targetIp === "string" ? command.targetIp : "");
+      } catch {}
+
+      const packet = buildHelloPacket({}, { logMissingSession: false });
+      if (!packet) return;
+      sendDiscoveryPacket(udp, packet, { includeUnicast: true }).catch((error) => {
+        console.error(`> [NodeMesh] On-demand discovery failed: ${error.message}`);
+      });
+      if (targetIp && !isLocalIp(targetIp)) sendUnicastDiscoveryPacket(packet, targetIp);
+      console.log(`> [NodeMesh] On-demand discovery scan${targetIp ? ` for ${targetIp}` : ""}`);
+    });
+  }
+
   startControlServer();
 }
 
