@@ -439,10 +439,6 @@ async function recordEvent(originNodeId, entityId, operation, payload, receivedF
   });
 }
 
-function contactRequestId(userId, macAddress) {
-  return `contact-${crypto.createHash("sha1").update(`${userId}:${macAddress}`).digest("hex")}`;
-}
-
 function displayNameFor(username, deviceName, macAddress, hasCollision) {
   if (!hasCollision) return username;
   return `${username} (${deviceName || String(macAddress).slice(-6)})`;
@@ -468,64 +464,6 @@ async function logImpersonationAttempt({ userId, username, macAddress, ipAddress
     trustedMac: trustedPeer?.macAddress,
   }, ipAddress || macAddress);
   console.error(`> [NodeMesh][AUTH] Rejected impersonation attempt for ${username} from ${ipAddress}`);
-}
-
-async function ensureRequestPayloadLogged({ requestId, userId, username, macAddress, deviceName, ipAddress, message, securityStatus }) {
-  const existing = await db.meshEvent.findFirst({
-    where: {
-      entityType: "connection_request",
-      entityId: requestId,
-      operation: "handshake_request_received",
-    },
-  });
-  if (existing) return;
-
-  await recordEvent(macAddress, requestId, "handshake_request_received", {
-    type: "HELLO",
-    requestId,
-    fromNodeId: macAddress,
-    fromUserId: userId,
-    fromUsername: username,
-    fromDeviceName: deviceName,
-    fromPublicName: username,
-    ipAddress,
-    message,
-    securityStatus,
-  }, macAddress);
-}
-
-async function ensurePendingContactRequest({ userId, username, macAddress, deviceName, ipAddress, message, securityStatus }) {
-  const requestId = contactRequestId(userId, macAddress);
-  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-  const existing = await db.connectionRequest.findUnique({ where: { requestId } });
-  if (existing && ["ACCEPTED", "BLOCKED"].includes(existing.status)) return existing;
-
-  if (existing) {
-    const request = await db.connectionRequest.update({
-      where: { requestId },
-      data: {
-        status: existing.status === "REJECTED" || existing.status === "DECLINED" ? existing.status : "PENDING",
-        message,
-        expiresAt,
-      },
-    });
-    await ensureRequestPayloadLogged({ requestId, userId, username, macAddress, deviceName, ipAddress, message, securityStatus });
-    return request;
-  }
-
-  const request = await db.connectionRequest.create({
-    data: {
-      requestId,
-      fromNodeId: macAddress,
-      toNodeId: getMac(),
-      direction: "INCOMING",
-      status: "PENDING",
-      message: message || `${username} wants to connect`,
-      expiresAt,
-    },
-  });
-  await ensureRequestPayloadLogged({ requestId, userId, username, macAddress, deviceName, ipAddress, message, securityStatus });
-  return request;
 }
 
 async function upsertPeerIdentity({ userId, username, macAddress, deviceName, ipAddress, status, displayName }) {
@@ -655,6 +593,27 @@ async function ensureProfileChatServer(localProfileId) {
   }
 
   return server;
+}
+
+async function isPeerAcceptedForProfile(localProfileId, { userId, username, macAddress }) {
+  if (!localProfileId) return false;
+  const server = await ensureProfileChatServer(localProfileId);
+  const resolvedUserId = contactUserId(userId, macAddress);
+  const cleanUsername = typeof username === "string" ? username.trim() : "";
+  const member = await db.member.findFirst({
+    where: {
+      serverId: server.id,
+      profileId: { not: localProfileId },
+      profile: {
+        OR: [
+          { userId: resolvedUserId },
+          ...(cleanUsername ? [{ name: cleanUsername }] : []),
+        ],
+      },
+    },
+    select: { id: true },
+  });
+  return Boolean(member);
 }
 
 async function findReusableContactProfile(userId, username) {
@@ -1061,7 +1020,9 @@ async function upsertReceivedFileIndex({ storageName, fileName, mimeType, totalS
     }
   }
 
-  const existing = await db.fileIndex.findFirst({ where: { path: storageName } });
+  const existing = await db.fileIndex.findFirst({
+    where: { path: storageName, uploaderId },
+  });
   const data = {
     name: fileName || storageName,
     path: storageName,
@@ -1097,8 +1058,14 @@ async function receiveDirectMediaChunk(data, peerIp) {
   const trustedPeer = fromNodeId
     ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
     : null;
+  const acceptedForProfile = await isPeerAcceptedForProfile(session.profileId, {
+    userId: fromUserId,
+    username: fromUsername,
+    macAddress: fromNodeId,
+  });
   if (
     !trustedPeer ||
+    !acceptedForProfile ||
     !TRUSTED_STATUSES.has(trustedPeer.status) ||
     trustedPeer.publicName !== fromUsername ||
     (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
@@ -1288,8 +1255,14 @@ async function receiveDirectMediaOffer(data, peerIp) {
   const trustedPeer = fromNodeId
     ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
     : null;
+  const acceptedForProfile = await isPeerAcceptedForProfile(session.profileId, {
+    userId: fromUserId,
+    username: fromUsername,
+    macAddress: fromNodeId,
+  });
   if (
     !trustedPeer ||
+    !acceptedForProfile ||
     !TRUSTED_STATUSES.has(trustedPeer.status) ||
     trustedPeer.publicName !== fromUsername ||
     (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
@@ -1340,8 +1313,14 @@ async function receiveDirectMediaRequest(data, peerIp) {
   const trustedPeer = fromNodeId
     ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
     : null;
+  const acceptedForProfile = await isPeerAcceptedForProfile(session.profileId, {
+    userId: fromUserId,
+    username: fromUsername,
+    macAddress: fromNodeId,
+  });
   if (
     !trustedPeer ||
+    !acceptedForProfile ||
     !TRUSTED_STATUSES.has(trustedPeer.status) ||
     trustedPeer.publicName !== fromUsername ||
     (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
@@ -1397,82 +1376,29 @@ async function receiveDirectMessageSync(data, peerIp) {
     return;
   }
 
-  let trustedPeer = fromNodeId
+  const trustedPeer = fromNodeId
     ? await db.meshPeer.findUnique({ where: { macAddress: fromNodeId } })
     : null;
-  
-  if (trustedPeer && trustedPeer.status === "BLOCKED") {
-    console.error(`> [NodeMesh][SYNC] Rejected direct_message_sync from blocked peer ${fromUsername}`);
-    return;
-  }
-
-  let found = await findDirectConversationByNames(fromUsername, toUsername);
-
+  const acceptedForProfile = await isPeerAcceptedForProfile(session.profileId, {
+    userId: fromUserId,
+    username: fromUsername,
+    macAddress: fromNodeId,
+  });
   if (
-    !found ||
     !trustedPeer ||
+    !acceptedForProfile ||
     !TRUSTED_STATUSES.has(trustedPeer.status) ||
     trustedPeer.publicName !== fromUsername ||
     (fromUserId && trustedPeer.userId && trustedPeer.userId !== fromUserId)
   ) {
-    console.log(`> [NodeMesh][SYNC] Auto-creating unknown contact and conversation for ${fromUsername} (found: ${!!found}, trustedPeer: ${!!trustedPeer}, trustedStatus: ${trustedPeer?.status}, trustedPublicName: ${trustedPeer?.publicName}, trustedUserId: ${trustedPeer?.userId}, fromUserId: ${fromUserId})`);
+    console.error(`> [NodeMesh][SYNC] Rejected direct message from peer not accepted by profile ${session.username}: ${fromUsername}`);
+    return;
+  }
 
-    const defaultServer = await ensureProfileChatServer(session.profileId);
-
-    const userId = fromUserId || `mesh_${fromNodeId || Date.now()}`;
-    const email = `${userId.replace(/[^A-Za-z0-9._-]/g, "_").toLowerCase()}@mesh.local`;
-    
-    let profile = await db.profile.findUnique({ where: { userId } });
-    if (!profile) {
-      const sameName = await db.$queryRawUnsafe(`SELECT * FROM Profile WHERE lower(trim(name)) = lower(trim(?)) ORDER BY createdAt ASC`, fromUsername);
-      if (sameName && sameName.length) profile = sameName[0];
-    }
-    if (!profile) {
-      profile = await db.profile.create({
-        data: { userId, name: fromUsername, imageUrl: "", email, password: "", isOnline: new Date() }
-      });
-    }
-
-    let member = await db.member.findFirst({ where: { profileId: profile.id, serverId: defaultServer.id } });
-    if (!member) {
-      member = await db.member.create({ data: { profileId: profile.id, serverId: defaultServer.id, role: "GUEST" } });
-    }
-
-    if (fromNodeId) {
-      await db.meshPeer.upsert({
-        where: { macAddress: fromNodeId },
-        update: { userId, status: "TRUSTED", publicName: fromUsername, displayName: fromUsername, lastHandshake: new Date() },
-        create: { macAddress: fromNodeId, userId, status: "TRUSTED", hostname: "", ipAddress: peerIp, publicName: fromUsername, displayName: fromUsername, lastHandshake: new Date() }
-      }).catch(() => null);
-    }
-    
-    const toProfile = await db.profile.findFirst({ where: { name: toUsername } });
-    if (toProfile) {
-      const toMember = await db.member.findFirst({ where: { profileId: toProfile.id, serverId: defaultServer.id } });
-      if (toMember) {
-        let conversation = await db.conversation.findFirst({
-          where: {
-            OR: [
-              { memberOneId: toMember.id, memberTwoId: member.id },
-              { memberOneId: member.id, memberTwoId: toMember.id }
-            ]
-          }
-        });
-        if (!conversation) {
-          conversation = await db.conversation.create({
-            data: { memberOneId: toMember.id, memberTwoId: member.id }
-          });
-        }
-      }
-    }
-
-    found = await findDirectConversationByNames(fromUsername, toUsername);
-    if (!found) {
-      console.error(`> [NodeMesh][SYNC] Failed to auto-create conversation for ${fromUsername}`);
-      return;
-    }
-    
-    emitToLocalSocket(null, "chat:refresh-list", null);
+  const found = await findDirectConversationByNames(fromUsername, toUsername);
+  if (!found) {
+    console.error(`> [NodeMesh][SYNC] Accepted peer has no profile-scoped conversation: ${fromUsername}`);
+    return;
   }
 
   if (message.fileUrl) {
@@ -1862,6 +1788,11 @@ async function receiveCallSignal(data, peerIp) {
 async function receiveConnectionRequest(data, peerIp) {
   await ensureSqliteRuntime();
   peerIp = normalizeIp(peerIp);
+  const localSession = getMeshSession();
+  if (!localSession?.profileId) {
+    console.error("> [NodeMesh][AUTH] Rejected connection_request: no active local profile");
+    return;
+  }
   const fromUsername = typeof data.fromUsername === "string" ? data.fromUsername.trim() : "";
   const fromUserId = typeof data.fromUserId === "string" ? data.fromUserId.trim() : "";
   if (!fromUsername || !fromUserId) {
@@ -1877,7 +1808,12 @@ async function receiveConnectionRequest(data, peerIp) {
   ) return;
 
   const securityStatus = normalizeSecurityStatus(data.securityStatus);
-  const requestPayload = { ...data, securityStatus };
+  const requestPayload = {
+    ...data,
+    securityStatus,
+    targetProfileId: localSession.profileId,
+    targetUsername: localSession.username,
+  };
 
   if (await isBlockedMac(data.fromNodeId)) {
     await logBlockedPeer(data.fromNodeId, fromUsername, peerIp);
@@ -1926,7 +1862,9 @@ async function receiveConnectionRequest(data, peerIp) {
         publicName: fromUsername,
         displayName: fromUsername,
         ipAddress: peerIp,
-        status: "PENDING_INCOMING",
+        status: existingPeer && TRUSTED_STATUSES.has(existingPeer.status)
+          ? existingPeer.status
+          : "PENDING_INCOMING",
         lastHandshake: new Date(),
       },
     }),
@@ -1971,10 +1909,33 @@ async function receiveConnectionResponse(data, peerIp) {
     (!isManualIpRequest && request.toNodeId !== data.fromNodeId)
   ) return;
 
+  const ownerEvent = await db.meshEvent.findFirst({
+    where: {
+      entityType: "connection_request",
+      entityId: data.requestId,
+      operation: "handshake_request_sent",
+    },
+    orderBy: { timestamp: "desc" },
+  });
+  let requestProfileId = null;
+  if (ownerEvent?.payloadJson) {
+    try {
+      const ownerPayload = JSON.parse(ownerEvent.payloadJson);
+      requestProfileId = typeof ownerPayload.localProfileId === "string"
+        ? ownerPayload.localProfileId
+        : null;
+    } catch {}
+  }
+
+  const existingTransportPeer = await db.meshPeer.findUnique({
+    where: { macAddress: data.fromNodeId },
+  });
   const peerStatus =
     data.status === "ACCEPTED" ? "TRUSTED" :
     data.status === "BLOCKED" ? "BLOCKED" :
-    data.status === "DECLINED" ? "DECLINED" : "UNKNOWN";
+    existingTransportPeer && TRUSTED_STATUSES.has(existingTransportPeer.status)
+      ? existingTransportPeer.status
+      : data.status === "DECLINED" ? "DECLINED" : "UNKNOWN";
   const existingSession = data.status === "ACCEPTED"
     ? await db.peerSession.findFirst({ where: { peerNodeId: data.fromNodeId } })
     : null;
@@ -2020,19 +1981,20 @@ async function receiveConnectionResponse(data, peerIp) {
 
   if (data.status === "ACCEPTED") {
     const session = getMeshSession();
-    if (!session?.profileId) {
+    const localProfileId = requestProfileId || session?.profileId;
+    if (!localProfileId) {
       console.error("> [NodeMesh][AUTH] Accepted peer, but no saved local session exists; contact conversation not created");
       return;
     }
     const contact = await ensureAcceptedMeshContact({
-      localProfileId: session.profileId,
+      localProfileId,
       userId: fromUserId,
       username: fromUsername,
       macAddress: data.fromNodeId,
       deviceName: data.fromDeviceName,
     });
     const conversation = await ensureDirectConversationForAcceptedPeer(
-      session.profileId,
+      localProfileId,
       contact.member.id,
       contact.defaultServer.id,
     );
@@ -2416,13 +2378,6 @@ function startMeshDiscovery() {
         status,
         displayName: displayNameFor(username, deviceName, macAddress, Boolean(!sameUserPeer && sameMacPeer && sameMacPeer.userId !== userId)),
       });
-
-      if (status === "PENDING_INCOMING") {
-        const message = sameUserNewDevice
-          ? `${username}'s account is connecting from a new device`
-          : `${username} wants to connect`;
-        await ensurePendingContactRequest({ userId, username, macAddress, deviceName, ipAddress: sourceIp, message, securityStatus });
-      }
 
       if (TRUSTED_STATUSES.has(peer.status)) {
         // One serialized outbox owns all message and attachment delivery. A

@@ -17,6 +17,7 @@ import {
 
 const REQUEST_TTL_MS = 5 * 60 * 1000;
 const MANUAL_PEER_PREFIX = "manual-ip:";
+const TRANSPORT_TRUSTED = new Set(["TRUSTED", "ACCEPTED", "VERIFIED LAN"]);
 
 type MeshProfileIdentity = {
   id: string;
@@ -33,6 +34,26 @@ export function isManualPeerNodeId(nodeId: string) {
 
 function normalizeIpAddress(value: string) {
   return value.startsWith("::ffff:") ? value.slice(7) : value.trim();
+}
+
+async function recordProfileRequestOwner(
+  profile: MeshProfileIdentity,
+  requestId: string,
+  peerNodeId: string,
+) {
+  await db.meshEvent.create({
+    data: {
+      originNodeId: getLocalNodeId(),
+      entityType: "connection_request",
+      entityId: requestId,
+      operation: "handshake_request_sent",
+      payloadJson: JSON.stringify({
+        localProfileId: profile.id,
+        localProfileName: profile.name,
+        peerNodeId,
+      }),
+    },
+  });
 }
 
 export async function sendConnectionRequest(
@@ -63,7 +84,11 @@ export async function sendConnectionRequest(
     }),
     db.meshPeer.upsert({
       where: { macAddress: peerNodeId },
-      update: { status: "PENDING_OUTGOING", lastHandshake: new Date(), ipAddress: peer.ipAddress },
+      update: {
+        status: TRANSPORT_TRUSTED.has(peer.status) ? peer.status : "PENDING_OUTGOING",
+        lastHandshake: new Date(),
+        ipAddress: peer.ipAddress,
+      },
       create: {
         macAddress: peerNodeId,
         userId: peer.userId || null,
@@ -76,6 +101,7 @@ export async function sendConnectionRequest(
       },
     }),
   ]);
+  await recordProfileRequestOwner(profile, requestId, peerNodeId);
 
   await sendMeshControl(peer.ipAddress, {
     type: "connection_request",
@@ -119,6 +145,7 @@ export async function sendConnectionRequestToIp(
       expiresAt,
     },
   });
+  await recordProfileRequestOwner(profile, requestId, temporaryPeerNodeId);
 
   await sendMeshControl(peerIp, {
     type: "connection_request",
@@ -156,10 +183,17 @@ export async function respondToConnectionRequest(
   if (!peer?.ipAddress) throw new Error("Peer address is unavailable");
 
   const requestPayload = await readConnectionRequestPayload(db as any, requestId);
+  if (
+    typeof requestPayload?.targetProfileId === "string" &&
+    requestPayload.targetProfileId !== profile.id
+  ) {
+    throw new Error("This peer request belongs to a different local profile");
+  }
   const securityStatus = normalizeSecurityStatus(requestPayload?.securityStatus);
   const peerStatus =
     action === "ACCEPTED" ? "TRUSTED" :
     action === "BLOCKED" ? "BLOCKED" :
+    TRANSPORT_TRUSTED.has(peer.status) ? peer.status :
     action === "DECLINED" ? "DECLINED" : "UNKNOWN";
   const existingSession = action === "ACCEPTED"
     ? await db.peerSession.findFirst({ where: { peerNodeId: request.fromNodeId } })

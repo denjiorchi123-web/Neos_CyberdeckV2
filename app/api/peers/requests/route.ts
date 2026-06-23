@@ -25,7 +25,7 @@ export async function GET(req: Request) {
         where: {
           entityType: "connection_request",
           entityId: { in: requestIds },
-          operation: "handshake_request_received",
+          operation: { in: ["handshake_request_received", "handshake_request_sent"] },
         },
         orderBy: { timestamp: "desc" },
       })
@@ -38,7 +38,15 @@ export async function GET(req: Request) {
     } catch {}
   }
 
-  const enriched = await Promise.all(requests.map(async (request) => {
+  const profileRequests = requests.filter((request) => {
+    const payload = payloadByRequestId.get(request.requestId);
+    if (request.direction === "INCOMING") {
+      return payload?.targetProfileId === profile.id;
+    }
+    return payload?.localProfileId === profile.id;
+  });
+
+  const enriched = await Promise.all(profileRequests.map(async (request) => {
     const peerNodeId = request.direction === "INCOMING" ? request.fromNodeId : request.toNodeId;
     const peer = await db.meshPeer.findUnique({ where: { macAddress: peerNodeId } });
     const payload = payloadByRequestId.get(request.requestId);

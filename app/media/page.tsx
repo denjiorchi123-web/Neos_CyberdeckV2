@@ -190,8 +190,13 @@ export default function MediaPage() {
 
   const load = useCallback(async (cat: Category) => {
     setLoading(true);
+    setFiles([]);
     try {
-      const res  = await fetch(`/api/media?category=${cat}`);
+      const res  = await fetch(`/api/media?category=${cat}&profile_refresh=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error("Media request failed");
       const data = await res.json();
       setFiles(data.files ?? []);
     } catch {
