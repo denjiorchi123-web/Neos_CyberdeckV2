@@ -16,6 +16,7 @@ interface NetworkInterface {
   name: string;
   ip?: string;
   prefix?: number;
+  gateway?: string;
   up: boolean;
   loopback: boolean;
 }
@@ -49,9 +50,11 @@ export function EditNetworkConfigModal({ isOpen, onClose, onSaved }: EditNetwork
 
           setInterfaces(ethernet);
           setIface(selected?.name || "");
-          setIp(config.manual_ip || selected?.ip || "");
-          setPrefix(String(config.prefix || selected?.prefix || 24));
-          setGateway(config.gateway || "");
+          // The OS is authoritative. A stale mesh_config value must never make
+          // the UI claim an address that is not actually active.
+          setIp(selected?.ip || config.manual_ip || "");
+          setPrefix(String(selected?.prefix || config.prefix || 24));
+          setGateway(selected?.gateway || config.gateway || "");
           if (config.beacon_port) setBeaconPort(config.beacon_port.toString());
           if (config.control_port) setControlPort(config.control_port.toString());
         })
